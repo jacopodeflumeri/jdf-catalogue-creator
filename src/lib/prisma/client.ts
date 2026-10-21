@@ -109,7 +109,10 @@ async function gracefulShutdown(signal: string) {
 }
 
 // Register shutdown handlers for graceful termination
-if (typeof process !== "undefined") {
+if (
+  typeof process !== "undefined" &&
+  process.env.PRISMA_MANAGES_PROCESS_SIGNALS !== "false"
+) {
   // Handle SIGINT (Ctrl+C)
   process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 

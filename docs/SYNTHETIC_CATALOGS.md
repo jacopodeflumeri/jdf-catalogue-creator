@@ -6,10 +6,10 @@ This app creates persistent synthetic fashion catalogs for internal Mapp users.
 It is deliberately admin-only: there is no customer-facing `/account` experience,
 and company-context login is disabled with `COMPANY_LOGIN_ENABLED=false`.
 
-Phases 1–4 provide the data model, four stable catalog profiles, identifier
+Phases 1–5 provide the data model, four stable catalog profiles, identifier
 rules, deterministic generation domain, resumable job state machine, real
-LiteLLM text and image generation, and persistent generated-image storage.
-Catalog pages and the independent background worker are not implemented yet.
+LiteLLM text and image generation, persistent generated-image storage, and an
+independent database-backed worker. Catalog pages are not implemented yet.
 
 ## Catalog profiles
 
@@ -50,7 +50,7 @@ normalization live in `src/modules/synthetic_catalog/domain/ids.ts`.
 - `SyntheticVariant` stores size, stock, availability, external ID, and SKU.
 - `SyntheticImageAsset` tracks front, back, and on-model generation independently.
 - `CatalogGenerationJob` records one requested operation and aggregate progress.
-- `CatalogGenerationTask` is the durable, retryable unit for the future worker.
+- `CatalogGenerationTask` is the durable, retryable unit claimed by the worker.
 
 The migration is additive and lives under `prisma/migrations/`. Task records are
 included now so later image generation does not rely on in-memory or request-bound
@@ -75,9 +75,45 @@ processes only unfinished tasks. Provider failures become `FAILED` tasks and a
 `COMPLETED_WITH_ERRORS` job; `resumeGenerationJob()` requeues failures below the
 attempt limit.
 
-Phase 2 executes the state machine as an application service for tests. Durable
-worker polling, task claiming/locks, concurrency limits, and deployment belong
-to Phase 5.
+The Phase 2 application service remains a narrow product-generation test seam.
+The production workflow is owned by the Phase 5 worker described below.
+
+## Background worker
+
+`npm run worker` starts a single-concurrency polling process. It uses
+`CatalogGenerationTask` as a PostgreSQL queue and never holds an HTTP request
+open. A claim is one atomic `FOR UPDATE SKIP LOCKED` update that records the
+worker ID, lease time, and attempt before returning the task. Multiple ECS tasks
+can therefore poll safely without generating the same item twice.
+
+Completing a product transaction creates its product, style, variants, three
+image assets, and one `GENERATE_IMAGE` task per role. Non-front tasks are not
+claimable until the front asset is terminal, so back and on-model images use the
+front reference when it is available and fall back to prompt-only generation
+after a permanent front failure.
+
+Transient network/proxy/S3 errors return the task to `QUEUED` with exponential
+backoff. Invalid output and other permanent errors become `FAILED` immediately;
+all attempts are bounded by the task's persisted `maxAttempts`. The production
+worker configures each provider for one in-process attempt, preventing provider
+retries from multiplying three durable task attempts into nine billable calls.
+Locks older than 30 minutes are checked at startup and every minute, so a task
+killed during a deployment becomes eligible again after its conservative lease.
+Product and image counters, the job stage, and final status are recalculated
+from persisted task state after every item, so refreshes and worker restarts do
+not lose progress.
+
+ECS runs the command in a second, essential container in the existing Fargate
+task. It shares the app image, task role, network, tags, and deployment lifecycle,
+but has its own process and a three-connection database pool. This avoids a
+second always-on Fargate service. If the web service scales out, the atomic claim
+protocol safely allows the additional worker containers to help. SIGTERM stops
+new polling, lets the current item settle, then disconnects Prisma.
+
+Cancellation is intentionally deferred: the task enum has no cancelled state,
+and in-flight LiteLLM image calls cannot yet be interrupted safely. A future
+cancel action must stop new claims without presenting an active remote call as
+cancelled.
 
 ## LiteLLM and spend attribution
 
@@ -160,11 +196,13 @@ remains internal-only.
 - `src/modules/synthetic_catalog/providers/image-prompt.ts`
 - `src/modules/synthetic_catalog/providers/litellm-image-generator.ts`
 - `src/modules/synthetic_catalog/server/image-assets.ts`
+- `src/modules/synthetic_catalog/server/catalog-worker.ts`
 - `src/modules/synthetic_catalog/storage/generated-asset-storage.ts`
 - `src/modules/llm/lib/images.ts`
 - `src/app/api/catalog-assets/[publicId]/route.ts`
 - `src/modules/synthetic_catalog/server/generation-jobs.ts`
 - `src/modules/synthetic_catalog/server/sequence-reservation.ts`
+- `src/workers/catalog-generation-worker.ts`
 - `infra/lib/stack.ts`
 - `scripts/deploy/setup-ssm-params.sh`
 
@@ -221,12 +259,32 @@ are opaque database IDs owned by the application. This keeps URLs stable across
 deployments and regenerations without exposing a bucket, directory listing, or
 one-hour S3 signature in exported feeds.
 
+### 2026-10-21 — PostgreSQL tasks are the queue
+
+The existing task table already provides availability, locks, attempts, and
+dedupe keys, so adding Redis or an external queue would create another system to
+operate without improving this low-volume internal workflow. Atomic
+`SKIP LOCKED` claims provide safe horizontal polling, while the database remains
+the single source of truth for UI progress and restarts.
+
+### 2026-10-21 — Worker sidecar shares the app deployment
+
+The worker is a separate process/container but remains in the existing ECS task.
+This guarantees routine floating-tag and immutable deployments update web and
+worker together, reuses task-role S3 credentials and cost tags, and avoids the
+fixed cost of a second service. Worker concurrency remains one per ECS task and
+is coordinated by database claims.
+
 ## Pitfalls
 
 - Do not decrement or manually recycle `nextProductSequence`.
 - Do not derive IDs from row IDs; external IDs follow the documented hierarchy.
 - Do not put LiteLLM or AWS credentials in profile JSON, prompts, logs, or docs.
 - Do not perform long-running image work inside a Next.js request.
+- Do not fetch a queued task and update it in separate queries; all workers must
+  use the atomic claim function or duplicate LiteLLM spend becomes possible.
+- Keep the worker provider adapters at one local attempt unless the durable task
+  attempt policy is changed at the same time.
 - Before adding media routes, use the S3 prefix registry and `authorizeS3Read()`.
 - Do not write direct S3/CDN URLs to catalog exports; use the opaque asset route.
 - Do not send nested `metadata` as a multipart image-edit form field; use the

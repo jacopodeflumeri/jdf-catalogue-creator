@@ -587,6 +587,63 @@ export class AppStack extends cdk.Stack {
       ],
     });
 
+    // Catalog generation runs outside the request-serving container. It uses
+    // the same application image and task role, but only receives the database,
+    // LiteLLM, S3, and spend-attribution configuration it needs.
+    taskDefinition.addContainer("CatalogWorker", {
+      image: ecs.ContainerImage.fromEcrRepository(
+        ecrRepository,
+        IMMUTABLE_DEPLOY
+          ? `${config.envName}-${APP_VERSION}`
+          : `${config.envName}-latest`,
+      ),
+      command: ["npm", "run", "worker"],
+      essential: true,
+      stopTimeout: cdk.Duration.seconds(120),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: "catalog-worker",
+        logGroup,
+      }),
+      environment: {
+        NODE_ENV: "production",
+        PROCESS_ROLE: "catalog-worker",
+        NODE_OPTIONS: "--max-old-space-size=384",
+        APP_NAME: config.appName,
+        APP_PRODUCT: config.product,
+        NEXT_PUBLIC_ENVIRONMENT: config.envName,
+        APP_URL: `https://${config.domainName}`,
+        S3_REGION: "eu-central-1",
+        S3_BUCKET_NAME: config.s3BucketName,
+        S3_PREFIX: config.s3Prefix,
+        DB_HOST: dbHost,
+        DB_PORT: dbPort,
+        DB_NAME: config.dbName,
+        DB_SSL: "true",
+        DB_MAX_CONNECTIONS: "3",
+        DB_IDLE_TIMEOUT: "30000",
+        DB_CONNECTION_TIMEOUT: "10000",
+        PRISMA_MANAGES_PROCESS_SIGNALS: "false",
+      },
+      secrets: {
+        DB_USER: ecs.Secret.fromSecretsManager(dbCredentialsSecret, "username"),
+        DB_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentialsSecret, "password"),
+        LITELLM_API_KEY: ecs.Secret.fromSsmParameter(
+          ssm.StringParameter.fromSecureStringParameterAttributes(
+            this,
+            "WorkerLitellmApiKey",
+            { parameterName: `/${prefix}/LITELLM_API_KEY` },
+          ),
+        ),
+        LITELLM_BASE_URL: ecs.Secret.fromSsmParameter(
+          ssm.StringParameter.fromSecureStringParameterAttributes(
+            this,
+            "WorkerLitellmBaseUrl",
+            { parameterName: `/${prefix}/LITELLM_BASE_URL` },
+          ),
+        ),
+      },
+    });
+
     // =========================================================================
     // Application Load Balancer
     // =========================================================================

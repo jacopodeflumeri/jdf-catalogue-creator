@@ -23,6 +23,7 @@ if (!process.env.DATABASE_URL && process.env.DB_NAME) {
 const envSchema = z.object({
   // Node Environment
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PROCESS_ROLE: z.enum(['app', 'catalog-worker']).default('app'),
   
   // Application
   APP_NAME: z.string().default('Mapp Labs'),
@@ -32,8 +33,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   
   // Authentication
-  NEXTAUTH_SECRET: z.string().min(32, 'NEXTAUTH_SECRET must be at least 32 characters'),
-  NEXTAUTH_URL: z.string().url(),
+  NEXTAUTH_SECRET: z.string().min(32, 'NEXTAUTH_SECRET must be at least 32 characters').optional(),
+  NEXTAUTH_URL: z.string().url().optional(),
 
   // Magic-link customer auth (OPTIONAL capability, OFF by default).
   MAGIC_LINK_ENABLED: z.string().optional().transform(val => val === 'true'),
@@ -142,6 +143,23 @@ const envSchema = z.object({
   LITELLM_BASE_URL: z.string().url().optional(),
   APP_PRODUCT: z.string().optional(),
 }).superRefine((value, ctx) => {
+  if (value.PROCESS_ROLE === 'catalog-worker') return;
+
+  if (!value.NEXTAUTH_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['NEXTAUTH_SECRET'],
+      message: 'NEXTAUTH_SECRET is required',
+    });
+  }
+  if (!value.NEXTAUTH_URL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['NEXTAUTH_URL'],
+      message: 'NEXTAUTH_URL is required',
+    });
+  }
+
   const hasAzureConfig = Boolean(
     value.AZURE_AD_CLIENT_ID && value.AZURE_AD_CLIENT_SECRET && value.AZURE_AD_TENANT_ID
   );

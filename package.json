@@ -13,6 +13,7 @@
     "build": "next build",
     "build:debug": "node -e \"const r=require('child_process').spawnSync('next build',{stdio:'inherit',shell:true,env:{...process.env,ENABLE_SOURCE_MAPS:'true'}});process.exit(r.status===null?1:r.status)\"",
     "start": "next start",
+    "worker": "node --import tsx src/workers/catalog-generation-worker.ts",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "check-all": "npm run type-check && npm run lint && echo All checks passed!",
@@ -43,6 +44,7 @@
     "react-dom": "^19.2.5",
     "sharp": "^0.35.4",
     "ssh2-sftp-client": "^12.1.1",
+    "tsx": "^4.23.13",
     "zod": "^4.5.4"
   },
   "devDependencies": {
@@ -64,7 +66,6 @@
     "postcss": "^8.5.26",
     "tailwindcss": "^4.2.3",
     "ts-node": "^10.9.2",
-    "tsx": "^4.23.13",
     "typescript": "^5"
   },
   "overrides": {

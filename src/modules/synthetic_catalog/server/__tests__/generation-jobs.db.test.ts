@@ -66,7 +66,7 @@ describe("catalog generation jobs", () => {
       runGenerationJob(secondJob.id, provider),
     ]);
 
-    expect(completed.every((job) => job.status === "COMPLETED")).toBe(true);
+    expect(completed.every((job) => job.status === "RUNNING" && job.stage === "IMAGES")).toBe(true);
     const products = await prisma.syntheticProduct.findMany({
       where: { catalogId: catalog.id },
       include: { styles: { include: { variants: true } } },
@@ -103,12 +103,17 @@ describe("catalog generation jobs", () => {
     };
 
     const partial = await runGenerationJob(job.id, trackingProvider, { maxTasks: 1 });
-    expect(partial.status).toBe("QUEUED");
+    expect(partial.status).toBe("RUNNING");
     expect(partial.completedProducts).toBe(1);
-    expect(partial.tasks.filter((task) => task.status === "QUEUED")).toHaveLength(2);
+    expect(
+      partial.tasks.filter(
+        (task) => task.taskType === "GENERATE_PRODUCT" && task.status === "QUEUED",
+      ),
+    ).toHaveLength(2);
 
     const finished = await runGenerationJob(job.id, trackingProvider);
-    expect(finished.status).toBe("COMPLETED");
+    expect(finished.status).toBe("RUNNING");
+    expect(finished.stage).toBe("IMAGES");
     expect(finished.completedProducts).toBe(3);
     expect(generatedSequences).toHaveLength(3);
     expect(new Set(generatedSequences).size).toBe(3);
@@ -136,13 +141,14 @@ describe("catalog generation jobs", () => {
     };
 
     const withError = await runGenerationJob(job.id, flakyProvider);
-    expect(withError.status).toBe("COMPLETED_WITH_ERRORS");
+    expect(withError.status).toBe("RUNNING");
     expect(withError.failedProducts).toBe(1);
 
     const resumed = await resumeGenerationJob(job.id);
     expect(resumed.status).toBe("QUEUED");
     const completed = await runGenerationJob(job.id, baseProvider);
-    expect(completed.status).toBe("COMPLETED");
+    expect(completed.status).toBe("RUNNING");
+    expect(completed.stage).toBe("IMAGES");
     expect(completed.completedProducts).toBe(2);
     expect(completed.failedProducts).toBe(0);
     expect(await prisma.syntheticProduct.count({ where: { catalogId: catalog.id } })).toBe(2);

@@ -138,7 +138,7 @@ async function persistGeneratedProduct(input: {
         salePrice: price.salePrice,
         currency: price.currency,
         productUrl: `/catalogs/${job.catalog.slug}/products/${externalId}`,
-        status: "DRAFT",
+        status: "GENERATING",
       },
       create: {
         catalogId: job.catalogId,
@@ -156,7 +156,7 @@ async function persistGeneratedProduct(input: {
         salePrice: price.salePrice,
         currency: price.currency,
         productUrl: `/catalogs/${job.catalog.slug}/products/${externalId}`,
-        status: "DRAFT",
+        status: "GENERATING",
       },
     });
 
@@ -167,7 +167,7 @@ async function persistGeneratedProduct(input: {
         colorName: spec.colorName,
         colorCode: spec.colorCode,
         visualSpec: asInputJson(spec.design),
-        status: "DRAFT",
+        status: "GENERATING",
       },
       create: {
         productId: product.id,
@@ -175,15 +175,36 @@ async function persistGeneratedProduct(input: {
         colorName: spec.colorName,
         colorCode: spec.colorCode,
         visualSpec: asInputJson(spec.design),
-        status: "DRAFT",
+        status: "GENERATING",
       },
     });
 
     for (const role of CATALOG_IMAGE_ROLES) {
-      await tx.syntheticImageAsset.upsert({
+      const imageAsset = await tx.syntheticImageAsset.upsert({
         where: { styleId_role: { styleId: style.id, role } },
         update: {},
         create: { styleId: style.id, role, status: "QUEUED" },
+      });
+      await tx.catalogGenerationTask.upsert({
+        where: {
+          jobId_dedupeKey: {
+            jobId: job.id,
+            dedupeKey: `image:${style.externalId}:${role}`,
+          },
+        },
+        update: {
+          productId: product.id,
+          styleId: style.id,
+          imageAssetId: imageAsset.id,
+        },
+        create: {
+          jobId: job.id,
+          productId: product.id,
+          styleId: style.id,
+          imageAssetId: imageAsset.id,
+          taskType: "GENERATE_IMAGE",
+          dedupeKey: `image:${style.externalId}:${role}`,
+        },
       });
     }
 
@@ -215,6 +236,8 @@ async function persistGeneratedProduct(input: {
       data: {
         productId: product.id,
         status: "COMPLETED",
+        lockedAt: null,
+        lockedBy: null,
         lastError: null,
         finishedAt: new Date(),
       },
@@ -223,32 +246,101 @@ async function persistGeneratedProduct(input: {
   });
 }
 
-async function refreshJobState(jobId: number) {
-  const job = await prisma.catalogGenerationJob.findUniqueOrThrow({
-    where: { id: jobId },
-  });
-  const [completed, failed, pending] = await Promise.all([
-    prisma.catalogGenerationTask.count({ where: { jobId, status: "COMPLETED" } }),
-    prisma.catalogGenerationTask.count({ where: { jobId, status: "FAILED" } }),
-    prisma.catalogGenerationTask.count({
-      where: { jobId, status: { in: ["QUEUED", "RUNNING"] } },
-    }),
-  ]);
-  const nextStatus =
-    pending > 0 ? "QUEUED" : failed > 0 ? "COMPLETED_WITH_ERRORS" : "COMPLETED";
-  assertJobTransition(job.status, nextStatus);
+export async function refreshGenerationJobState(jobId: number) {
+  return prisma.$transaction(async (tx) => {
+    // Serialize aggregate refreshes per job. Without this row lock, two workers
+    // can count at different moments and let an older RUNNING snapshot overwrite
+    // a later COMPLETED update.
+    await tx.$queryRaw`SELECT id FROM catalog_generation_job WHERE id = ${jobId} FOR UPDATE`;
+    const job = await tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
+    const taskCount = (
+      taskType: "GENERATE_PRODUCT" | "GENERATE_IMAGE" | "VALIDATE_PRODUCT",
+      status: "COMPLETED" | "FAILED" | { in: ("QUEUED" | "RUNNING")[] },
+    ) => tx.catalogGenerationTask.count({ where: { jobId, taskType, status } });
+    const [
+      completedProducts,
+      failedProducts,
+      pendingProducts,
+      completedImages,
+      failedImages,
+      pendingImages,
+      failedValidation,
+      pendingValidation,
+    ] = await Promise.all([
+      taskCount("GENERATE_PRODUCT", "COMPLETED"),
+      taskCount("GENERATE_PRODUCT", "FAILED"),
+      taskCount("GENERATE_PRODUCT", { in: ["QUEUED", "RUNNING"] }),
+      taskCount("GENERATE_IMAGE", "COMPLETED"),
+      taskCount("GENERATE_IMAGE", "FAILED"),
+      taskCount("GENERATE_IMAGE", { in: ["QUEUED", "RUNNING"] }),
+      taskCount("VALIDATE_PRODUCT", "FAILED"),
+      taskCount("VALIDATE_PRODUCT", { in: ["QUEUED", "RUNNING"] }),
+    ]);
+    const pending = pendingProducts + pendingImages + pendingValidation;
+    const failed = failedProducts + failedImages + failedValidation;
 
-  return prisma.catalogGenerationJob.update({
-    where: { id: jobId },
-    data: {
-      status: nextStatus,
-      stage: pending > 0 ? "PRODUCTS" : "COMPLETE",
-      completedProducts: completed,
-      failedProducts: failed,
-      finishedAt: pending > 0 ? null : new Date(),
-    },
-    include: { tasks: { orderBy: { id: "asc" } } },
+    if (job.status === "CANCELLED") {
+      return tx.catalogGenerationJob.findUniqueOrThrow({
+        where: { id: jobId },
+        include: { tasks: { orderBy: { id: "asc" } } },
+      });
+    }
+
+    const nextStatus =
+      pending > 0 ? "RUNNING" : failed > 0 ? "COMPLETED_WITH_ERRORS" : "COMPLETED";
+    const nextStage =
+      pendingProducts > 0
+        ? "PRODUCTS"
+        : pendingImages > 0
+          ? "IMAGES"
+          : pendingValidation > 0
+            ? "VALIDATING"
+            : "COMPLETE";
+
+    return tx.catalogGenerationJob.update({
+      where: { id: jobId },
+      data: {
+        status: nextStatus,
+        stage: nextStage,
+        completedProducts,
+        failedProducts,
+        completedImages,
+        failedImages,
+        startedAt: job.startedAt ?? (nextStatus === "RUNNING" ? new Date() : null),
+        finishedAt: pending > 0 ? null : new Date(),
+      },
+      include: { tasks: { orderBy: { id: "asc" } } },
+    });
   });
+}
+
+export async function processProductGenerationTask(
+  taskId: number,
+  provider: ProductGenerator,
+) {
+  const task = await prisma.catalogGenerationTask.findUniqueOrThrow({
+    where: { id: taskId },
+    include: { job: { include: { catalog: true } } },
+  });
+  if (task.taskType !== "GENERATE_PRODUCT") {
+    throw new Error(`Task ${task.id} is not a product-generation task`);
+  }
+  if (task.job.status === "CANCELLED") {
+    throw new Error(`Generation job ${task.jobId} is cancelled`);
+  }
+  const config = parseCatalogProfileConfig(task.job.catalog.config);
+  const plan = plannedProductSchema.parse(task.payload);
+  const spec = await provider.generateProduct({
+    model: task.job.textModel,
+    catalog: {
+      slug: task.job.catalog.slug,
+      segment: task.job.catalog.segment,
+      brandName: task.job.catalog.brandName,
+      config,
+    },
+    plan,
+  });
+  return persistGeneratedProduct({ jobId: task.jobId, taskId: task.id, plan, spec });
 }
 
 export async function runGenerationJob(
@@ -270,7 +362,7 @@ export async function runGenerationJob(
     throw new Error("maxTasks must be a positive safe integer");
   }
 
-  const job = await prisma.catalogGenerationJob.update({
+  await prisma.catalogGenerationJob.update({
     where: { id: jobId },
     data: {
       status: "RUNNING",
@@ -279,9 +371,7 @@ export async function runGenerationJob(
       finishedAt: null,
       errorMessage: null,
     },
-    include: { catalog: true },
   });
-  const config = parseCatalogProfileConfig(job.catalog.config);
   const tasks = await prisma.catalogGenerationTask.findMany({
     where: { jobId, taskType: "GENERATE_PRODUCT", status: "QUEUED" },
     orderBy: { id: "asc" },
@@ -300,18 +390,7 @@ export async function runGenerationJob(
     });
 
     try {
-      const plan = plannedProductSchema.parse(task.payload);
-      const spec = await provider.generateProduct({
-        model: job.textModel,
-        catalog: {
-          slug: job.catalog.slug,
-          segment: job.catalog.segment,
-          brandName: job.catalog.brandName,
-          config,
-        },
-        plan,
-      });
-      await persistGeneratedProduct({ jobId, taskId: task.id, plan, spec });
+      await processProductGenerationTask(task.id, provider);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown product generation error";
       await prisma.catalogGenerationTask.update({
@@ -325,7 +404,7 @@ export async function runGenerationJob(
     }
   }
 
-  return refreshJobState(jobId);
+  return refreshGenerationJobState(jobId);
 }
 
 export async function resumeGenerationJob(jobId: number) {
@@ -333,31 +412,44 @@ export async function resumeGenerationJob(jobId: number) {
     where: { id: jobId },
   });
   assertJobTransition(job.status, "QUEUED");
-  const requeued = await prisma.catalogGenerationTask.updateMany({
-    where: {
-      jobId,
-      status: "FAILED",
-      attempts: { lt: 3 },
-    },
+  const resumable = (
+    await prisma.catalogGenerationTask.findMany({
+      where: { jobId, status: "FAILED" },
+      select: { id: true, taskType: true, attempts: true, maxAttempts: true },
+    })
+  ).filter((task) => task.attempts < task.maxAttempts);
+  if (resumable.length === 0) {
+    throw new Error("Generation job has no resumable tasks");
+  }
+  await prisma.catalogGenerationTask.updateMany({
+    where: { id: { in: resumable.map((task) => task.id) } },
     data: {
       status: "QUEUED",
+      availableAt: new Date(),
+      lockedAt: null,
+      lockedBy: null,
       lastError: null,
       finishedAt: null,
     },
   });
-  const queued = await prisma.catalogGenerationTask.count({
-    where: { jobId, status: "QUEUED" },
-  });
-  if (queued === 0) {
-    throw new Error("Generation job has no resumable tasks");
-  }
+  const [failedProducts, failedImages] = await Promise.all([
+    prisma.catalogGenerationTask.count({
+      where: { jobId, taskType: "GENERATE_PRODUCT", status: "FAILED" },
+    }),
+    prisma.catalogGenerationTask.count({
+      where: { jobId, taskType: "GENERATE_IMAGE", status: "FAILED" },
+    }),
+  ]);
 
   const updated = await prisma.catalogGenerationJob.update({
     where: { id: jobId },
     data: {
       status: "QUEUED",
-      stage: "PRODUCTS",
-      failedProducts: { decrement: requeued.count },
+      stage: resumable.some((task) => task.taskType === "GENERATE_PRODUCT")
+        ? "PRODUCTS"
+        : "IMAGES",
+      failedProducts,
+      failedImages,
       finishedAt: null,
       errorMessage: null,
     },
