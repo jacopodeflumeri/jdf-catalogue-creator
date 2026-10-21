@@ -625,6 +625,10 @@ export class AppStack extends cdk.Stack {
         DB_IDLE_TIMEOUT: "30000",
         DB_CONNECTION_TIMEOUT: "10000",
         PRISMA_MANAGES_PROCESS_SIGNALS: "false",
+        // New images roll out before Prisma migrations. Keep the essential
+        // worker alive while its queue tables are not available yet so ECS
+        // Exec can migrate through the web container on a first deployment.
+        WORKER_SCHEMA_RETRY_MS: "5000",
       },
       secrets: {
         DB_USER: ecs.Secret.fromSecretsManager(dbCredentialsSecret, "username"),

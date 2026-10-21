@@ -38,7 +38,10 @@ const worker = new CatalogGenerationWorker(
     imageGenerator: new LiteLLMImageGenerator({ maxAttempts: 1 }),
     storage: new S3GeneratedAssetStorage(),
   },
-  { workerId },
+  {
+    workerId,
+    schemaRetryMs: Number(process.env.WORKER_SCHEMA_RETRY_MS ?? "5000"),
+  },
 );
 
 worker

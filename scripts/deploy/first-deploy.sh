@@ -171,7 +171,7 @@ aws ecs wait services-stable \
     --cluster "${PREFIX}" \
     --services "${PREFIX}" \
     --region ${AWS_REGION} \
-    --profile ${AWS_PROFILE} 2>/dev/null || true
+    --profile ${AWS_PROFILE}
 
 "${SCRIPT_DIR}/run-migration.sh" "${ENV}"
 echo ""

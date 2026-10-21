@@ -11,11 +11,13 @@ import {
   refreshGenerationJobState,
 } from "./generation-jobs";
 import { generateStyleImage } from "./image-assets";
+import { isCatalogWorkerSchemaMissing } from "./worker-readiness";
 
 export const DEFAULT_WORKER_POLL_MS = 2_000;
 export const DEFAULT_WORKER_LEASE_MS = 30 * 60 * 1_000;
 export const DEFAULT_WORKER_RETRY_DELAY_MS = 5_000;
 export const DEFAULT_WORKER_RECOVERY_INTERVAL_MS = 60_000;
+export const DEFAULT_WORKER_SCHEMA_RETRY_MS = 5_000;
 
 export interface CatalogWorkerDependencies {
   productGenerator: ProductGenerator;
@@ -29,6 +31,7 @@ export interface CatalogWorkerOptions {
   leaseMs?: number;
   retryDelayMs?: number;
   recoveryIntervalMs?: number;
+  schemaRetryMs?: number;
 }
 
 function errorMessage(error: unknown): string {
@@ -203,6 +206,7 @@ export class CatalogGenerationWorker {
   private readonly leaseMs: number;
   private readonly retryDelayMs: number;
   private readonly recoveryIntervalMs: number;
+  private readonly schemaRetryMs: number;
 
   constructor(
     private readonly dependencies: CatalogWorkerDependencies,
@@ -213,6 +217,7 @@ export class CatalogGenerationWorker {
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_WORKER_RETRY_DELAY_MS;
     this.recoveryIntervalMs =
       options.recoveryIntervalMs ?? DEFAULT_WORKER_RECOVERY_INTERVAL_MS;
+    this.schemaRetryMs = options.schemaRetryMs ?? DEFAULT_WORKER_SCHEMA_RETRY_MS;
   }
 
   async runOnce(): Promise<boolean> {
@@ -339,7 +344,33 @@ export class CatalogGenerationWorker {
   }
 
   async start(signal?: AbortSignal): Promise<void> {
-    await this.recoverStaleTasks();
+    let reportedMissingSchema = false;
+    while (!signal?.aborted) {
+      try {
+        await this.recoverStaleTasks();
+        break;
+      } catch (error) {
+        if (!isCatalogWorkerSchemaMissing(error)) throw error;
+        if (!reportedMissingSchema) {
+          logger.error(
+            "Catalog generation schema is not migrated yet; worker is waiting for prisma migrate deploy",
+          );
+          reportedMissingSchema = true;
+        }
+        try {
+          await sleep(
+            this.schemaRetryMs,
+            undefined,
+            signal ? { signal } : undefined,
+          );
+        } catch (error) {
+          if (!(error instanceof Error) || error.name !== "AbortError") throw error;
+          return;
+        }
+      }
+    }
+    if (signal?.aborted) return;
+
     let nextRecoveryAt = Date.now() + this.recoveryIntervalMs;
     while (!signal?.aborted) {
       if (Date.now() >= nextRecoveryAt) {

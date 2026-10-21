@@ -183,6 +183,13 @@ second always-on Fargate service. If the web service scales out, the atomic clai
 protocol safely allows the additional worker containers to help. SIGTERM stops
 new polling, lets the current item settle, then disconnects Prisma.
 
+The deployment pipeline rolls out the application image before running Prisma
+migrations. During that bootstrap window the worker treats Prisma `P2021`
+(missing queue tables) as temporary and waits five seconds before checking
+again. The worker remains alive as an essential container, allowing the web
+container's ECS Exec agent to run the migration; other startup failures still
+terminate the worker and restart the task normally.
+
 Cancellation is intentionally deferred: the task enum has no cancelled state,
 and in-flight LiteLLM image calls cannot yet be interrupted safely. A future
 cancel action must stop new claims without presenting an active remote call as
