@@ -1,0 +1,44 @@
+/**
+ * Workspace detail.
+ * Destination: src/app/admin/companies/[companyId]/workspaces/[workspaceId]/page.tsx
+ */
+import { notFound } from "next/navigation";
+import { requireAdmin } from "@/modules/auth/server";
+import { resolveWorkspaceByWorkspaceId } from "@/lib/admin/account-routing";
+import { parseRouteId } from "@/lib/admin/route-ids";
+
+export default async function WorkspacePage({
+  params,
+}: {
+  params: Promise<{ companyId: string; workspaceId: string }>;
+}) {
+  await requireAdmin();
+  const { companyId, workspaceId } = await params;
+
+  const companyIdNum = parseRouteId(companyId);
+  if (companyIdNum === null) notFound();
+
+  // Scoped to the company in the URL — the resolver enforces the scope-field
+  // guardrail (always selects clientCatalogCompanyId). See docs/template/ROUTING.md.
+  const workspace = await resolveWorkspaceByWorkspaceId(workspaceId, {
+    companyId: companyIdNum,
+    select: {
+      id: true,
+      name: true,
+      clientCatalogWorkspaceId: true,
+      services: true,
+    },
+  });
+  if (!workspace) notFound();
+
+  return (
+    <div>
+      <h1 className="mb-1 text-2xl font-semibold">
+        {workspace.name ?? `Workspace ${workspace.clientCatalogWorkspaceId}`}
+      </h1>
+      <p className="text-sm text-gray-500">
+        Workspace ID: {workspace.clientCatalogWorkspaceId}
+      </p>
+    </div>
+  );
+}

@@ -1,0 +1,97 @@
+/**
+ * Boundary resolvers for canonical-id company/workspace routes.
+ *
+ * Destination: src/lib/admin/account-routing.ts
+ *
+ * Ships as `.example`: references `Account.clientCatalogCompanyId` and the
+ * `Workspace` model, which exist only after applying
+ * prisma/schema/client_catalog.prisma.example. See docs/template/ROUTING.md.
+ *
+ * Routes address records by their client-catalog external ids; these helpers
+ * translate external → internal at the route boundary. Pages call `notFound()`
+ * when a resolver returns null.
+ */
+
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma/client";
+import { parseRouteId } from "@/lib/admin/route-ids";
+import { companyPath, workspacePath } from "@/lib/admin/company-links";
+
+// Re-export the dependency-free path builders so server callers have one import.
+export { companyPath, workspacePath };
+
+/** Resolve a company (Account) by its client-catalog companyId URL segment. */
+export async function resolveCompanyByCompanyId(
+  companyIdSegment: string,
+  select?: Record<string, boolean>,
+) {
+  const companyId = parseRouteId(companyIdSegment);
+  if (companyId === null) return null;
+  return prisma.account.findUnique({
+    where: { clientCatalogCompanyId: companyId },
+    ...(select ? { select } : {}),
+  });
+}
+
+/**
+ * Resolve a workspace by its client-catalog workspaceId URL segment, optionally
+ * scoped to a company.
+ *
+ * GUARDRAIL: `clientCatalogCompanyId` is ALWAYS selected, regardless of the
+ * caller's `select`. The scope check below reads it; if a caller-passed `select`
+ * omitted it, the field would be `undefined`, the check would fail, and the
+ * resolver would return null → a spurious notFound()/404. See docs/template/ROUTING.md.
+ */
+export async function resolveWorkspaceByWorkspaceId(
+  workspaceSegment: string,
+  opts?: { companyId?: number; select?: Record<string, boolean> },
+) {
+  const workspaceId = parseRouteId(workspaceSegment);
+  if (workspaceId === null) return null;
+
+  const select = opts?.select
+    ? { select: { ...opts.select, clientCatalogCompanyId: true } }
+    : undefined;
+
+  const workspace = await prisma.workspace.findUnique({
+    where: { clientCatalogWorkspaceId: workspaceId },
+    ...(select ? select : {}),
+  });
+  if (!workspace) return null;
+
+  // Workspace exists but does not belong to the company in the URL → 404.
+  if (
+    opts?.companyId != null &&
+    workspace.clientCatalogCompanyId !== opts.companyId
+  ) {
+    return null;
+  }
+  return workspace;
+}
+
+/** Look up a company's client-catalog companyId from its internal id. */
+export async function getCompanyCompanyId(
+  internalId: number,
+): Promise<number | null> {
+  const account = await prisma.account.findUnique({
+    where: { id: internalId },
+    select: { clientCatalogCompanyId: true },
+  });
+  return account?.clientCatalogCompanyId ?? null;
+}
+
+/**
+ * Revalidate the companyId-keyed route (and optional subpaths) from an internal
+ * accountId. Use this in server actions instead of revalidating the internal-id
+ * path, which is no longer a real route.
+ */
+export async function revalidateCompanyPaths(
+  internalId: number,
+  subpaths: string[] = [],
+): Promise<void> {
+  const companyId = await getCompanyCompanyId(internalId);
+  if (companyId == null) return;
+  const base = companyPath(companyId);
+  revalidatePath(base);
+  for (const sub of subpaths) revalidatePath(`${base}${sub}`);
+}

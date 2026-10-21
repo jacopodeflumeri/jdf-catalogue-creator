@@ -1,0 +1,57 @@
+#!/bin/bash
+set -e
+
+# Run scripts/data-sync/dump-config-to-s3.ts inside an ECS task.
+# Usage: ./run-dump-config-to-s3.sh [staging|production]
+#
+# Requires:
+#   - The Data Sync capability enabled (DataSyncIntegration in the CDK stack)
+#   - scripts/data-sync/dump-config-to-s3.ts present (copy from .example)
+#
+# To activate: drop the `.example` suffix and `chmod +x` this file.
+
+ENV="${1:-staging}"
+AWS_PROFILE="${AWS_PROFILE:-labs-power}"
+AWS_REGION="eu-central-1"
+source "$(dirname "$0")/_config.sh"
+
+CLUSTER_NAME="${APP_NAME}-${SHORT_ENV}"
+SERVICE_NAME="${APP_NAME}-${SHORT_ENV}"
+
+echo "=========================================="
+echo "  Dump config to mapp-labs-data-sync"
+echo "=========================================="
+echo "  Environment: ${ENV}"
+echo "  Cluster:     ${CLUSTER_NAME}"
+echo "=========================================="
+echo ""
+
+TASK_ARN=$(aws ecs list-tasks \
+    --cluster "${CLUSTER_NAME}" \
+    --service-name "${SERVICE_NAME}" \
+    --desired-status RUNNING \
+    --region "${AWS_REGION}" \
+    --profile "${AWS_PROFILE}" \
+    --query 'taskArns[0]' \
+    --output text)
+
+if [ "$TASK_ARN" = "None" ] || [ -z "$TASK_ARN" ]; then
+    echo "Error: No running tasks found in ${CLUSTER_NAME}/${SERVICE_NAME}"
+    exit 1
+fi
+
+echo "Task ARN: ${TASK_ARN}"
+echo ""
+
+# ECS Exec bypasses the entrypoint, so we re-export DATABASE_URL from the
+# DB_* env vars the task already has. The container needs `tsx` available
+# (it's a devDependency that the template's Dockerfile keeps in the runtime
+# image — see Dockerfile comments).
+aws ecs execute-command \
+    --cluster "${CLUSTER_NAME}" \
+    --task "${TASK_ARN}" \
+    --container App \
+    --interactive \
+    --command "sh -c 'export DATABASE_URL=\"postgresql://\${DB_USER}:\${DB_PASSWORD}@\${DB_HOST}:\${DB_PORT}/\${DB_NAME}?sslmode=require\" && npx tsx scripts/data-sync/dump-config-to-s3.ts'" \
+    --region "${AWS_REGION}" \
+    --profile "${AWS_PROFILE}"

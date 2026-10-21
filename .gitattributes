@@ -1,0 +1,22 @@
+# Lockfiles are generated artifacts. Never hand-merge them: when a retrofit or
+# upstream template merge conflicts here, take either side and regenerate with
+# `npm install`. Marking them binary stops git from producing a nonsense
+# line-by-line merge that npm would then choke on.
+package-lock.json      merge=binary linguist-generated=true
+infra/package-lock.json merge=binary linguist-generated=true
+
+# Files that are executed or parsed on Linux (inside the Docker image, on CI,
+# by Git Bash's make/sh) break with Windows line endings: a CRLF
+# docker-entrypoint.sh makes the container exit 255 before it can log anything
+# (empty CloudWatch log, ECS circuit breaker). Always check these out with LF,
+# also on Windows machines with core.autocrlf=true.
+*.sh          text eol=lf
+*.sh.example  text eol=lf
+*.py          text eol=lf
+Makefile      text eol=lf
+Dockerfile    text eol=lf
+.githooks/*   text eol=lf
+*.crt         text eol=lf
+# Prisma checksums migration.sql; a CRLF checkout on one machine would make the
+# same migration look modified to another.
+*.sql         text eol=lf

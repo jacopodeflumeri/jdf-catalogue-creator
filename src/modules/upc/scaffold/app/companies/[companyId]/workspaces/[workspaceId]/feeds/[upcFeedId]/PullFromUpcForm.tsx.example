@@ -1,0 +1,35 @@
+/**
+ * "Pull from UPC" button for a feed.
+ * Destination: src/app/admin/companies/[companyId]/workspaces/[workspaceId]/feeds/[upcFeedId]/PullFromUpcForm.tsx
+ */
+"use client";
+
+import { useState, useTransition } from "react";
+import Button from "@/components/ui/Button";
+import { pullFeedProducts } from "@/lib/actions/admin/upc-catalog-actions";
+
+export default function PullFromUpcForm({
+  feedInternalId,
+}: {
+  feedInternalId: number;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [message, setMessage] = useState<string | null>(null);
+
+  const onPull = () => {
+    setMessage(null);
+    startTransition(async () => {
+      const res = await pullFeedProducts(feedInternalId);
+      setMessage(res.message);
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      {message && <span className="text-sm text-gray-600">{message}</span>}
+      <Button onClick={onPull} disabled={isPending}>
+        {isPending ? "Pulling…" : "Pull from UPC"}
+      </Button>
+    </div>
+  );
+}

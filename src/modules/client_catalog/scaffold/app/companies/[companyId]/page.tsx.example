@@ -1,0 +1,92 @@
+/**
+ * Company detail + its workspaces.
+ * Destination: src/app/admin/companies/[companyId]/page.tsx
+ */
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { prisma } from "@/lib/prisma/client";
+import { requireAdmin } from "@/modules/auth/server";
+import {
+  resolveCompanyByCompanyId,
+  workspacePath,
+} from "@/lib/admin/account-routing";
+// Optional "View as customer" capability (docs/template/capabilities/CUSTOMER_PREVIEW.md).
+// Both render nothing while CUSTOMER_PREVIEW_ENABLED is off, and the launch
+// point is hidden for anyone below admin access level — safe to leave in.
+import { CustomerPreviewLaunch } from "@/modules/customer_preview/server";
+import { CustomerPreviewNotice } from "@/modules/customer_preview/client";
+
+export default async function CompanyPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ companyId: string }>;
+  searchParams: Promise<{ preview?: string }>;
+}) {
+  await requireAdmin();
+  const { companyId } = await params;
+  // Set by "View as customer" when a preview started here ends.
+  const { preview } = await searchParams;
+
+  const company = await resolveCompanyByCompanyId(companyId, {
+    id: true,
+    name: true,
+    clientCatalogCompanyId: true,
+  });
+  if (!company) notFound();
+
+  const workspaces = await prisma.workspace.findMany({
+    where: { clientCatalogCompanyId: company.clientCatalogCompanyId },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, clientCatalogWorkspaceId: true },
+  });
+
+  return (
+    <div>
+      <CustomerPreviewNotice status={preview} className="mb-4" />
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="mb-1 text-2xl font-semibold">
+            {company.name ?? `Company ${company.clientCatalogCompanyId}`}
+          </h1>
+          <p className="text-sm text-gray-500">
+            Company ID: {company.clientCatalogCompanyId}
+          </p>
+        </div>
+        {/* One workspace → a button; two or more → "Whole company" or
+            "<workspace> only". Ids are client-catalog ids — the ones the
+            preview's subject seam (and a real customer's session) uses. */}
+        <CustomerPreviewLaunch
+          size="sm"
+          companyId={company.clientCatalogCompanyId}
+          companyName={company.name}
+          workspaces={workspaces.map((w) => ({
+            id: w.clientCatalogWorkspaceId,
+            name: w.name ?? `Workspace ${w.clientCatalogWorkspaceId}`,
+          }))}
+        />
+      </div>
+
+      <h2 className="mb-2 text-lg font-medium">Workspaces</h2>
+      {workspaces.length === 0 ? (
+        <p className="text-sm text-gray-500">No workspaces.</p>
+      ) : (
+        <ul className="space-y-1">
+          {workspaces.map((w) => (
+            <li key={w.id}>
+              <Link
+                href={workspacePath(
+                  company.clientCatalogCompanyId,
+                  w.clientCatalogWorkspaceId,
+                )}
+                className="text-primary-600 hover:underline"
+              >
+                {w.name ?? `Workspace ${w.clientCatalogWorkspaceId}`}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,84 @@
+/**
+ * Catalog item detail (lean — raw product data; add fields your app displays).
+ * Destination: src/app/admin/companies/[companyId]/workspaces/[workspaceId]/feeds/[upcFeedId]/item/[externalId]/page.tsx
+ */
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { requireAdmin } from "@/modules/auth/server";
+import { resolveWorkspaceByWorkspaceId } from "@/lib/admin/account-routing";
+import {
+  resolveFeedByUpcFeedId,
+  resolveItemByExternalId,
+} from "@/lib/admin/feed-routing";
+import { feedPath } from "@/lib/admin/catalog-links";
+import { parseRouteId } from "@/lib/admin/route-ids";
+
+export default async function CatalogItemPage({
+  params,
+}: {
+  params: Promise<{
+    companyId: string;
+    workspaceId: string;
+    upcFeedId: string;
+    externalId: string;
+  }>;
+}) {
+  await requireAdmin();
+  const { companyId, workspaceId, upcFeedId, externalId } = await params;
+
+  const companyIdNum = parseRouteId(companyId);
+  if (companyIdNum === null) notFound();
+
+  const workspace = await resolveWorkspaceByWorkspaceId(workspaceId, {
+    companyId: companyIdNum,
+    select: { id: true, clientCatalogWorkspaceId: true },
+  });
+  if (!workspace) notFound();
+
+  const feed = await resolveFeedByUpcFeedId(upcFeedId, {
+    workspaceId: workspace.id,
+    select: { id: true, upcFeedId: true },
+  });
+  if (!feed) notFound();
+
+  const item = await resolveItemByExternalId(feed.id, externalId, {
+    id: true,
+    externalId: true,
+    productId: true,
+    name: true,
+    category: true,
+    data: true,
+    importedAt: true,
+  });
+  if (!item) notFound();
+
+  return (
+    <div>
+      <Link
+        href={feedPath(companyIdNum, workspace.clientCatalogWorkspaceId, feed.upcFeedId)}
+        className="text-sm text-primary-600 hover:underline"
+      >
+        ← Back to feed #{feed.upcFeedId}
+      </Link>
+
+      <h1 className="mb-1 mt-3 text-2xl font-semibold">
+        {item.name ?? item.externalId}
+      </h1>
+      <dl className="mb-6 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+        <dt className="text-gray-500">External ID</dt>
+        <dd className="font-mono">{item.externalId}</dd>
+        <dt className="text-gray-500">Product ID</dt>
+        <dd className="font-mono">{item.productId ?? "—"}</dd>
+        <dt className="text-gray-500">Category</dt>
+        <dd>{item.category ?? "—"}</dd>
+        <dt className="text-gray-500">Imported</dt>
+        <dd>{new Date(item.importedAt).toLocaleString()}</dd>
+      </dl>
+
+      <h2 className="mb-2 text-lg font-medium">Raw data</h2>
+      <pre className="overflow-auto rounded bg-gray-50 p-4 text-xs">
+        {JSON.stringify(item.data ?? {}, null, 2)}
+      </pre>
+    </div>
+  );
+}

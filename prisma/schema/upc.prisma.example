@@ -1,0 +1,80 @@
+// =============================================================================
+// UPC Capability — Prisma Schema Additions
+// =============================================================================
+//
+// Depends on the Client Catalog capability (the Workspace model). Apply
+// client_catalog.prisma.example first, then merge these into prisma/schema.prisma
+// and run: npx prisma migrate dev
+//
+// Route hierarchy (see docs/template/ROUTING.md + docs/template/capabilities/UPC.md):
+//   /admin/companies/[companyId]/workspaces/[workspaceId]/feeds/[upcFeedId]/item/[externalId]
+// A workspace has many feeds (keyed by the UPC feed id); a feed has many catalog
+// items (keyed by their stable UPC externalId / variantId).
+//
+
+// --- Add to the Workspace model (links the client-catalog workspace to its UPC identity) ---
+//
+//   upcCompanyId   Int?    @map("upc_company_id")    // UPC (Product Feed Service) company id
+//   upcWorkspaceId Int?    @map("upc_workspace_id")  // UPC workspace id (if distinct from client-catalog)
+//   feeds          Feed[]
+//
+//   @@index([upcCompanyId])
+//
+
+// --- New model: Feed ---
+//
+// One product feed within a workspace. `upcFeedId` is the canonical route key
+// (/feeds/[upcFeedId]) — the Product Feed Service feed id, stable across imports.
+
+model Feed {
+  id              Int              @id @default(autoincrement())
+  // Canonical route key — the UPC (Product Feed Service) feed id.
+  upcFeedId       Int              @unique @map("upc_feed_id")
+  // Owning workspace (internal FK). The feed-belongs-to-workspace scope check in
+  // resolveFeedByUpcFeedId reads workspaceId — keep it in any caller select.
+  workspaceId     Int              @map("workspace_id")
+  upcLocale       String?          @map("upc_locale")
+  feedDataType    String?          @default("COMBINED") @map("feed_data_type") // SOURCE | ENRICHED | COMBINED
+  name            String?
+  status          String           @default("active")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  productCatalogs ProductCatalog[]
+
+  @@index([workspaceId])
+  @@map("feed")
+}
+
+// --- New model: ProductCatalog (catalog item) ---
+//
+// One product variant within a feed. Uniqueness is PER FEED: the same externalId
+// can appear in different feeds. `workspaceId` is denormalized for query scope.
+// Keep this lean — add the product fields your app actually displays.
+
+model ProductCatalog {
+  id           Int       @id @default(autoincrement())
+  feedId       Int       @map("feed_id")
+  workspaceId  Int       @map("workspace_id")
+  externalId   String    @map("external_id") // UPC variantId — stable across re-imports
+  productId    String?   @map("product_id")   // UPC productId (group)
+  name         String?
+  category     String?
+  data         Json?     // Raw product attributes from the feed
+  sourceType   String?   @map("source_type")
+  rowHash      String?   @map("row_hash")     // content hash for dedup
+  importedAt   DateTime  @default(now()) @map("imported_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  feed         Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  // externalId is unique within a feed (NOT within a workspace) — the route
+  // /feeds/[upcFeedId]/item/[externalId] is stable across re-imports.
+  @@unique([feedId, externalId], name: "feedId_externalId")
+  @@index([workspaceId])
+  @@index([feedId])
+  @@index([rowHash])
+  @@map("product_catalog")
+}

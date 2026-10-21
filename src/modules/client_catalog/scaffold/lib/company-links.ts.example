@@ -1,0 +1,24 @@
+/**
+ * Dependency-free path builders for company/workspace admin routes.
+ *
+ * Destination: src/lib/admin/company-links.ts
+ *
+ * No prisma / next imports — safe to import from BOTH client and server
+ * components. The data-resolving helpers live in account-routing.ts (server
+ * only), which re-exports these for server-side callers.
+ *
+ * Routes are keyed by canonical client-catalog external ids:
+ *   company   → Account.clientCatalogCompanyId   → /admin/companies/[companyId]
+ *   workspace → Workspace.clientCatalogWorkspaceId → …/workspaces/[workspaceId]
+ */
+
+export function companyPath(companyId: number | string): string {
+  return `/admin/companies/${companyId}`;
+}
+
+export function workspacePath(
+  companyId: number | string,
+  workspaceId: number | string,
+): string {
+  return `${companyPath(companyId)}/workspaces/${workspaceId}`;
+}

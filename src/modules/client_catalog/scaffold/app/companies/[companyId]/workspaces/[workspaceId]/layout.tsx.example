@@ -1,0 +1,18 @@
+/**
+ * Pass-through layout.
+ * Destination: src/app/admin/companies/[companyId]/workspaces/[workspaceId]/layout.tsx
+ *
+ * The [workspaceId] segment has both a page.tsx index AND child routes (the UPC
+ * capability adds feeds/[upcFeedId]/item/[externalId]). A segment with children
+ * must be a layout segment so Next mounts the layout-router for the deeper
+ * routes — otherwise navigating to a child throws "invariant: global layout
+ * router not mounted". It renders children straight through (no chrome here);
+ * never gate {children} on client session state (see docs/template/ROUTING.md).
+ */
+export default function WorkspaceLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <>{children}</>;
+}

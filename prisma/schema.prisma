@@ -1,0 +1,289 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Users table - base user authentication
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String?
+  mapp      Boolean?
+  accountId Int?     @map("account")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  linkedAccount        Account?               @relation("UserLinkedAccount", fields: [accountId], references: [id], onDelete: SetNull)
+  accountUsers         AccountUser[]
+  activityLogs         AccountActivity[]
+  accountData          AccountData[]          @relation("AccountDataUser")
+  accountNotifications AccountNotifications[] @relation("NotificationUser")
+
+  @@index([accountId])
+  @@index([createdAt])
+  @@map("user")
+}
+
+// Mapp team members (admins)
+model MappTeam {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  email     String?  @unique
+  firstname String?
+  lastname  String?
+  title     String?
+  role      String?
+  location  String?
+  image     Json? // S3Image object with URL, metadata, and variants
+
+  // Access Control Fields
+  // No pending/approval step: the first Mapp user ever -> active/admin
+  // (bootstrap), everyone after -> active/viewer. "suspended"/"denied" remain
+  // for moderation. (See docs/template/PERMISSION-LEVELS.md.)
+  accessStatus String    @default("active") @map("access_status") // "active", "suspended", "denied"
+  accessLevel  String    @default("viewer") @map("access_level") // "viewer", "editor", "admin"
+  lastLoginAt  DateTime? @map("last_login_at")
+  authorizedBy Int?      @map("authorized_by")
+  authorizedAt DateTime? @map("authorized_at")
+  accessNotes  String?   @map("access_notes") // Admin notes about access decision
+
+  // Relationships
+  authorizedByMember MappTeam?         @relation("MappTeamAuthorizer", fields: [authorizedBy], references: [id], onDelete: SetNull)
+  authorizedMembers  MappTeam[]        @relation("MappTeamAuthorizer")
+  activities         AccountActivity[] @relation("ActivityMappUser")
+  auditLogs          AuditLog[]
+
+  @@index([email])
+  @@index([accessStatus])
+  @@index([accessLevel])
+  @@map("mapp_team")
+}
+
+// Accounts (companies/customers)
+model Account {
+  id          Int      @id @default(autoincrement())
+  name        String? // company name
+  companyName String?  @map("company_name") // alias field
+  sfAccountId String?  @map("sf_account_id") // Salesforce ID
+  region      String?
+  currency    String?
+  vertical    String?
+  status      String   @default("Prospect")
+  stage       String   @default("Discovery")
+  domains     Json? // array of domains
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  linkedUsers          User[]                 @relation("UserLinkedAccount")
+  accountUsers         AccountUser[]
+  accountData          AccountData[]
+  accountActivity      AccountActivity[]
+  accountNotifications AccountNotifications[]
+  companyUsers         CompanyUser[]          @relation("CompanyUserAccount")
+
+  @@index([sfAccountId])
+  @@index([status])
+  @@index([stage])
+  @@index([createdAt])
+  @@map("account")
+}
+
+// Account-User relationships (team members)
+model AccountUser {
+  id        Int      @id @default(autoincrement())
+  accountId Int      @map("account_id")
+  userId    Int      @map("user_id")
+  access    String   @default("customer") // customer, admin, mapp
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, userId])
+  @@index([userId])
+  @@index([status])
+  @@map("account_user")
+}
+
+// Flexible JSON storage for account data (modules etc.)
+model AccountData {
+  id        Int      @id @default(autoincrement())
+  accountId Int      @map("account_id")
+  userId    Int?     @map("user_id")
+  type      String // "modules", "billing", etc.
+  data      Json // flexible JSON storage
+  status    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User?   @relation("AccountDataUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, type])
+  @@map("account_data")
+}
+
+// Account activity/audit log
+model AccountActivity {
+  id         Int      @id @default(autoincrement())
+  createdAt  DateTime @default(now()) @map("created_at")
+  userId     Int      @map("user_id")
+  accountId  Int      @map("account_id")
+  type       String
+  details    String?
+  message    String?
+  linkedId   Int?     @map("linked_id") // reference to related record
+  mappUserId Int?     @map("mapp_user_id")
+
+  // Relationships
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mappUser MappTeam? @relation("ActivityMappUser", fields: [mappUserId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("account_activity")
+}
+
+// Admin audit log: who changed what, and when. Written by server actions via
+// `writeAuditLog` (src/modules/audit); read at /admin/audit-log. Distinct from
+// AccountActivity above, which records what CUSTOMERS do inside one account.
+//
+// `entityType` is a key from AUDIT_ENTITY_TYPES (src/modules/audit/entity-types.ts)
+// rather than a DB enum, so adding a type needs no migration.
+//
+// The actor is recorded twice on purpose: `mappUserId` is the joinable link and
+// goes NULL if that team member is ever deleted (SetNull — deleting a person must
+// never delete their history); `actorEmail` is a plain copy that survives it, and
+// covers SuperAdmins who have no MappTeam row at all.
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  createdAt  DateTime @default(now()) @map("created_at")
+  mappUserId Int?     @map("mapp_user_id")
+  actorEmail String?  @map("actor_email")
+  action     String // verb, snake_case: "access_updated", "created", "deleted"
+  entityType String   @map("entity_type")
+  entityId   Int?     @map("entity_id")
+  outcome    String?  @default("success") // "success" | "error"
+  message    String? // one human-readable line
+  data       Json? // structured detail, e.g. { before, after }
+
+  mappUser MappTeam? @relation(fields: [mappUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([mappUserId])
+  @@map("audit_log")
+}
+
+// Account notifications
+model AccountNotifications {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  accountId Int      @map("account_id")
+  userId    Int?     @map("user_id")
+  data      Json // flexible JSON storage
+  status    String?
+
+  // Relationships
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User?   @relation("NotificationUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@map("account_notifications")
+}
+
+// Company-Login (Keycloak / Mapp Cloud) customer identities.
+//
+// A durable record for each Mapp Cloud customer who signs in via "Company
+// Login", keyed by the mapp-cloud user id + integer client-catalog company id.
+// Stores identity + lastLogin used for spend/usage attribution that must
+// survive beyond a live session. `companyId` is the client-catalog company id
+// (string-encoded in the OIDC claim, stored here as Int).
+//
+// The link to a local `Account` is OPTIONAL and resolved at login via the
+// pluggable `resolveAccountIdForCompany(companyId)` seam — the template ships a
+// default that returns null (no company→account mapping). Apps that DO map a
+// company to a local account (e.g. via an `Account.clientCatalogCompanyId` column)
+// override that seam; the FK keeps usage attribution joinable when they do.
+model CompanyUser {
+  id          Int       @id @default(autoincrement())
+  mappUserId  String    @map("mapp_user_id") // mapp-cloud user id (claim `userId`, e.g. "19140")
+  companyId   Int       @map("company_id") // client-catalog company id
+  tenantId    String?   @map("tenant_id")
+  loginName   String?   @map("login_name") // "<companyprefix>.<username>" — display/debug only
+  email       String?
+  name        String?
+  accountId   Int?      @map("account_id") // resolved via the app's company→account seam; null when unmapped
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relationships
+  account Account? @relation("CompanyUserAccount", fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@unique([mappUserId, companyId])
+  @@index([companyId, lastLoginAt])
+  @@index([accountId])
+  @@map("company_user")
+}
+
+// Server-side half of a login session. The NextAuth session cookie is a JWT and
+// every byte of it is sent on every request, so the claims whose size grows with
+// the user's profile (roles, workspaces, LDAP groups) and the Keycloak id_token
+// live here instead; the cookie carries only this row's id (`authSessionId`).
+// Storing them in the cookie pushed users with many groups past Node's 16 KB
+// request-header limit (HTTP 431 on every page).
+//
+// One row per login, not per user: the id_token identifies ONE Keycloak SSO
+// session, so two browsers must not share it. Deleted on sign-out; `expiresAt`
+// rolls forward while the session is in use and expired rows are pruned at the
+// next login.
+model AuthSession {
+  id              String   @id @default(uuid())
+  email           String?
+  roles           Json? // string[]
+  workspaces      Json? // { workspaceId, services[] }[]
+  mappLdapGroups  Json?    @map("mapp_ldap_groups") // string[]
+  keycloakIdToken String?  @map("keycloak_id_token") // federated-logout hint; never sent to the client
+  expiresAt       DateTime @map("expires_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("auth_session")
+}
+
+// Magic Links for authentication (OPTIONAL capability — see config.magicLink)
+model MagicLink {
+  id        Int      @id @default(autoincrement())
+  email     String
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([email])
+  @@index([expiresAt])
+  @@index([used])
+  @@map("magic_link")
+}

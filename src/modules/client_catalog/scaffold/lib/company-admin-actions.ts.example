@@ -1,0 +1,96 @@
+/**
+ * Server actions for the companies/workspaces admin.
+ *
+ * Destination: src/lib/actions/admin/company-admin-actions.ts
+ *
+ * Ships as `.example`: references the post-fragment Account/Workspace models.
+ *
+ * Companies and workspaces are DISCOVERY-DRIVEN — there is no manual "add
+ * company" path. `discoverCompanies()` (src/modules/client_catalog) returns pure
+ * data from the Company Management Service; `runDiscovery` upserts it into the
+ * local Account/Workspace tables keyed by the canonical external ids.
+ */
+
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma/client";
+import { requireAdmin } from "@/modules/auth/server";
+import { discoverCompanies } from "@/modules/client_catalog";
+import logger from "@/lib/utils/logger";
+
+/** List companies (with a workspace count) for the admin list page. */
+export async function listAdminCompanies() {
+  await requireAdmin();
+  return prisma.account.findMany({
+    where: { clientCatalogCompanyId: { not: null } },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      clientCatalogCompanyId: true,
+      _count: { select: { workspaces: true } },
+    },
+  });
+}
+
+/** Discover companies + workspaces from the Client Catalog and upsert locally. */
+export async function runDiscovery(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  await requireAdmin({ requireEditorAccess: true });
+  try {
+    const discovered = await discoverCompanies();
+    let companies = 0;
+    let workspaces = 0;
+
+    for (const { company, workspaces: wss } of discovered) {
+      await prisma.account.upsert({
+        where: { clientCatalogCompanyId: company.id },
+        create: {
+          name: company.name,
+          clientCatalogCompanyId: company.id,
+          clientCatalogData: company as object,
+        },
+        update: {
+          name: company.name,
+          clientCatalogData: company as object,
+        },
+      });
+      companies++;
+
+      for (const ws of wss) {
+        await prisma.workspace.upsert({
+          where: { clientCatalogWorkspaceId: ws.id },
+          create: {
+            clientCatalogWorkspaceId: ws.id,
+            clientCatalogCompanyId: company.id,
+            name: ws.name ?? null,
+            services: (ws.services ?? null) as object,
+            metadata: ws as object,
+          },
+          update: {
+            clientCatalogCompanyId: company.id,
+            name: ws.name ?? null,
+            services: (ws.services ?? null) as object,
+            metadata: ws as object,
+          },
+        });
+        workspaces++;
+      }
+    }
+
+    revalidatePath("/admin/companies");
+    return {
+      ok: true,
+      message: `Discovery complete: ${companies} companies, ${workspaces} workspaces.`,
+    };
+  } catch (error: unknown) {
+    logger.error?.("Company discovery failed:", error);
+    return {
+      ok: false,
+      message: `Discovery failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}

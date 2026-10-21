@@ -1,0 +1,95 @@
+/**
+ * Shared helpers for the data-sync dump/restore scripts.
+ *
+ * Runs inside the ECS task via `aws ecs execute-command` (see
+ * scripts/deploy/run-{dump,restore}-config-from-s3.sh).
+ *
+ * To activate:
+ *   1. Copy this file to `_shared.ts` (drop the `.example` suffix).
+ *   2. Fill in the `CONFIG_TABLES` list with the tables you want to dump.
+ *   3. Adjust the Prisma client wiring if your app uses a different setup.
+ */
+
+import { PrismaClient } from "../../src/generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+
+// ---------------------------------------------------------------------------
+// Prisma client (Postgres-only — see docs/template/capabilities/DATA_SYNC.md for the rationale)
+// ---------------------------------------------------------------------------
+
+function stripSslMode(url: string | undefined): string | undefined {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("sslmode");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+const needsSsl =
+  process.env.DB_SSL === "true" ||
+  (process.env.DATABASE_URL || "").includes("sslmode=");
+
+export function createPrismaClient(): any {
+  const adapter = new PrismaPg({
+    connectionString: stripSslMode(process.env.DATABASE_URL),
+    ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  });
+  return new PrismaClient({ adapter }) as any;
+}
+
+export function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Required env var ${name} is not set`);
+  return v;
+}
+
+// ---------------------------------------------------------------------------
+// Tables to include in the "config" dump.
+//
+// Order matters for restore: list parent tables before their dependents.
+// The restore script wipes in reverse order and inserts in this order so
+// FK relationships line up (FK checks are disabled inside the transaction
+// via `session_replication_role = 'replica'`, but the order still matters
+// for deterministic output).
+//
+// Each entry:
+//   - model: Prisma model accessor name (camelCase, e.g. `garmentCategory`)
+//   - table: physical table name (snake_case, used in the manifest + raw SQL)
+//   - where (optional): row filter at dump time. If set, the SAME filter
+//     is used to wipe rows in the target before insert (so you don't blow
+//     away rows outside the dump's scope).
+//   - {someTag}Filtered (optional): a hint for restore-side filtering. See
+//     `restore-config-from-s3.ts` for the brand-style filter example.
+//
+// TODO: list your tables here. Examples below — DELETE THESE and add your own.
+// ---------------------------------------------------------------------------
+
+export const CONFIG_TABLES = [
+  // {
+  //   model: "taxonomyCategory",
+  //   table: "taxonomy_category",
+  // },
+  // {
+  //   model: "taxonomyEntry",
+  //   table: "taxonomy_entry",
+  // },
+  // {
+  //   model: "settingsRule",
+  //   table: "settings_rule",
+  //   // Example: dump only one subset of rule types. The same filter
+  //   // applies at wipe time on restore.
+  //   where: { ruleType: { in: ["taxonomy", "scoring"] } },
+  // },
+  // {
+  //   model: "accountRuleOverride",
+  //   table: "account_rule_override",
+  //   // Example: rows reference Account (which is NOT in the dump scope).
+  //   // The restore script filters these to accounts present in the target.
+  //   accountFiltered: true,
+  // },
+] as const;
+
+export type ConfigTable = (typeof CONFIG_TABLES)[number];

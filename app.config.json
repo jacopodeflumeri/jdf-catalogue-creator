@@ -1,0 +1,13 @@
+{
+  "appName": "catalogues-creator",
+  "displayName": "Mapp Catalogues Creator",
+  "logoPath": "",
+  "dbName": "catalogues-creator",
+  "product": "internal",
+  "team": "Global Solutions Consultants",
+  "appOwner": "jacopo.deflumeri",
+  "createdBy": "jacopo.deflumeri",
+  "managedBy": "jacopo.deflumeri",
+  "immutableDeploy": false,
+  "enabledCapabilities": ["company_login"]
+}

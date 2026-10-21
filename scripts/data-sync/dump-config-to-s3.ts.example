@@ -1,0 +1,107 @@
+/**
+ * Dump the "config" tables (whatever your app considers config — taxonomy,
+ * rules, settings, etc.) to a gzipped JSON file in the shared
+ * `mapp-labs-data-sync` S3 bucket.
+ *
+ * Runs inside the ECS task via:
+ *   aws ecs execute-command ... npx tsx scripts/data-sync/dump-config-to-s3.ts
+ *
+ * Env vars (set by the DataSyncIntegration CDK construct):
+ *   DATA_SYNC_BUCKET     — bucket name
+ *   DATA_SYNC_KEY_PREFIX — own write prefix, e.g. "config/prod/myapp/"
+ *   NEXT_PUBLIC_ENVIRONMENT — "production" | "staging" (for manifest only)
+ *
+ * To activate:
+ *   1. Copy this file to `dump-config-to-s3.ts` (drop the `.example` suffix).
+ *   2. Make sure `_shared.ts` has a non-empty CONFIG_TABLES list.
+ *   3. Customize the `sourceApp` in the manifest if you want it to differ
+ *      from the bucket prefix.
+ */
+
+import { gzipSync } from "zlib";
+
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+
+import {
+  CONFIG_TABLES,
+  createPrismaClient,
+  requireEnv,
+} from "./_shared";
+
+async function main() {
+  const bucket = requireEnv("DATA_SYNC_BUCKET");
+  const keyPrefix = requireEnv("DATA_SYNC_KEY_PREFIX");
+  const env = process.env.NEXT_PUBLIC_ENVIRONMENT ?? "unknown";
+
+  // The keyPrefix encodes the app slug — pull it back out for the manifest
+  // so consumers don't have to parse the S3 key. Format: config/{env}/{app}/
+  const appFromPrefix = keyPrefix.split("/").filter(Boolean).at(-1) ?? "unknown";
+
+  if (CONFIG_TABLES.length === 0) {
+    console.error(
+      "CONFIG_TABLES is empty. Edit scripts/data-sync/_shared.ts and list " +
+        "the tables you want to dump.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const prisma = createPrismaClient();
+  const tables: Record<string, unknown[]> = {};
+
+  console.log("Reading config tables from database...");
+  for (const def of CONFIG_TABLES) {
+    const where = "where" in def ? { where: (def as any).where } : {};
+    const rows = await prisma[def.model].findMany(where);
+    tables[def.table] = rows;
+    console.log(`  ${def.table}: ${rows.length}`);
+  }
+
+  const manifest = {
+    createdAt: new Date().toISOString(),
+    sourceEnv: env,
+    sourceApp: appFromPrefix,
+    tableCounts: Object.fromEntries(
+      Object.entries(tables).map(([k, v]) => [k, v.length]),
+    ),
+    schemaVersion: 1,
+  };
+
+  const payload = { manifest, tables };
+  const json = JSON.stringify(payload);
+  const gzipped = gzipSync(Buffer.from(json));
+
+  const timestamp = manifest.createdAt.replace(/[:.]/g, "-");
+  const key = `${keyPrefix}${timestamp}.json.gz`;
+
+  console.log("");
+  console.log(`Uploading to s3://${bucket}/${key}`);
+  console.log(
+    `Payload: ${(gzipped.length / 1024 / 1024).toFixed(2)} MB gzipped`,
+  );
+
+  const s3 = new S3Client({ region: process.env.S3_REGION ?? "eu-central-1" });
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: gzipped,
+      ContentType: "application/json",
+      ContentEncoding: "gzip",
+      Metadata: {
+        "source-env": env,
+        "source-app": appFromPrefix,
+        "created-at": manifest.createdAt,
+      },
+    }),
+  );
+
+  console.log("");
+  console.log("Done.");
+  await prisma.$disconnect();
+}
+
+main().catch((e) => {
+  console.error("Dump failed:", e);
+  process.exitCode = 1;
+});

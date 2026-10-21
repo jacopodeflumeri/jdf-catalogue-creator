@@ -1,0 +1,12 @@
+/**
+ * Companies list. Destination: src/app/admin/companies/page.tsx
+ */
+import { requireAdmin } from "@/modules/auth/server";
+import { listAdminCompanies } from "@/lib/actions/admin/company-admin-actions";
+import CompaniesClient from "./CompaniesClient";
+
+export default async function CompaniesPage() {
+  await requireAdmin();
+  const companies = await listAdminCompanies();
+  return <CompaniesClient companies={companies} />;
+}

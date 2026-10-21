@@ -1,0 +1,292 @@
+/**
+ * Restore the "config" tables from a gzipped JSON dump in the shared
+ * `mapp-labs-data-sync` S3 bucket.
+ *
+ * Runs inside the ECS task via:
+ *   aws ecs execute-command ... npx tsx scripts/data-sync/restore-config-from-s3.ts
+ *
+ * Flags:
+ *   --source=prod|staging  (default: prod)
+ *   --key=<full-s3-key>    (override: skip "find latest" lookup)
+ *   --dry-run              (download + parse + counts only, no DB writes)
+ *
+ * Behavior:
+ *   - Wipes the config tables in the target DB, then inserts rows from the
+ *     dump WITH THEIR ORIGINAL IDs preserved. This is intentional: keeping
+ *     IDs stable makes cross-env testing predictable (a row that's id=42
+ *     in prod is id=42 in staging).
+ *   - All inside one Postgres transaction with
+ *     `SET LOCAL session_replication_role = 'replica'` so FK checks are
+ *     bypassed during the swap. NOTE: this requires the DB role to have
+ *     `rds_superuser` (RDS) or `superuser` (vanilla Postgres). The default
+ *     RDS `postgres` user has `rds_superuser`.
+ *   - Per-target-row filtering (TODO below) drops rows whose soft-FK
+ *     references don't exist in the target.
+ *   - Autoincrement sequences are reset to MAX(id) so subsequent inserts
+ *     don't collide with restored IDs.
+ *
+ * To activate:
+ *   1. Copy this file to `restore-config-from-s3.ts` (drop `.example`).
+ *   2. Make sure `_shared.ts` has a non-empty CONFIG_TABLES list.
+ *   3. Fill in the TODO blocks below for per-app filtering and orphan
+ *      cleanup. The default flow is a straight wipe-and-restore; the
+ *      TODO blocks are where you adapt it to your app's FK reality.
+ */
+
+import { gunzipSync } from "zlib";
+
+import {
+  GetObjectCommand,
+  ListObjectsV2Command,
+  S3Client,
+} from "@aws-sdk/client-s3";
+
+import {
+  CONFIG_TABLES,
+  createPrismaClient,
+  requireEnv,
+} from "./_shared";
+
+// ----------------------------------------------------------------------------
+// Args
+// ----------------------------------------------------------------------------
+
+const args = process.argv.slice(2);
+const flag = (name: string, fallback?: string) => {
+  const found = args.find((a) => a.startsWith(`--${name}=`));
+  return found ? found.split("=").slice(1).join("=") : fallback;
+};
+const has = (name: string) => args.some((a) => a === `--${name}`);
+
+const SOURCE = flag("source", "prod")!;
+const EXPLICIT_KEY = flag("key");
+const DRY_RUN = has("dry-run");
+
+// ----------------------------------------------------------------------------
+// JSON revival — restore Date objects from ISO strings
+// ----------------------------------------------------------------------------
+
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+function reviveDates(_key: string, value: unknown) {
+  if (typeof value === "string" && ISO_RE.test(value)) {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return value;
+}
+
+// ----------------------------------------------------------------------------
+// S3 helpers
+// ----------------------------------------------------------------------------
+
+async function resolveLatestKey(
+  s3: S3Client,
+  bucket: string,
+  prefix: string,
+): Promise<string> {
+  const res = await s3.send(
+    new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }),
+  );
+  const dumps = (res.Contents ?? [])
+    .map((o) => o.Key)
+    .filter((k): k is string => !!k && k.endsWith(".json.gz"))
+    .sort();
+  if (dumps.length === 0) {
+    throw new Error(`No dumps found under s3://${bucket}/${prefix}`);
+  }
+  return dumps[dumps.length - 1];
+}
+
+async function readObject(
+  s3: S3Client,
+  bucket: string,
+  key: string,
+): Promise<Buffer> {
+  const res = await s3.send(
+    new GetObjectCommand({ Bucket: bucket, Key: key }),
+  );
+  const body = res.Body as any;
+  const chunks: Buffer[] = [];
+  for await (const chunk of body) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+// ----------------------------------------------------------------------------
+// Main
+// ----------------------------------------------------------------------------
+
+async function main() {
+  const bucket = requireEnv("DATA_SYNC_BUCKET");
+  const ownKeyPrefix = requireEnv("DATA_SYNC_KEY_PREFIX");
+  const s3 = new S3Client({ region: process.env.S3_REGION ?? "eu-central-1" });
+
+  // The own prefix is `config/{env}/{app}/` — swap in the source env.
+  // e.g. config/staging/myapp/ + source=prod -> config/prod/myapp/
+  const appSlug = ownKeyPrefix.split("/").filter(Boolean).at(-1)!;
+  const sourcePrefix = `config/${SOURCE}/${appSlug}/`;
+
+  const key =
+    EXPLICIT_KEY ?? (await resolveLatestKey(s3, bucket, sourcePrefix));
+
+  console.log(`Source: s3://${bucket}/${key}`);
+  console.log("Downloading...");
+  const raw = await readObject(s3, bucket, key);
+  const json = gunzipSync(raw).toString("utf-8");
+  const payload = JSON.parse(json, reviveDates) as {
+    manifest: {
+      createdAt: string;
+      sourceEnv: string;
+      sourceApp: string;
+      tableCounts: Record<string, number>;
+      schemaVersion: number;
+    };
+    tables: Record<string, any[]>;
+  };
+
+  console.log("Manifest:");
+  console.log(`  created at:    ${payload.manifest.createdAt}`);
+  console.log(`  source env:    ${payload.manifest.sourceEnv}`);
+  console.log(`  source app:    ${payload.manifest.sourceApp}`);
+  console.log(`  schemaVersion: ${payload.manifest.schemaVersion}`);
+  console.log(`  tables:`);
+  for (const [t, count] of Object.entries(payload.manifest.tableCounts)) {
+    console.log(`    ${t}: ${count}`);
+  }
+
+  if (DRY_RUN) {
+    console.log("");
+    console.log("(dry-run) Exiting before any DB writes.");
+    return;
+  }
+
+  if (CONFIG_TABLES.length === 0) {
+    console.error(
+      "CONFIG_TABLES is empty. Edit scripts/data-sync/_shared.ts and list " +
+        "the tables you want to restore.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const prisma = createPrismaClient();
+
+  console.log("");
+  console.log("Restoring into target DB (single transaction)...");
+
+  await prisma.$transaction(
+    async (tx: any) => {
+      // Disable FK checks for the duration of the swap. Requires
+      // rds_superuser on RDS (the default `postgres` user has it).
+      await tx.$executeRawUnsafe(
+        "SET LOCAL session_replication_role = 'replica'",
+      );
+      // Big restores can exceed the default statement_timeout. Adjust as
+      // needed for your dataset size.
+      await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '30min'");
+
+      // Wipe in reverse dependency order. Where a CONFIG_TABLES entry has
+      // a `where` filter, we reuse that filter at wipe time so rows
+      // outside the dump's scope are preserved.
+      for (const def of [...CONFIG_TABLES].reverse()) {
+        const where = "where" in def ? (def as any).where : {};
+        await tx[def.model].deleteMany({ where });
+      }
+
+      // ------------------------------------------------------------------
+      // TODO (filtering): if any CONFIG_TABLES rows reference entities that
+      // are NOT in the dump scope (e.g. Account, User, Brand), filter those
+      // rows here BEFORE inserting. Pattern:
+      //
+      //   const validAccountIds = new Set(
+      //     (await tx.account.findMany({ select: { id: true } })).map(
+      //       (a: any) => a.id,
+      //     ),
+      //   );
+      //   // Then per-table: rows = rows.filter(r => validAccountIds.has(r.accountId))
+      //
+      // See `accountFiltered` example in _shared.ts.example. Use the
+      // `Filtered` tag on the table def to flag which tables need this.
+      // ------------------------------------------------------------------
+
+      // Restore in dependency order.
+      for (const def of CONFIG_TABLES) {
+        const rows = payload.tables[def.table] ?? [];
+
+        const CHUNK = 1000;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          await tx[def.model].createMany({
+            data: rows.slice(i, i + CHUNK),
+            skipDuplicates: false,
+          });
+        }
+        console.log(`  ${def.table}: inserted ${rows.length}`);
+      }
+
+      // ------------------------------------------------------------------
+      // TODO (soft-FK nullouts): if dump rows have nullable FKs to entities
+      // that aren't in scope (e.g. createdBy referencing a User row that
+      // may not exist in the target), null them out here. Example:
+      //
+      //   await tx.$executeRawUnsafe(`
+      //     UPDATE my_table SET created_by = NULL
+      //     WHERE created_by IS NOT NULL
+      //       AND created_by NOT IN (SELECT id FROM users);
+      //   `);
+      // ------------------------------------------------------------------
+
+      // ------------------------------------------------------------------
+      // TODO (orphan cleanup): if the target had rows OUTSIDE the dump scope
+      // that referenced rows inside the dump (e.g. user-uploaded records
+      // tagged with taxonomy IDs that may not exist in the new dump), clean
+      // them up here. Example:
+      //
+      //   await tx.$executeRawUnsafe(`
+      //     UPDATE products SET category_id = NULL
+      //     WHERE category_id IS NOT NULL
+      //       AND category_id NOT IN (SELECT id FROM taxonomy_category);
+      //   `);
+      // ------------------------------------------------------------------
+
+      // ------------------------------------------------------------------
+      // Reset autoincrement sequences. Auto-discovers all serial columns on
+      // the restored tables — no manual list to maintain.
+      // ------------------------------------------------------------------
+      const tableNames = CONFIG_TABLES.map((d) => d.table);
+      const sequences: { table_name: string; column_name: string }[] =
+        await tx.$queryRawUnsafe(`
+          SELECT c.table_name, c.column_name
+          FROM information_schema.columns c
+          WHERE c.table_schema = 'public'
+            AND c.table_name = ANY($1::text[])
+            AND c.column_default LIKE 'nextval(%'
+        `, tableNames);
+
+      for (const { table_name, column_name } of sequences) {
+        await tx.$executeRawUnsafe(`
+          SELECT setval(
+            pg_get_serial_sequence('${table_name}', '${column_name}'),
+            COALESCE((SELECT MAX(${column_name}) FROM ${table_name}), 1)
+          )
+        `);
+      }
+      console.log(`  reset ${sequences.length} autoincrement sequence(s)`);
+    },
+    {
+      // The default 5s interactive timeout is way too short for a config
+      // restore. These match the SET LOCAL timeout above.
+      maxWait: 60_000,
+      timeout: 30 * 60 * 1000,
+    },
+  );
+
+  console.log("");
+  console.log("Done.");
+  await prisma.$disconnect();
+}
+
+main().catch((e) => {
+  console.error("Restore failed:", e);
+  process.exitCode = 1;
+});

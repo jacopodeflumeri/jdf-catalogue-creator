@@ -1,0 +1,484 @@
+"use client";
+
+/**
+ * Floating feedback widget — copy to `src/components/feedback/FeedbackWidget.tsx`
+ * and mount it once in the root layout inside your providers (see
+ * src/modules/user_feedback/scaffold/README.md).
+ *
+ * The user picks a category first. A 1–5 star rating is shown ONLY for general
+ * feedback ("Give feedback") — it is meaningless for a bug or feature request,
+ * so it is hidden and left empty for those. Reporter name/email, app name,
+ * company, and timestamp are auto-filled server-side; the user never types them.
+ */
+
+import { useState } from "react";
+
+type Category = "bug" | "feature" | "other";
+
+// Keep in sync with FEEDBACK_COMMENT_MAX_LENGTH in
+// src/modules/user_feedback/lib/config.ts (Notion caps a text block at 2000).
+const COMMENT_MAX_LENGTH = 2000;
+
+const CATEGORIES: { value: Category; label: string; emoji: string }[] = [
+  { value: "bug", label: "Report issue", emoji: "🔧" },
+  { value: "feature", label: "Request feature", emoji: "✨" },
+  { value: "other", label: "Give feedback", emoji: "💬" },
+];
+
+const COMMENT_PROMPTS: Record<Category, { label: string; placeholder: string }> = {
+  bug: {
+    label: "Help us reproduce the issue",
+    placeholder:
+      "What were you trying to do? What did you expect to happen? What happened instead?",
+  },
+  feature: {
+    label: "Tell us what you need and why",
+    placeholder:
+      "Please explain what you need and why you need it. There are often multiple ways to reach the same goal, so the more context you give us the better.",
+  },
+  other: {
+    label: "Tell us more",
+    placeholder: "Share your thoughts, suggestions or anything else on your mind…",
+  },
+};
+
+const RATING_LABELS: Record<number, string> = {
+  1: "Poor",
+  2: "Fair",
+  3: "Good",
+  4: "Great",
+  5: "Excellent",
+};
+
+export function FeedbackWidget() {
+  const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState<Category | null>(null);
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+
+  const ratingRequired = category === "other";
+  const canSubmit =
+    category !== null &&
+    comment.trim().length > 0 &&
+    (!ratingRequired || rating > 0) &&
+    status !== "loading";
+
+  const commentPrompt = category ? COMMENT_PROMPTS[category] : null;
+
+  function reset() {
+    setOpen(false);
+    setCategory(null);
+    setRating(0);
+    setHoverRating(0);
+    setComment("");
+    setStatus("idle");
+  }
+
+  async function handleSubmit() {
+    // Guard against double-submit: ignore clicks while a request is in flight.
+    if (!canSubmit || status === "loading") return;
+    setStatus("loading");
+
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category,
+          comment,
+          // Rating only applies to general feedback; null otherwise.
+          rating: ratingRequired ? rating : null,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to submit");
+      setStatus("success");
+      setTimeout(reset, 2000);
+    } catch {
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 3000);
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="feedback-trigger"
+        aria-label="Open feedback"
+      >
+        <FeedbackIcon />
+        <span>Feedback</span>
+      </button>
+
+      {open && (
+        <div className="feedback-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />
+      )}
+
+      {open && (
+        <div className="feedback-modal" role="dialog" aria-modal aria-label="Send feedback">
+          <div className="feedback-modal-header">
+            <h2>Share your feedback</h2>
+            <button onClick={() => setOpen(false)} className="feedback-close" aria-label="Close feedback">
+              <CloseIcon />
+            </button>
+          </div>
+
+          {status === "success" ? (
+            <div className="feedback-success">
+              <div className="feedback-success-icon">✓</div>
+              <p>Thanks for your feedback!</p>
+              <span>We&apos;ll review it shortly.</span>
+            </div>
+          ) : (
+            <div className="feedback-form">
+              <div className="feedback-field">
+                <label>What would you like to do?</label>
+                <div className="feedback-categories">
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.value}
+                      type="button"
+                      className={`feedback-category ${category === cat.value ? "active" : ""}`}
+                      onClick={() => setCategory(cat.value)}
+                    >
+                      <span>{cat.emoji}</span>
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {ratingRequired && (
+                <div className="feedback-field">
+                  <label>How would you rate your experience?</label>
+                  <div className="feedback-stars">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        className={`feedback-star ${star <= (hoverRating || rating) ? "active" : ""}`}
+                        onMouseEnter={() => setHoverRating(star)}
+                        onMouseLeave={() => setHoverRating(0)}
+                        onClick={() => setRating(star)}
+                        aria-label={`Rate ${star} out of 5`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                    {(hoverRating || rating) > 0 && (
+                      <span className="feedback-rating-label">
+                        {RATING_LABELS[hoverRating || rating]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="feedback-field">
+                <label htmlFor="feedback-comment">
+                  {commentPrompt?.label ?? "Details"}
+                </label>
+                <textarea
+                  id="feedback-comment"
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value.slice(0, COMMENT_MAX_LENGTH))}
+                  placeholder={commentPrompt?.placeholder ?? "Select a category above to get started…"}
+                  rows={4}
+                  maxLength={COMMENT_MAX_LENGTH}
+                  disabled={!category}
+                />
+                {category && (
+                  <span className="feedback-charcount">
+                    {comment.length} / {COMMENT_MAX_LENGTH}
+                  </span>
+                )}
+              </div>
+
+              {status === "error" && (
+                <p className="feedback-error">Something went wrong. Please try again.</p>
+              )}
+
+              <button
+                type="button"
+                className="feedback-submit"
+                onClick={handleSubmit}
+                disabled={!canSubmit}
+              >
+                {status === "loading" ? "Sending…" : "Send feedback"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <style>{STYLES}</style>
+    </>
+  );
+}
+
+function FeedbackIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+// Brand purple #8D77F7 (see docs/template/DESIGN-SYSTEM.md).
+const STYLES = `
+  .feedback-trigger {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    background: rgba(141, 119, 247, 0.1);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(141, 119, 247, 0.3);
+    border-radius: 100px;
+    color: #8D77F7;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 4px 24px rgba(141, 119, 247, 0.15);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  }
+  .feedback-trigger:hover {
+    background: rgba(141, 119, 247, 0.18);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(141, 119, 247, 0.25);
+  }
+  .feedback-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    animation: fadeIn 0.15s ease;
+  }
+  .feedback-modal {
+    position: fixed;
+    bottom: 80px;
+    right: 24px;
+    z-index: 70;
+    width: 380px;
+    background: #ffffff;
+    border: 1px solid rgba(141, 119, 247, 0.15);
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(141, 119, 247, 0.1);
+    overflow: hidden;
+    animation: slideUp 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .feedback-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 20px 0;
+  }
+  .feedback-modal-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0;
+  }
+  .feedback-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  .feedback-close:hover {
+    background: rgba(0,0,0,0.05);
+    color: #333;
+  }
+  .feedback-form {
+    padding: 16px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .feedback-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .feedback-field label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #666;
+  }
+  .feedback-stars {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .feedback-star {
+    font-size: 28px;
+    background: transparent;
+    border: none;
+    color: #ddd;
+    cursor: pointer;
+    padding: 0 2px;
+    transition: color 0.1s, transform 0.1s;
+    line-height: 1;
+  }
+  .feedback-star:hover,
+  .feedback-star.active {
+    color: #f0b429;
+  }
+  .feedback-star:hover {
+    transform: scale(1.15);
+  }
+  .feedback-rating-label {
+    font-size: 12px;
+    color: #999;
+    margin-left: 8px;
+  }
+  .feedback-categories {
+    display: flex;
+    gap: 8px;
+  }
+  .feedback-category {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 8px;
+    background: #f9f9f9;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    color: #666;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .feedback-category span {
+    font-size: 20px;
+  }
+  .feedback-category:hover {
+    background: #f0f0f0;
+    border-color: #ddd;
+    color: #333;
+  }
+  .feedback-category.active {
+    background: rgba(141, 119, 247, 0.08);
+    border-color: rgba(141, 119, 247, 0.3);
+    color: #8D77F7;
+  }
+  .feedback-form textarea {
+    background: #f9f9f9;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    color: #1a1a1a;
+    font-size: 14px;
+    padding: 12px;
+    resize: none;
+    font-family: inherit;
+    transition: border-color 0.15s;
+    outline: none;
+  }
+  .feedback-form textarea:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .feedback-form textarea::placeholder {
+    color: #bbb;
+  }
+  .feedback-form textarea:focus {
+    border-color: rgba(141, 119, 247, 0.4);
+  }
+  .feedback-charcount {
+    align-self: flex-end;
+    font-size: 11px;
+    color: #bbb;
+  }
+  .feedback-submit {
+    width: 100%;
+    padding: 12px;
+    background: #8D77F7;
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .feedback-submit:hover:not(:disabled) {
+    background: #7657e6;
+    transform: translateY(-1px);
+  }
+  .feedback-submit:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .feedback-error {
+    font-size: 13px;
+    color: #f87171;
+    margin: 0;
+    text-align: center;
+  }
+  .feedback-success {
+    padding: 32px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+  }
+  .feedback-success-icon {
+    width: 48px;
+    height: 48px;
+    background: rgba(141, 119, 247, 0.1);
+    border: 1px solid rgba(141, 119, 247, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: #8D77F7;
+  }
+  .feedback-success p {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0;
+  }
+  .feedback-success span {
+    font-size: 13px;
+    color: #999;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0 }
+    to { opacity: 1 }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(16px) scale(0.97) }
+    to { opacity: 1; transform: translateY(0) scale(1) }
+  }
+`;

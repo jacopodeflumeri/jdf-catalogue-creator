@@ -1,0 +1,102 @@
+/**
+ * Dependency-free path/href builders for the UPC feed + catalog-item routes.
+ *
+ * Destination: src/lib/admin/catalog-links.ts
+ *
+ * No prisma / next imports — safe to import from BOTH client and server
+ * components. Builds on company-links.ts (workspacePath) from the client_catalog
+ * scaffold (UPC depends on client_catalog).
+ *
+ * Route keys (canonical external ids):
+ *   company   → Account.clientCatalogCompanyId    → /admin/companies/[companyId]
+ *   workspace → Workspace.clientCatalogWorkspaceId → …/workspaces/[workspaceId]
+ *   feed      → Feed.upcFeedId                     → …/feeds/[upcFeedId]
+ *   item      → ProductCatalog.externalId          → …/item/[externalId]  (stable across re-imports)
+ */
+
+import { workspacePath } from "@/lib/admin/company-links";
+
+export { workspacePath };
+
+/** The feeds list for a workspace. */
+export function feedsPath(
+  companyId: number | string,
+  workspaceId: number | string,
+): string {
+  return `${workspacePath(companyId, workspaceId)}/feeds`;
+}
+
+/** A single feed's catalog under its workspace. */
+export function feedPath(
+  companyId: number | string,
+  workspaceId: number | string,
+  upcFeedId: number | string,
+): string {
+  return `${workspacePath(companyId, workspaceId)}/feeds/${upcFeedId}`;
+}
+
+/** A single catalog item, keyed by its stable externalId (URL-encoded). */
+export function feedItemPath(
+  companyId: number | string,
+  workspaceId: number | string,
+  upcFeedId: number | string,
+  externalId: string,
+): string {
+  return `${feedPath(companyId, workspaceId, upcFeedId)}/item/${encodeURIComponent(externalId)}`;
+}
+
+// --- Href ref builders (return null when an id is missing, so callers fall back
+// to plain text instead of a broken link). ---
+//
+// DATA RULE: any query feeding a product-display component must select the
+// canonical ids these read — clientCatalogCompanyId + clientCatalogWorkspaceId
+// (from the workspace), upcFeedId (from the feed), externalId (from the item).
+
+export type WorkspaceLinkRef = {
+  clientCatalogCompanyId?: number | null;
+  clientCatalogWorkspaceId?: number | null;
+};
+
+export type FeedLinkRef = WorkspaceLinkRef & {
+  upcFeedId?: number | null;
+};
+
+export type CatalogItemLinkRef = FeedLinkRef & {
+  externalId?: string | null;
+};
+
+export function feedHref(ref: FeedLinkRef | null | undefined): string | null {
+  if (
+    !ref ||
+    ref.clientCatalogCompanyId == null ||
+    ref.clientCatalogWorkspaceId == null ||
+    ref.upcFeedId == null
+  ) {
+    return null;
+  }
+  return feedPath(
+    ref.clientCatalogCompanyId,
+    ref.clientCatalogWorkspaceId,
+    ref.upcFeedId,
+  );
+}
+
+export function catalogItemHref(
+  ref: CatalogItemLinkRef | null | undefined,
+): string | null {
+  if (
+    !ref ||
+    ref.clientCatalogCompanyId == null ||
+    ref.clientCatalogWorkspaceId == null ||
+    ref.upcFeedId == null ||
+    !ref.externalId
+  ) {
+    return null;
+  }
+  return feedItemPath(
+    ref.clientCatalogCompanyId,
+    ref.clientCatalogWorkspaceId,
+    ref.upcFeedId,
+    ref.externalId,
+  );
+}

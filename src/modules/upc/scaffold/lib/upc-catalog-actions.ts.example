@@ -1,0 +1,146 @@
+/**
+ * Server actions to sync feeds + pull products from the Product Feed Service.
+ *
+ * Destination: src/lib/actions/admin/upc-catalog-actions.ts
+ *
+ * Uses the UPC client (@/modules/upc) for the network calls and upserts into the
+ * local Feed / ProductCatalog tables keyed by the canonical external ids.
+ * Lean by design — the template stores raw product `data`; add transform/ingest
+ * logic for your app's needs.
+ */
+
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma/client";
+import { requireAdmin } from "@/modules/auth/server";
+import { listFeeds, getProductPage } from "@/modules/upc";
+import { feedsPath, feedPath } from "@/lib/admin/catalog-links";
+import logger from "@/lib/utils/logger";
+
+type ActionResult = { ok: boolean; message: string };
+
+/** Sync the feed list for a workspace from the Product Feed Service. */
+export async function syncWorkspaceFeeds(
+  workspaceInternalId: number,
+): Promise<ActionResult> {
+  await requireAdmin({ requireEditorAccess: true });
+
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: workspaceInternalId },
+    select: {
+      id: true,
+      upcCompanyId: true,
+      clientCatalogCompanyId: true,
+      clientCatalogWorkspaceId: true,
+    },
+  });
+  if (!workspace?.upcCompanyId) {
+    return { ok: false, message: "Workspace has no upcCompanyId — set it first." };
+  }
+
+  try {
+    const feeds = await listFeeds(workspace.upcCompanyId);
+    for (const f of feeds) {
+      await prisma.feed.upsert({
+        where: { upcFeedId: f.id },
+        create: { upcFeedId: f.id, workspaceId: workspace.id, name: f.name ?? null },
+        update: { workspaceId: workspace.id, name: f.name ?? null },
+      });
+    }
+    revalidatePath(
+      feedsPath(
+        workspace.clientCatalogCompanyId,
+        workspace.clientCatalogWorkspaceId,
+      ),
+    );
+    return { ok: true, message: `Synced ${feeds.length} feed(s).` };
+  } catch (error: unknown) {
+    logger.error?.("syncWorkspaceFeeds failed:", error);
+    return {
+      ok: false,
+      message: `Feed sync failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** Pull every product for a feed into ProductCatalog (keyset pagination). */
+export async function pullFeedProducts(
+  feedInternalId: number,
+): Promise<ActionResult> {
+  await requireAdmin({ requireEditorAccess: true });
+
+  const feed = await prisma.feed.findUnique({
+    where: { id: feedInternalId },
+    select: {
+      id: true,
+      upcFeedId: true,
+      feedDataType: true,
+      workspaceId: true,
+      workspace: {
+        select: {
+          upcCompanyId: true,
+          clientCatalogCompanyId: true,
+          clientCatalogWorkspaceId: true,
+        },
+      },
+    },
+  });
+  if (!feed?.workspace?.upcCompanyId) {
+    return { ok: false, message: "Feed's workspace has no upcCompanyId." };
+  }
+
+  const companyId = feed.workspace.upcCompanyId;
+  const feedDataType = (feed.feedDataType ?? "COMBINED") as
+    | "SOURCE"
+    | "ENRICHED"
+    | "COMBINED";
+
+  try {
+    let lastId: string | undefined;
+    let pulled = 0;
+
+    for (;;) {
+      const page = await getProductPage(companyId, feed.upcFeedId, feedDataType, {
+        lastId,
+        size: 200,
+      });
+      for (const p of page.productViewPayloads) {
+        await prisma.productCatalog.upsert({
+          where: { feedId_externalId: { feedId: feed.id, externalId: p.variantId } },
+          create: {
+            feedId: feed.id,
+            workspaceId: feed.workspaceId,
+            externalId: p.variantId,
+            productId: p.productId ?? null,
+            data: p.data as object,
+            importedAt: new Date(),
+          },
+          update: {
+            productId: p.productId ?? null,
+            data: p.data as object,
+            importedAt: new Date(),
+          },
+        });
+        pulled++;
+      }
+      if (!page.nextPageExists || !page.lastId) break;
+      lastId = page.lastId;
+    }
+
+    revalidatePath(
+      feedPath(
+        feed.workspace.clientCatalogCompanyId,
+        feed.workspace.clientCatalogWorkspaceId,
+        feed.upcFeedId,
+      ),
+    );
+    return { ok: true, message: `Pulled ${pulled} product(s).` };
+  } catch (error: unknown) {
+    logger.error?.("pullFeedProducts failed:", error);
+    return {
+      ok: false,
+      message: `Pull failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}

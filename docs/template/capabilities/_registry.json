@@ -1,0 +1,356 @@
+{
+  "version": "1.0",
+  "capabilities": [
+    {
+      "id": "audit_log",
+      "name": "Audit Log",
+      "description": "Admin audit log: who changed what, and when. Server actions call writeAuditLog (src/modules/audit); admins read it at /admin/audit-log, linked from Settings. Mapp Team access changes are recorded out of the box. Also covers the older per-account customer activity tracking (page visits, custom events). Always included in the template.",
+      "type": "standard",
+      "requiredEnvVars": [],
+      "optionalEnvVars": [],
+      "prismaChanges": [],
+      "dependencies": [],
+      "moduleDir": "src/modules/audit",
+      "serviceFiles": [
+        "src/modules/audit/write.ts",
+        "src/modules/audit/entity-types.ts",
+        "src/modules/audit/actor.ts",
+        "src/lib/prisma/services/audit-log.ts",
+        "src/app/admin/audit-log/page.tsx",
+        "src/app/admin/audit-log/AuditLogClient.tsx",
+        "src/lib/prisma/services/account-activity.ts",
+        "src/lib/actions/admin/activity-actions.ts",
+        "src/app/api/account/activity-logs/route.ts",
+        "src/components/account/PageActivityLogger.tsx"
+      ],
+      "docFile": "docs/template/capabilities/AUDIT_LOG.md"
+    },
+    {
+      "id": "client_catalog",
+      "name": "Client Catalog",
+      "description": "Discover companies and workspaces from Mapp's Company Management Service (GUM). Uses V2 API. Authenticates via the shared internal-API credential (Keycloak realm s2s, INTERNAL_API_*), with Basic Auth as a QA-only fallback. Companies map to Accounts, workspaces serve multiple products via services array (INTELLIGENCE, ST, ENGAGE, FASHION).",
+      "type": "optional",
+      "requiredEnvVars": [
+        "CLIENT_CATALOG_BASE_URL"
+      ],
+      "optionalEnvVars": [
+        "INTERNAL_API_TOKEN_URL",
+        "INTERNAL_API_CLIENT_ID",
+        "INTERNAL_API_CLIENT_SECRET",
+        "CLIENT_CATALOG_BASIC_USERNAME",
+        "CLIENT_CATALOG_BASIC_PASSWORD"
+      ],
+      "envVarSources": {
+        "_note": "Do not invent these values and do not ask the app owner for them. THE SHARED SSM NAMESPACE IS PER-ENVIRONMENT: /mapp-labs for production, /mapp-labs-stg for staging (/mapp-labs-<shortEnv> otherwise). A staging app that reads /mapp-labs/* silently talks to PRODUCTION — it works, so the mistake is invisible. The s2s client id is 'mapp-labs' in both, but the SECRET differs per realm: a production secret returns unauthorized_client against INT. Read from account 936190502406, eu-central-1, profile labs-power. See docs/template/INTERNAL-API.md. CLIENT_CATALOG_BASE_URL is likewise PER-ENVIRONMENT and is NOT a constant — it must come from the same environment as the credential above or the token is rejected.",
+        "CLIENT_CATALOG_BASE_URL": "per-environment — staging/local: https://company-management-service.k8s-int-01.nbg.webtrekk.com/gum-service/api | production: https://company-management-service.k8s-prod-01.nbg.webtrekk.com/gum-service/api (source of truth: ssm:/mapp-labs[-stg]/catalog/cms-base-url)",
+        "INTERNAL_API_TOKEN_URL": "ssm:/mapp-labs[-stg]/internal-api/token-url",
+        "INTERNAL_API_CLIENT_ID": "ssm:/mapp-labs[-stg]/internal-api/client-id",
+        "INTERNAL_API_CLIENT_SECRET": "ssm:/mapp-labs[-stg]/internal-api/client-secret"
+      },
+      "prismaChanges": [
+        "Add clientCatalogCompanyId (Int @unique — canonical route key; nullable only in non-customer/hybrid builds), salesforceId (String?), clientCatalogData (Json?), and workspaces relation to Account model",
+        "Add Workspace model: clientCatalogWorkspaceId (Int @unique, route key), clientCatalogCompanyId (Int, scope + relation key), name, tenantId, systemId, dashboardSystemId, services (Json), metadata (Json)"
+      ],
+      "dependencies": [],
+      "moduleDir": "src/modules/client_catalog",
+      "schemaFragment": "prisma/schema/client_catalog.prisma.example",
+      "swaggerUrl": "http://company-management-service.k8s-int-01.nbg.webtrekk.com/gum-service/api/swagger-ui/index.html",
+      "openapiSpecUrl": "http://company-management-service.k8s-int-01.nbg.webtrekk.com/gum-service/api/v3/api-docs",
+      "docFile": "docs/template/capabilities/CLIENT_CATALOG.md"
+    },
+    {
+      "id": "upc",
+      "name": "UPC (Unified Product Catalog)",
+      "description": "Access product feeds from Mapp's Product Feed Service. List feeds, stream products with keyset pagination, get feed-to-workspace mappings. Authenticates via the shared internal-API credential (Keycloak realm s2s, INTERNAL_API_*).",
+      "type": "optional",
+      "requiredEnvVars": [
+        "UPC_API_BASE_URL",
+        "INTERNAL_API_TOKEN_URL",
+        "INTERNAL_API_CLIENT_ID",
+        "INTERNAL_API_CLIENT_SECRET"
+      ],
+      "optionalEnvVars": [],
+      "envVarSources": {
+        "_note": "The INTERNAL_API_* credential is shared with client_catalog and every other internal Mapp service — read it from shared SSM, do not create a UPC-specific OAuth trio. THE SHARED SSM NAMESPACE IS PER-ENVIRONMENT: /mapp-labs for production, /mapp-labs-stg for staging (/mapp-labs-<shortEnv> otherwise). A staging app that reads /mapp-labs/* silently talks to PRODUCTION — it works, so the mistake is invisible. The s2s client id is 'mapp-labs' in both, but the SECRET differs per realm: a production secret returns unauthorized_client against INT. Read from account 936190502406, eu-central-1, profile labs-power. See docs/template/INTERNAL-API.md. UPC_API_BASE_URL has no shared SSM parameter yet; ask the labs-platform team, and make sure the URL you are given is for the same environment as the credential.",
+        "INTERNAL_API_TOKEN_URL": "ssm:/mapp-labs[-stg]/internal-api/token-url",
+        "INTERNAL_API_CLIENT_ID": "ssm:/mapp-labs[-stg]/internal-api/client-id",
+        "INTERNAL_API_CLIENT_SECRET": "ssm:/mapp-labs[-stg]/internal-api/client-secret"
+      },
+      "prismaChanges": [
+        "Add upcCompanyId / upcWorkspaceId + feeds relation to the Workspace model (from client_catalog)",
+        "Add Feed model (upcFeedId @unique = route key, workspaceId FK, feedDataType, locale)",
+        "Add ProductCatalog model (feedId FK, externalId, @@unique([feedId, externalId]) — items unique per feed)"
+      ],
+      "dependencies": [
+        "client_catalog"
+      ],
+      "moduleDir": "src/modules/upc",
+      "schemaFragment": "prisma/schema/upc.prisma.example",
+      "swaggerUrl": "http://product-feed-service.ingress.int.k8s.muc.domeus.com:8080/swagger-ui/index.html",
+      "openapiSpecUrl": "http://product-feed-service.ingress.int.k8s.muc.domeus.com:8080/productfeed-api-docs/internal",
+      "docFile": "docs/template/capabilities/UPC.md"
+    },
+    {
+      "id": "ftl",
+      "name": "Fashion Trends Lab (FTL)",
+      "description": "Access taxonomy, trends, outfit rules, shape rules, and color rules from the Labs Trends API. Provides Swagger UI and OpenAPI spec.",
+      "type": "optional",
+      "requiredEnvVars": [
+        "FTL_API_BASE_URL",
+        "FTL_API_KEY"
+      ],
+      "optionalEnvVars": [],
+      "prismaChanges": [],
+      "dependencies": [],
+      "moduleDir": null,
+      "swaggerUrl": "/api/v1/docs",
+      "openapiSpecUrl": "/api/v1/docs/spec",
+      "docFile": "docs/template/capabilities/FTL.md"
+    },
+    {
+      "id": "public_api",
+      "name": "Public API",
+      "description": "Expose your app's data via a versioned REST API with API key auth, Swagger UI, OpenAPI spec generation, pagination, CORS, and caching.",
+      "type": "optional",
+      "requiredEnvVars": [],
+      "optionalEnvVars": [],
+      "prismaChanges": [
+        "Add ApiKey model with account scoping, environment-based key format, expiry, and usage tracking"
+      ],
+      "dependencies": [],
+      "moduleDir": "src/modules/public_api",
+      "schemaFragment": "prisma/schema/public_api.prisma.example",
+      "docFile": "docs/template/capabilities/PUBLIC_API.md"
+    },
+    {
+      "id": "llm",
+      "name": "LLM (LiteLLM Proxy)",
+      "description": "Make LLM calls (OpenAI, Anthropic) through the shared LiteLLM proxy with automatic billing attribution, spend tracking, and customer attribution.",
+      "type": "optional",
+      "requiredEnvVars": [
+        "LITELLM_API_KEY",
+        "LITELLM_BASE_URL",
+        "APP_PRODUCT"
+      ],
+      "optionalEnvVars": [],
+      "prismaChanges": [],
+      "dependencies": [],
+      "moduleDir": "src/modules/llm",
+      "docFile": "docs/template/capabilities/LLM.md"
+    },
+    {
+      "id": "company_login",
+      "name": "Company Login (Keycloak / Mapp Cloud)",
+      "description": "Keycloak-brokered auth with a company-context customer path. One Keycloak provider, two IdP hints: 'Mapp Entra ID' -> internal Mapp admins, 'Company Login' (mapp-cloud-company) -> Mapp Cloud customers whose session is enriched on login with companyId / tenantId / workspaces[].services and persisted to a CompanyUser row for durable usage attribution. Built into the template auth module; the admin Company Users views show for apps that configure KEYCLOAK_COMPANY_IDP_HINT. App-specific behavior is injected via two seams: resolveAccountIdForCompany(companyId) (company->local Account mapping, template default returns null) and the CustomerEligibilityPolicy (entitlement gate, template default allow-all).",
+      "type": "standard",
+      "requiredEnvVars": [],
+      "optionalEnvVars": [
+        "KEYCLOAK_ENABLED",
+        "KEYCLOAK_ISSUER",
+        "KEYCLOAK_CLIENT_ID",
+        "KEYCLOAK_CLIENT_SECRET",
+        "KEYCLOAK_IDP_HINT",
+        "KEYCLOAK_COMPANY_IDP_HINT",
+        "KEYCLOAK_CA_PEM",
+        "KEYCLOAK_TLS_INSECURE",
+        "DEV_AUTH_ENABLED",
+        "AUTH_DEBUG_ENABLED"
+      ],
+      "prismaChanges": [
+        "Add CompanyUser model (mappUserId + companyId unique, optional accountId FK onDelete SetNull) — migration 20260610120000_company_login_and_access_model",
+        "MappTeam.accessStatus default changed pending -> active (pending/approval workflow removed)",
+        "Functional index mapp_team(lower(email)) for the per-request auth lookup (NOT representable in schema.prisma — see drift caveat in the migration)"
+      ],
+      "seams": [
+        "src/modules/auth/server/company-account-resolver.ts — resolveAccountIdForCompany(companyId), default returns null; override per app",
+        "src/modules/auth/server/customer-eligibility.ts — customerEligibilityPolicy, default allow-all; override per app"
+      ],
+      "dependencies": [],
+      "moduleDir": "src/modules/auth",
+      "docFile": "docs/template/capabilities/COMPANY_LOGIN.md"
+    },
+    {
+      "id": "dev_login",
+      "name": "Dev Login Bypass",
+      "description": "Local-only mock IdP so developers can sign in WITHOUT AWS or Keycloak. The /auth/dev page lets you pick admin or company-customer and runs the REAL signIn hydration + eligibility code (only the identity is mocked). DOUBLE-GATED: honored only when DEV_AUTH_ENABLED=true AND NODE_ENV!=production; the route 404s in production. Useful for every app (internal-only too).",
+      "type": "standard",
+      "requiredEnvVars": [],
+      "optionalEnvVars": [
+        "DEV_AUTH_ENABLED"
+      ],
+      "prismaChanges": [],
+      "dependencies": [],
+      "moduleDir": "src/modules/auth",
+      "docFile": "docs/template/capabilities/DEV_LOGIN.md"
+    },
+    {
+      "id": "keycloak_api_auth",
+      "name": "Keycloak API Token Auth",
+      "description": "Accept Keycloak-issued OAuth2 bearer tokens on your API routes (machine-to-machine / SSO-token callers), validated against the realm JWKS. Provides withKeycloak (bearer-only) and withHybridAuth (NextAuth admin session OR bearer) route wrappers, plus a /api/health-keycloak probe. Originated from CONNECT-1446; ships in the template auth module. Requires KEYCLOAK_ISSUER.",
+      "type": "optional",
+      "requiredEnvVars": [
+        "KEYCLOAK_ISSUER"
+      ],
+      "optionalEnvVars": [],
+      "prismaChanges": [],
+      "dependencies": [],
+      "moduleDir": "src/modules/auth",
+      "serviceFiles": [
+        "src/modules/auth/server/keycloak-validator.ts",
+        "src/modules/auth/server/with-keycloak.ts",
+        "src/modules/auth/server/with-hybrid-auth.ts",
+        "src/app/api/health-keycloak/route.ts"
+      ],
+      "docFile": "docs/template/capabilities/KEYCLOAK_API_AUTH.md"
+    },
+    {
+      "id": "customer_preview",
+      "name": "Customer Preview (View as customer)",
+      "description": "An admin-level Mapp user previews a company's customer-facing /account pages exactly as that company's Company-Login customers see them: read-only, 30 minutes, bound to the admin, audited (customer_preview_start / customer_preview_end on entity type company). Optionally narrowed to one workspace. A signed cookie makes requireCustomer return a synthesized customer session, so eligibility, company context and every customer page run unchanged. Launch points on /admin/company-users and the client_catalog Companies scaffold. Off by default (CUSTOMER_PREVIEW_ENABLED). Use when admins/support need to see what a customer sees, check onboarding/eligibility, or demo a customer's view.",
+      "type": "optional",
+      "requiredEnvVars": [
+        "CUSTOMER_PREVIEW_ENABLED"
+      ],
+      "optionalEnvVars": [
+        "CUSTOMER_PREVIEW_SERVICES"
+      ],
+      "envVarSources": {
+        "_note": "No secrets and nothing in SSM: CUSTOMER_PREVIEW_ENABLED=true turns it on; CUSTOMER_PREVIEW_SERVICES is the comma-separated list of workspace service codes your customerEligibilityPolicy checks (Keycloak claim codes, e.g. what /auth/dev's 'Workspace services' field sends) — leave empty only with the template's allow-all policy. The token is signed with the existing NEXTAUTH_SECRET. For AWS deploys add both to the task definition environment (infra/lib/stack.ts) like any other non-secret flag."
+      },
+      "prismaChanges": [],
+      "dependencies": [
+        "company_login"
+      ],
+      "recommended": [
+        "client_catalog"
+      ],
+      "moduleDir": "src/modules/customer_preview",
+      "seams": [
+        "src/modules/customer_preview/config/subject.ts — resolvePreviewSubject(companyId) → { companyId, accountId, name, workspaces[{id,name,services?}], services } | null; default reads the client_catalog (when CLIENT_CATALOG_BASE_URL is set), else a company_user stub with no workspaces. Override to read local tables (the header shows the client_catalog-scaffold version). accountId must equal resolveAccountIdForCompany(companyId)."
+      ],
+      "serviceFiles": [
+        "src/modules/customer_preview/server/resolve.ts",
+        "src/modules/customer_preview/server/actions.ts",
+        "src/modules/customer_preview/server/end-route.ts",
+        "src/modules/customer_preview/lib/guard.ts",
+        "src/modules/auth/server/require-auth.ts",
+        "src/app/admin/customer-preview/end/route.ts"
+      ],
+      "securityNotes": [
+        "Read-only rule: EVERY customer mutation (server action, route handler, anything that writes on a customer's behalf) calls assertNotPreview(session) — or checks isPreviewSession(session) and returns its own error — before writing. requireCustomer additionally refuses any server-action request during a preview unless the action passes { readOnly: true }; never pass readOnly on an action that writes.",
+        "Only admin access level or SuperAdmin (active, passing requireAdmin's IP / superadmin-only checks) may start or keep a preview; the cookie is bound to the admin's email and re-checked on every request.",
+        "The narrowed workspace list only narrows: it is intersected with the company's current workspaces on every request, and the start action refuses (never drops or coerces) ids that are not the company's.",
+        "During a preview the browser's useSession() is still the ADMIN's: customer layouts and nav must decide from the server session. Customer API routes (/api/account/*) do not get the overlay."
+      ],
+      "docFile": "docs/template/capabilities/CUSTOMER_PREVIEW.md"
+    },
+    {
+      "id": "data_sync",
+      "name": "Data Sync",
+      "description": "Dump admin-editable config (taxonomy, rules, settings) from one environment to S3 and restore it in another. Purpose-built for getting prod data into staging for realistic testing — not a general-purpose S3 capability. Symmetric per-env reads, per-app prefix isolation.",
+      "type": "optional",
+      "requiredEnvVars": [],
+      "optionalEnvVars": [],
+      "prismaChanges": [],
+      "infraChanges": [
+        "Instantiate DataSyncIntegration in infra/lib/stack.ts after the task role is created, passing { taskRole, appSlug: config.appName, envSlug }",
+        "Translate config.envName to envSlug at the call site: 'production' -> 'prod', 'staging' -> 'staging' (note: NOT the template's usual 'stg' shortening)",
+        "Inject DATA_SYNC_BUCKET and DATA_SYNC_KEY_PREFIX into the container environment (values from the construct's bucketName and keyPrefix properties)"
+      ],
+      "scriptsToCopy": [
+        "scripts/data-sync/_shared.ts.example -> scripts/data-sync/_shared.ts (fill in CONFIG_TABLES)",
+        "scripts/data-sync/dump-config-to-s3.ts.example -> scripts/data-sync/dump-config-to-s3.ts",
+        "scripts/data-sync/restore-config-from-s3.ts.example -> scripts/data-sync/restore-config-from-s3.ts (fill in per-app FK filter / nullout / orphan-cleanup TODOs)",
+        "scripts/deploy/run-dump-config-to-s3.sh.example -> scripts/deploy/run-dump-config-to-s3.sh (chmod +x)",
+        "scripts/deploy/run-restore-config-from-s3.sh.example -> scripts/deploy/run-restore-config-from-s3.sh (chmod +x)"
+      ],
+      "dependencies": [],
+      "moduleDir": null,
+      "docFile": "docs/template/capabilities/DATA_SYNC.md",
+      "constructFile": "infra/lib/constructs/data-sync-integration.ts"
+    },
+    {
+      "id": "s3_storage",
+      "name": "S3 Storage (images & files)",
+      "description": "Upload, process and serve images and files from a per-app S3 bucket (WebP conversion, JPEG fallback, size variants, presigned URLs). Already wired into the template's admin UI (profile images, access tables), so it is standard rather than opt-in. Access is decided by a declared prefix policy in src/modules/s3_images/config/prefixes.ts: public/ is anonymous-readable and admin-write, content/ and temp/ are authenticated, mapp-team/ is admin-write. Per-app AND per-env bucket isolation is enforced by IAM, unlike the sftp capability.",
+      "type": "standard",
+      "requiredEnvVars": [
+        "S3_REGION",
+        "S3_BUCKET_NAME"
+      ],
+      "optionalEnvVars": [
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "S3_MAX_FILE_SIZE",
+        "CLOUDFRONT_DOMAIN"
+      ],
+      "envVarSources": {
+        "_note": "S3_BUCKET_NAME is mapp-labs-{appName}-{staging|prod} and is injected into the container by CDK (infra/lib/stack.ts) — you only set it in .env for local development. S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY are local-only; in ECS the task role supplies credentials. The bucket itself is created by hand with `aws s3 mb` (docs/template/DEPLOYMENT.md), not by CDK."
+      },
+      "prismaChanges": [],
+      "dependencies": [],
+      "moduleDir": "src/modules/s3_images",
+      "seams": [
+        "src/modules/s3_images/config/prefixes.ts — S3_PREFIXES declares read/write access level per key prefix; add a prefix here rather than special-casing a route"
+      ],
+      "securityNotes": [
+        "Access control lives ONLY in config/prefixes.ts. A new route serving S3 objects must call authorizeS3Read() from server/authorize.ts — do not re-derive rules inline, which is how /api/images and /api/files came to disagree (images served content/ anonymously while files required a session for the same prefix).",
+        "S3ImageService.getPublicUrl() returns a DIRECT S3 or CloudFront URL that bypasses the app entirely, and it is stored on the S3Image record. It fails closed only because the bucket blocks public access — verify with `aws s3api get-public-access-block --bucket mapp-labs-{appName}-{env}`; all four settings must be true.",
+        "Neither /api/images/[...path] nor /api/files/[...path] is in the middleware matcher; the in-route authorization is the only gate.",
+        "Never cast the `path` upload field — use parsePathName(). Casting it previously produced keys literally beginning \"undefined\"."
+      ],
+      "docFile": "docs/template/capabilities/S3_STORAGE.md"
+    },
+    {
+      "id": "sftp",
+      "name": "SFTP",
+      "description": "File exchange with ONE external SFTP endpoint via an app-owned service account, for counterparties that only speak SFTP (customer feed drops, partner exports). All access is confined to a per-app directory ({SFTP_ROOT_PATH}/{appName}), mirroring data_sync's per-app S3 prefix isolation — but enforced in code, not by IAM, so a server-side chroot of the service account is the real boundary. Host key is pinned. Not a general file store: prefer S3 / data_sync when you control both ends.",
+      "type": "optional",
+      "requiredEnvVars": [
+        "SFTP_HOST",
+        "SFTP_USERNAME",
+        "SFTP_HOST_FINGERPRINT"
+      ],
+      "optionalEnvVars": [
+        "SFTP_PORT",
+        "SFTP_PASSWORD",
+        "SFTP_PRIVATE_KEY",
+        "SFTP_PASSPHRASE",
+        "SFTP_ROOT_PATH",
+        "SFTP_ALLOW_UNKNOWN_HOST_KEY",
+        "SFTP_MAX_FILE_BYTES",
+        "SFTP_DISABLE_APP_PREFIX"
+      ],
+      "envVarSources": {
+        "_note": "There is no shared Mapp SFTP endpoint — these are per-app, per-counterparty values. Ask the app owner or the team operating the remote host; do not invent them. SFTP_HOST_FINGERPRINT is obtained, not assigned: `ssh-keyscan -t ed25519 $SFTP_HOST | ssh-keygen -lf -`. One credential must be supplied: SFTP_PASSWORD or SFTP_PRIVATE_KEY."
+      },
+      "prismaChanges": [],
+      "dependencies": [],
+      "moduleDir": "src/modules/sftp",
+      "seams": [
+        "src/modules/sftp/lib/policy.ts — sftpPolicy (allowWrites, allowedUploadExtensions, maxFileBytes); template default allows reads and writes with a data-interchange extension allowlist and a 25MB cap"
+      ],
+      "securityNotes": [
+        "Per-app confinement is enforced in code (src/modules/sftp/lib/paths.ts), NOT by IAM as in data_sync. Chroot the SFTP service account to the app's directory — that is the real boundary.",
+        "Every export of src/modules/sftp/lib/actions.ts is a public POST endpoint via 'use server', regardless of whether any component references it. Every one must start with an auth guard.",
+        "Do not add a customer-facing action by relaxing the admin guard: the service account's read scope is the app's, so any caller reaching an ungated action inherits all of it."
+      ],
+      "docFile": "docs/template/capabilities/SFTP.md"
+    },
+    {
+      "id": "user_feedback",
+      "name": "User Feedback",
+      "description": "In-app feedback widget for authenticated users. Writes each entry (rating, comment, category) straight to a shared Notion 'App Feedback' database, with reporter identity, app name, responsible person (app.config.json createdBy), and company auto-filled. No Prisma model — Notion is the system of record. No LLM in the app: a centralized Notion agent handles triage/categorization/digest out of band.",
+      "type": "optional",
+      "requiredEnvVars": [
+        "NOTION_API_KEY",
+        "NOTION_FEEDBACK_DATABASE_ID"
+      ],
+      "optionalEnvVars": [],
+      "prismaChanges": [],
+      "dependencies": [],
+      "moduleDir": "src/modules/user_feedback",
+      "docFile": "docs/template/capabilities/USER_FEEDBACK.md"
+    }
+  ]
+}

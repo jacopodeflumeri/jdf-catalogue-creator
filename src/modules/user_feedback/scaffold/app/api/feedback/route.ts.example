@@ -1,0 +1,62 @@
+/**
+ * POST /api/feedback — copy to `src/app/api/feedback/route.ts`.
+ *
+ * Any authenticated user (admin or company customer) may submit. Reporter
+ * identity, app name, responsible person, company, and timestamp are all
+ * auto-filled; the client only sends { category, comment, rating }.
+ *
+ * No LLM is called here. The row is written to Notion as "pending"; a
+ * centralized Notion agent does triage/categorization/digest out of band.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getAdminSession,
+  getCustomerSession,
+  getUserDisplayName,
+  getUserEmail,
+  resolveCompanyContext,
+} from "@/modules/auth/server";
+import { submitFeedback, FeedbackValidationError } from "@/modules/user_feedback";
+import { logger } from "@/lib/utils/logger";
+
+export async function POST(req: NextRequest) {
+  // Accept either an admin or a company-customer session.
+  const session = (await getAdminSession()) ?? (await getCustomerSession());
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: { category?: string; comment?: string; rating?: number };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // Company/account name for company-context customers (empty for internal users).
+  let company: string | null = null;
+  try {
+    const ctx = await resolveCompanyContext(session);
+    company = ctx.accountName ?? ctx.companyId ?? null;
+  } catch {
+    company = null;
+  }
+
+  try {
+    await submitFeedback({
+      category: body.category as "bug" | "feature" | "other",
+      comment: typeof body.comment === "string" ? body.comment : "",
+      rating: typeof body.rating === "number" ? body.rating : null,
+      userName: getUserDisplayName(session),
+      userEmail: getUserEmail(session) ?? "",
+      company,
+    });
+    return NextResponse.json({ success: true }, { status: 201 });
+  } catch (err) {
+    if (err instanceof FeedbackValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    logger.error("[user_feedback] Failed to submit feedback:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

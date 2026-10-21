@@ -1,0 +1,123 @@
+/**
+ * Feed detail + paginated catalog item list.
+ * Destination: src/app/admin/companies/[companyId]/workspaces/[workspaceId]/feeds/[upcFeedId]/page.tsx
+ */
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { prisma } from "@/lib/prisma/client";
+import { requireAdmin } from "@/modules/auth/server";
+import { resolveWorkspaceByWorkspaceId } from "@/lib/admin/account-routing";
+import { resolveFeedByUpcFeedId } from "@/lib/admin/feed-routing";
+import { feedItemPath } from "@/lib/admin/catalog-links";
+import { parseRouteId } from "@/lib/admin/route-ids";
+import PullFromUpcForm from "./PullFromUpcForm";
+
+const PAGE_SIZE = 100;
+
+export default async function FeedCatalogPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ companyId: string; workspaceId: string; upcFeedId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await requireAdmin();
+  const { companyId, workspaceId, upcFeedId } = await params;
+
+  const companyIdNum = parseRouteId(companyId);
+  if (companyIdNum === null) notFound();
+
+  const workspace = await resolveWorkspaceByWorkspaceId(workspaceId, {
+    companyId: companyIdNum,
+    select: { id: true, name: true, clientCatalogWorkspaceId: true },
+  });
+  if (!workspace) notFound();
+
+  const feed = await resolveFeedByUpcFeedId(upcFeedId, {
+    workspaceId: workspace.id,
+    select: { id: true, upcFeedId: true, feedDataType: true },
+  });
+  if (!feed) notFound();
+
+  const sp = await searchParams;
+  const page = Math.max(1, parseRouteId(typeof sp.page === "string" ? sp.page : "1") ?? 1);
+  const skip = (page - 1) * PAGE_SIZE;
+
+  const items = await prisma.productCatalog.findMany({
+    where: { feedId: feed.id },
+    orderBy: [{ importedAt: "desc" }, { id: "desc" }],
+    select: { id: true, externalId: true, name: true, category: true, importedAt: true },
+    skip,
+    take: PAGE_SIZE,
+  });
+  const total = await prisma.productCatalog.count({ where: { feedId: feed.id } });
+  const hasNext = skip + items.length < total;
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">
+          {workspace.name ?? `Workspace ${workspace.clientCatalogWorkspaceId}`} — Feed #{feed.upcFeedId}
+        </h1>
+        <PullFromUpcForm feedInternalId={feed.id} />
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-sm text-gray-500">
+          No products yet. Use “Pull from UPC” to import this feed.
+        </p>
+      ) : (
+        <>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left">
+                <th className="py-2">External ID</th>
+                <th className="py-2">Name</th>
+                <th className="py-2">Category</th>
+                <th className="py-2">Imported</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((p) => (
+                <tr key={p.id} className="border-b">
+                  <td className="py-2">
+                    <Link
+                      href={feedItemPath(
+                        companyIdNum,
+                        workspace.clientCatalogWorkspaceId,
+                        feed.upcFeedId,
+                        p.externalId,
+                      )}
+                      className="text-primary-600 hover:underline"
+                    >
+                      {p.externalId}
+                    </Link>
+                  </td>
+                  <td className="py-2">{p.name ?? "—"}</td>
+                  <td className="py-2">{p.category ?? "—"}</td>
+                  <td className="py-2">{new Date(p.importedAt).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="mt-4 flex items-center gap-4 text-sm">
+            {page > 1 && (
+              <Link className="text-primary-600 hover:underline" href={`?page=${page - 1}`}>
+                ← Prev
+              </Link>
+            )}
+            <span className="text-gray-500">
+              Page {page} · {total} item(s)
+            </span>
+            {hasNext && (
+              <Link className="text-primary-600 hover:underline" href={`?page=${page + 1}`}>
+                Next →
+              </Link>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

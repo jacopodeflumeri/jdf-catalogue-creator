@@ -1,0 +1,21 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+infra
+.vscode
+.github
+coverage
+logs
+*.md
+!README.md
+# Not needed in the image (the build only uses src/, prisma/, public/,
+# scripts/, certs/ and root config files)
+tmp
+.claude
+private
+test
+docs

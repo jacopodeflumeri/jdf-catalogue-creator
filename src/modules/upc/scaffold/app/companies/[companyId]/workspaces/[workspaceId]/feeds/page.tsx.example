@@ -1,0 +1,58 @@
+/**
+ * Feeds list for a workspace.
+ * Destination: src/app/admin/companies/[companyId]/workspaces/[workspaceId]/feeds/page.tsx
+ */
+import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma/client";
+import { requireAdmin } from "@/modules/auth/server";
+import { resolveWorkspaceByWorkspaceId } from "@/lib/admin/account-routing";
+import { parseRouteId } from "@/lib/admin/route-ids";
+import FeedsClient from "./FeedsClient";
+
+export default async function WorkspaceFeedsPage({
+  params,
+}: {
+  params: Promise<{ companyId: string; workspaceId: string }>;
+}) {
+  await requireAdmin();
+  const { companyId, workspaceId } = await params;
+
+  const companyIdNum = parseRouteId(companyId);
+  if (companyIdNum === null) notFound();
+
+  const workspace = await resolveWorkspaceByWorkspaceId(workspaceId, {
+    companyId: companyIdNum,
+    select: { id: true, name: true, clientCatalogWorkspaceId: true },
+  });
+  if (!workspace) notFound();
+
+  const feeds = await prisma.feed.findMany({
+    where: { workspaceId: workspace.id },
+    orderBy: { upcFeedId: "asc" },
+    select: {
+      id: true,
+      upcFeedId: true,
+      name: true,
+      feedDataType: true,
+      updatedAt: true,
+      _count: { select: { productCatalogs: true } },
+    },
+  });
+
+  return (
+    <FeedsClient
+      companyId={companyIdNum}
+      workspaceId={workspace.clientCatalogWorkspaceId}
+      workspaceName={workspace.name}
+      workspaceInternalId={workspace.id}
+      feeds={feeds.map((f) => ({
+        id: f.id,
+        upcFeedId: f.upcFeedId,
+        name: f.name,
+        feedDataType: f.feedDataType,
+        products: f._count.productCatalogs,
+        updatedAt: f.updatedAt.toISOString(),
+      }))}
+    />
+  );
+}

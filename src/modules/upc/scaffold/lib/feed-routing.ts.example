@@ -1,0 +1,61 @@
+/**
+ * Boundary resolvers for the UPC feed + catalog-item routes.
+ *
+ * Destination: src/lib/admin/feed-routing.ts
+ *
+ * Ships as `.example`: references the Feed / ProductCatalog models added by
+ * prisma/schema/upc.prisma.example. Pages call notFound() when a resolver
+ * returns null. See docs/template/ROUTING.md.
+ */
+
+import { prisma } from "@/lib/prisma/client";
+import { parseRouteId } from "@/lib/admin/route-ids";
+
+/**
+ * Resolve a feed by its upcFeedId URL segment, optionally scoped to a workspace
+ * (internal id).
+ *
+ * GUARDRAIL: `workspaceId` (the scope field) and `upcFeedId` are ALWAYS selected,
+ * regardless of the caller's `select` — otherwise the scope check below would
+ * read `undefined`, pass spuriously or return null, and 404. See docs/template/ROUTING.md.
+ */
+export async function resolveFeedByUpcFeedId(
+  feedSegment: string,
+  opts?: { workspaceId?: number; select?: Record<string, boolean> },
+) {
+  const upcFeedId = parseRouteId(feedSegment);
+  if (upcFeedId === null) return null;
+
+  const select = opts?.select
+    ? { select: { ...opts.select, workspaceId: true, upcFeedId: true } }
+    : undefined;
+
+  const feed = await prisma.feed.findUnique({
+    where: { upcFeedId },
+    ...(select ? select : {}),
+  });
+  if (!feed) return null;
+
+  // Feed exists but does not belong to the workspace in the URL → 404.
+  if (opts?.workspaceId != null && feed.workspaceId !== opts.workspaceId) {
+    return null;
+  }
+  return feed;
+}
+
+/**
+ * Resolve a catalog item by (internal feed id, externalId). Items are unique per
+ * feed (`@@unique([feedId, externalId])`); the externalId is URL-decoded first.
+ */
+export async function resolveItemByExternalId(
+  feedId: number,
+  externalId: string,
+  select?: Record<string, boolean>,
+) {
+  const ext = decodeURIComponent(externalId || "").trim();
+  if (!ext) return null;
+  return prisma.productCatalog.findUnique({
+    where: { feedId_externalId: { feedId, externalId: ext } },
+    ...(select ? { select } : {}),
+  });
+}

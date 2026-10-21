@@ -1,0 +1,16 @@
+/**
+ * Pass-through layout for the feed segment.
+ * Destination: src/app/admin/companies/[companyId]/workspaces/[workspaceId]/feeds/[upcFeedId]/layout.tsx
+ *
+ * The [upcFeedId] segment has both a page.tsx (item list) AND a child route
+ * (item/[externalId]), so it must be a layout segment for Next to mount the
+ * layout-router for the deeper route — otherwise navigating to an item throws
+ * "invariant: global layout router not mounted". Pure pass-through.
+ */
+export default function FeedLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <>{children}</>;
+}

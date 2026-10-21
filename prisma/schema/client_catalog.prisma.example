@@ -1,0 +1,69 @@
+// =============================================================================
+// Client Catalog Capability — Prisma Schema Additions
+// =============================================================================
+//
+// Copy these additions into prisma/schema.prisma when enabling the
+// Client Catalog capability. Then run: npx prisma migrate dev
+//
+// These fields match the Company Management Service (GUM) API V2.
+// See: http://company-management-service.k8s-int-01.nbg.webtrekk.com/gum-service/api/swagger-ui/index.html
+//
+// 1. Add these fields to the existing Account model
+// 2. Add the new Workspace model
+// 3. Add the relation to Account
+//
+// Canonical external-id routing (see docs/template/ROUTING.md): records are addressed in
+// admin URLs by their client-catalog external ids, NOT internal PKs:
+//   Company   = Account.clientCatalogCompanyId   → /admin/companies/[companyId]
+//   Workspace = Workspace.clientCatalogWorkspaceId → …/workspaces/[workspaceId]
+//
+
+// --- Add to the Account model ---
+//
+// Customer build (default): companies come from client-catalog discovery, so the
+// external id is required and unique — this is the canonical route key:
+//   clientCatalogCompanyId Int     @unique @map("client_catalog_company_id")
+//   salesforceId           String? @map("salesforce_id")
+//   clientCatalogData      Json?   @map("client_catalog_data")
+//   workspaces             Workspace[]
+//
+// Non-customer build (Mapp-internal records created by hand): make it nullable
+// `Int? @unique` and keep a manual-add path; the resolver then falls back to the
+// internal id (hybrid). See docs/template/capabilities/CLIENT_CATALOG.md.
+//
+
+// --- New model: Workspace ---
+//
+// Maps to WorkspaceResponseDto from the Company Management Service API.
+// A workspace belongs to a company and can serve multiple Mapp products
+// via the services array (INTELLIGENCE, ST, ENGAGE, FASHION).
+
+model Workspace {
+  id                       Int      @id @default(autoincrement())
+  // Canonical route key — the client-catalog (GUM) workspace id.
+  clientCatalogWorkspaceId Int      @unique @map("client_catalog_workspace_id")
+  // Scope field — the client-catalog company id this workspace belongs to
+  // (equals Account.clientCatalogCompanyId). A boundary resolver that checks
+  // `workspace.clientCatalogCompanyId === companyId` MUST always select this
+  // field — see the guardrail in docs/template/ROUTING.md.
+  clientCatalogCompanyId   Int      @map("client_catalog_company_id")
+  name                     String?
+  tenantId                 String?  @map("tenant_id")
+  systemId                 String?  @map("system_id")
+  dashboardSystemId        String?  @map("dashboard_system_id")
+  services                 Json?    // Array of service strings: ["INTELLIGENCE", "ENGAGE", "FASHION", "ST"]
+  metadata                 Json?    // Raw API response or additional data
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  // Related to the company via the canonical external company id (which is unique
+  // on Account), so the scope field doubles as the relation key.
+  company Account @relation(fields: [clientCatalogCompanyId], references: [clientCatalogCompanyId], onDelete: Cascade)
+
+  @@index([clientCatalogCompanyId])
+  @@map("workspace")
+}
+
+// Note: the UPC capability (prisma/schema/upc.prisma.example) adds upcCompanyId /
+// upcFeedId / upcWorkspaceId to THIS model when enabled — they are independent of
+// the client-catalog ids above and only needed once UPC is wired.

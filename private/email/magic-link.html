@@ -1,0 +1,186 @@
+<!--
+Magic Link Sign-in Email
+Brand palette reference: 
+purple 1 #2B2449
+purple 2 #8D77F7
+aqua #7FF4E0
+gray #F1ECE3
+-->
+
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Mapp Magic Link</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Preheader text (hidden) -->
+    <style type="text/css">
+      .preheader { display: none !important; visibility: hidden; opacity: 0; color: transparent; height: 0; width: 0; overflow: hidden; mso-hide: all; }
+      /* Client resets */
+      body, table, td, a { -ms-text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
+      table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+      img { -ms-interpolation-mode: bicubic; }
+      a { text-decoration: none; }
+      /* Mobile */
+      @media only screen and (max-width: 600px) {
+        .container { width: 100% !important; }
+        .px-24 { padding-left: 16px !important; padding-right: 16px !important; }
+        .py-24 { padding-top: 16px !important; padding-bottom: 16px !important; }
+        .stack { display: block !important; width: 100% !important; }
+        .hero-img { height: auto !important; }
+        .btn-primary a { display: block !important; }
+      }
+    </style>
+  </head>
+
+  <body style="margin:0; padding:0; background-color:#F1ECE3;">
+    <div class="preheader">
+      Sign in securely to Mapp with your Magic Link. Link expires in 1 hour.
+    </div>
+
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="email-bg" style="background-color:#F1ECE3;">
+      <tr>
+        <td align="center" style="padding:0;">
+
+          <!-- Container -->
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="container" style="max-width:600px; width:100%; overflow:hidden; border-radius:12px;">
+            <!-- Spacer -->
+            <tr>
+              <td class="header-wrap" style="height:10px; text-align:left;">
+                &nbsp;
+              </td>
+            </tr>
+            
+            <!-- Header -->
+            <tr>
+              <td class="header-wrap" bgcolor="#8D77F7" style="background-color:#8D77F7; padding:28px 24px; text-align:left; border-top-left-radius:12px; border-top-right-radius:12px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td align="left" style="vertical-align:middle;">
+                      <img src="https://news.mapp.com/imgproxy/img/785413015/mapp-primary-logo.png" width="120" height="auto" alt="Mapp logo" style="display:block; border:0; outline:none; text-decoration:none; max-width:140px; height:auto;">
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding-top:18px;">
+                      <h1 class="text" style="margin:0; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:22px; line-height:28px; color:#ffffff; font-weight:normal;">
+                        Sign in with your Magic Link
+                      </h1>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Card -->
+            <tr>
+              <td class="px-24 py-24" style="background-color:#ffffff; padding:24px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" class="card" style="background-color:#ffffff;">
+                  <tr>
+                    <td>
+                      <!-- Greeting -->
+                      <p class="text" style="margin:0 0 12px 0; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:16px; line-height:24px; color:#111318;">
+                        Hi<%InsertIf expression="${(! empty parameter['firstname'])}" id="0"%> <%parameter.firstname%><%/InsertIf%>,
+                      </p>
+
+                      <!-- Why they received this -->
+                      <p class="text" style="margin:0 0 16px 0; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:16px; line-height:24px; color:#111318;">
+                        You requested a secure sign in to your Mapp account.
+                      </p>
+                      
+                      <!-- Optional Comment -->
+                      <%InsertIf expression="${(! empty parameter['Comment'])}" id="0"%>
+                      <p class="text" style="margin:0 0 16px 0; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:16px; line-height:24px; color:#111318;">
+                        <%parameter.Comment%>
+                      </p>
+                      <%/InsertIf%>
+
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td>    
+
+                      <!-- CTA: Bulletproof button with VML -->
+                      <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="left" style="margin:0 0 12px 0;">
+                        <tr>
+                          <td align="center" class="btn-primary" bgcolor="#8D77F7" style="background-color:#8D77F7; border-radius:8px;">
+                            <!--[if mso]>
+                            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="<%parameter.URL%>" arcsize="12%" strokecolor="#8D77F7" fillcolor="#8D77F7" style="height:48px;v-text-anchor:middle;width:260px;">
+                              <w:anchorlock/>
+                              <center style="color:#ffffff; font-family:Segoe UI, Arial, sans-serif; font-size:16px; font-weight:700;">
+                                Sign in securely
+                              </center>
+                            </v:roundrect>
+                            <![endif]-->
+                            <!--[if !mso]><!-- -->
+                            <a href="<%parameter.URL%>"
+                               role="button"
+                               aria-label="Sign in securely with Magic Link"
+                               style="display:inline-block; padding:14px 20px; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:16px; line-height:20px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:8px; mso-hide:all;">
+                              Sign in securely
+                            </a>
+                            <!--<![endif]-->
+                          </td>
+                        </tr>
+                      </table>
+
+                    </td>
+                  </tr>
+                  <tr>
+                    <td> 
+
+                      <!-- Mirror link -->
+                      <p class="muted" style="margin:12px 0 20px 0; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:14px; line-height:21px; color:#4d5562;">
+                        If the button does not work, paste this link into your browser:
+                        <br>
+                        <a class="link" href="<%parameter.URL%>" style="color:#2B2449; text-decoration:underline; word-break:break-all;"><%parameter.URL%></a>
+                      </p>
+
+                      <!-- Security and request details -->
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:12px; border-collapse:separate; border-spacing:0; background:#f7f8fb; border-radius:8px;">
+                        <tr>
+                          <td style="padding:14px 16px;">
+                            <p class="muted" style="margin:0; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:13px; line-height:20px; color:#4d5562;">
+                              For your security, this link expires in 1 hour. Do not share it with anyone.
+                            </p>
+                          </td>
+                        </tr>
+                      </table>
+
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:0 24px 28px 24px; background-color:#ffffff; border-bottom-left-radius:12px; border-bottom-right-radius:12px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="padding-top:8px;">
+                      <p class="footer-text" style="margin:0 0 8px 0; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:12px; line-height:18px; color:#6b7280;">
+                        You received this email because a sign-in was requested for your Mapp account.
+                      </p>
+                      <p class="footer-text" style="margin:0; font-family:-apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size:12px; line-height:18px; color:#6b7280;">
+                        <a href="https://mapp.com/privacy/" style="color:#2B2449; text-decoration:underline;">Privacy</a>
+                        <span style="white-space:nowrap;">•</span>
+                        <a href="https://mapp.com/legal/" style="color:#2B2449; text-decoration:underline;">Legal</a>
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+          </table>
+          <!-- /Container -->
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

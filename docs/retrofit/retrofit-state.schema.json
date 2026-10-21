@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mapp-digital/labs-app-template/blob/main/docs/retrofit/retrofit-state.schema.json",
+  "title": "Mapp Labs retrofit state",
+  "description": "State of which labs-app-template retrofits an app has applied. Lives at the repo root of a forked app as `.retrofit-state.json` (committed). Maintained by retrofit agents; readable by a fleet dashboard that scans app repos.",
+  "type": "object",
+  "required": ["schemaVersion", "template", "app", "retrofits"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this state-file format."
+    },
+    "template": {
+      "type": "object",
+      "required": ["repo"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "Upstream template repo, e.g. mapp-digital/labs-app-template."
+        },
+        "forkedAtVersion": {
+          "type": "string",
+          "description": "Template version this app was originally forked at, if known (a lower bound). e.g. \"1.0.12\"."
+        },
+        "forkedAtRef": {
+          "type": "string",
+          "description": "Immutable git ref (tag or commit SHA) the app was forked at, if known. e.g. \"v1.0.12\"."
+        },
+        "lastRetrofitAgainstVersion": {
+          "type": "string",
+          "description": "Template version of the fresh checkout the most recent retrofit ran against. e.g. \"1.0.24\"."
+        },
+        "lastRetrofitAgainstRef": {
+          "type": "string",
+          "description": "Immutable git ref (tag or commit SHA) of the template checkout the most recent retrofit ran against — exact, unlike the version string. e.g. \"v1.0.24\" or a commit SHA."
+        },
+        "lastRetrofitAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 UTC timestamp of the most recent retrofit activity."
+        }
+      }
+    },
+    "app": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "App name (from app.config.json appName)."
+        }
+      }
+    },
+    "retrofits": {
+      "type": "object",
+      "description": "One entry per retrofit, keyed by its id (the dedicated prompt filename stem, e.g. \"2026-06-19-app-router-routing-convention\"; for entries handled inline from MIGRATION.md, a MIGRATION-derived date-slug).",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status"],
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["applied", "partial", "skipped", "not-applicable", "pending"],
+            "description": "applied = fully done. partial = some sub-changes done / something deferred (see notes). skipped = applicable but the user declined (divergence debt). not-applicable = does not apply to this app. pending = identified as needed, not yet done."
+          },
+          "templateVersion": {
+            "type": "string",
+            "description": "Template version this entry was applied/evaluated against."
+          },
+          "templateRef": {
+            "type": "string",
+            "description": "Immutable git ref (tag or commit SHA) this entry was applied/evaluated against."
+          },
+          "capability": {
+            "type": "string",
+            "description": "Cross-reference to the registry capability id this retrofit maps to (docs/template/capabilities/_registry.json), when applicable — e.g. \"client_catalog\", \"upc\", \"data_sync\", \"company_login\". Omit for foundational/infra retrofits with no capability. NOTE: the app's enabled-capabilities list is NOT duplicated here — that stays authoritative in app.config.json (enabledCapabilities)."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 UTC timestamp for this entry's last update."
+          },
+          "by": {
+            "type": "string",
+            "description": "Who/what made the change, e.g. \"claude-agent\" or a person's handle."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Free text: why skipped/not-applicable, what was deferred, or any app-specific decision."
+          },
+          "deviations": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Specific points where the app intentionally diverged from the template's reference approach, and why."
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+// =============================================================================
+// Public API Capability — Prisma Schema Additions
+// =============================================================================
+//
+// Copy these additions into prisma/schema.prisma when enabling the
+// Public API capability. Then run: npx prisma migrate dev
+//
+// 1. Add the ApiKey model below
+// 2. Add `apiKeys ApiKey[]` relation to the Account model
+// 3. Add `apiKeys ApiKey[]` relation to the MappTeam model
+//
+
+// --- Add to the Account model ---
+//
+//   apiKeys ApiKey[]
+//
+
+// --- Add to the MappTeam model ---
+//
+//   apiKeys ApiKey[]
+//
+
+// --- New model: ApiKey ---
+
+model ApiKey {
+  id          Int       @id @default(autoincrement())
+  key         String    @unique
+  name        String
+  description String?
+  active      Boolean   @default(true)
+  environment String    // "development", "staging", "production"
+  createdById Int?      @map("created_by_id")
+  accountId   Int?      @map("account_id")
+  expiresAt   DateTime? @map("expires_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  createdBy MappTeam? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  account   Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([key])
+  @@index([active])
+  @@index([environment])
+  @@index([accountId])
+  @@map("api_key")
+}
