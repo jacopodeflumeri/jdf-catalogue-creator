@@ -22,12 +22,15 @@ import type {
 import { CATALOG_IMAGE_MODEL_OPTIONS } from "@/modules/synthetic_catalog/config/profiles";
 import {
   getCatalogDetailAction,
+  getCatalogExportSummaryAction,
   regenerateCatalogImageAction,
   retryCatalogGenerationJobAction,
   updateCatalogSettingsAction,
 } from "@/modules/synthetic_catalog/server/admin-actions";
+import type { CatalogExportSummary } from "@/modules/synthetic_catalog/export/demoware-csv";
 import AddProductsModal from "../AddProductsModal";
 import CatalogStatusBadge from "../CatalogStatusBadge";
+import DownloadCsvButton from "../DownloadCsvButton";
 
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 const ACTIVE_IMAGE_STATUSES = new Set(["QUEUED", "GENERATING"]);
@@ -147,9 +150,18 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
   );
 }
 
-export default function CatalogDetailClient({ initialDetail, canEdit }: { initialDetail: CatalogDetailView; canEdit: boolean }) {
+export default function CatalogDetailClient({
+  initialDetail,
+  initialExportSummary,
+  canEdit,
+}: {
+  initialDetail: CatalogDetailView;
+  initialExportSummary: CatalogExportSummary | null;
+  canEdit: boolean;
+}) {
   const router = useRouter();
   const [detail, setDetail] = useState(initialDetail);
+  const [exportSummary, setExportSummary] = useState(initialExportSummary);
   const [showAdd, setShowAdd] = useState(false);
   const [busyImageId, setBusyImageId] = useState<number | null>(null);
   const [busyJobId, setBusyJobId] = useState<number | null>(null);
@@ -157,8 +169,12 @@ export default function CatalogDetailClient({ initialDetail, canEdit }: { initia
   const hasActiveJob = detail.jobs.some((job) => ACTIVE_STATUSES.has(job.status));
 
   const refresh = useCallback(async () => {
-    const next = await getCatalogDetailAction(detail.catalog.slug);
+    const [next, nextSummary] = await Promise.all([
+      getCatalogDetailAction(detail.catalog.slug),
+      getCatalogExportSummaryAction(detail.catalog.slug),
+    ]);
     if (next) setDetail(next);
+    if (nextSummary) setExportSummary(nextSummary);
   }, [detail.catalog.slug]);
 
   useEffect(() => {
@@ -242,6 +258,51 @@ export default function CatalogDetailClient({ initialDetail, canEdit }: { initia
           </div>
         </Card>
       ))}</div>,
+    },
+    {
+      id: "export",
+      label: "Export",
+      icon: <Icon type="download" size="sm" />,
+      content: exportSummary ? (
+        <div className="mt-6 space-y-6">
+          <Card
+            title="Demoware CSV"
+            description="One row per variant, with front, back, and on-model image URLs in deterministic order."
+            headerActions={<DownloadCsvButton catalogSlug={detail.catalog.slug} disabled={exportSummary.variantsExported === 0} />}
+          >
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+              {[
+                ["Products exported", exportSummary.productsExported],
+                ["Styles exported", exportSummary.stylesExported],
+                ["Variant rows", exportSummary.variantsExported],
+                ["Images referenced", exportSummary.imagesReferenced],
+                ["Products excluded", exportSummary.incompleteProductsExcluded],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-white/70 bg-white/30 p-4 text-center">
+                  <p className="text-2xl font-bold text-[#1a1a1a]">{value}</p>
+                  <p className="text-xs font-medium text-[#1a1a1a]/55">{label}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+          {exportSummary.issues.length > 0 ? (
+            <NoticeBox variant="warning" title="Excluded product validation">
+              <ul className="list-disc space-y-1 pl-5">
+                {exportSummary.issues.slice(0, 10).map((issue, index) => (
+                  <li key={`${issue.productId}-${issue.code}-${index}`}>
+                    <span className="font-medium">{issue.productId}</span>: {issue.message}
+                  </li>
+                ))}
+              </ul>
+              {exportSummary.issues.length > 10 && <p className="mt-2">Plus {exportSummary.issues.length - 10} more validation issue(s).</p>}
+            </NoticeBox>
+          ) : (
+            <NoticeBox variant="success" title="Ready for export">All persisted products pass the Demoware export checks.</NoticeBox>
+          )}
+        </div>
+      ) : (
+        <EmptyState className="mt-6" icon="download" title="Export unavailable" description="The catalog export summary could not be loaded." />
+      ),
     },
     {
       id: "settings",

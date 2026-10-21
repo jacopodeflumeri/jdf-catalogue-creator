@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/modules/auth/server";
 import { pageTitle } from "@/lib/utils/metadata";
 import { getCatalogDetail } from "@/modules/synthetic_catalog/server/admin-catalogs";
+import { getCatalogExportSummary } from "@/modules/synthetic_catalog/server/catalog-export";
 import CatalogDetailClient from "./CatalogDetailClient";
 
 export const metadata: Metadata = {
@@ -17,9 +18,12 @@ export default async function CatalogDetailPage({
 }) {
   const session = await requireAdmin({});
   const { catalogRef } = await params;
-  const detail = await getCatalogDetail(catalogRef);
+  const [detail, exportSummary] = await Promise.all([
+    getCatalogDetail(catalogRef),
+    getCatalogExportSummary(catalogRef),
+  ]);
   if (!detail) notFound();
   const accessLevel = session.user.access ?? "viewer";
   const canEdit = session.user.isSuperAdmin === true || accessLevel === "editor" || accessLevel === "admin";
-  return <CatalogDetailClient initialDetail={detail} canEdit={canEdit} />;
+  return <CatalogDetailClient initialDetail={detail} initialExportSummary={exportSummary} canEdit={canEdit} />;
 }

@@ -6,11 +6,11 @@ This app creates persistent synthetic fashion catalogs for internal Mapp users.
 It is deliberately admin-only: there is no customer-facing `/account` experience,
 and company-context login is disabled with `COMPANY_LOGIN_ENABLED=false`.
 
-Phases 1–6 provide the data model, four stable catalog profiles, identifier
+Phases 1–7 provide the data model, four stable catalog profiles, identifier
 rules, deterministic generation domain, resumable job state machine, real
 LiteLLM text and image generation, persistent generated-image storage, and an
-independent database-backed worker, plus the internal admin workflow used to
-operate them.
+independent database-backed worker, the internal admin workflow used to operate
+them, and validated Demoware CSV export.
 
 ## Admin workflow
 
@@ -34,6 +34,38 @@ stored as LiteLLM `provider/model` names and are applied only to new jobs. The
 image selector is restricted to the app's reviewed image-capable model list;
 already queued jobs retain their recorded model names for attribution and
 repeatability.
+
+## Demoware CSV export
+
+The catalog list and each detail workspace expose an authenticated CSV download.
+The download route is
+`/api/admin/catalogs/{slug}/export.csv`; viewer-level internal admins may export,
+and each successful export is audited as `exported_csv`. The route returns
+UTF-8 `text/csv`, RFC 4180 quoting and CRLF rows, disables caching, and uses a
+stable filename derived from the catalog slug.
+
+The adapter reads persisted catalog records and emits one row per variant in the
+24-column order documented in `SYNTHETIC_CATALOG_CODEX_PLAN.md`. IDs and SKUs are
+never regenerated during export. Front, back, and on-model assets map to
+`image_url_1`, `image_url_2`, and `image_url_3` respectively, and the same three
+stable opaque URLs repeat across every size row in a style. URL values use
+`APP_URL`; deployed environments must set it to the HTTPS hostname Demoware can
+reach.
+
+Only products whose product and styles are `READY` pass export validation. The
+validator also checks required values, identifier uniqueness and parentage,
+profile taxonomy and category-specific sizes, positive prices, sale-price
+ordering, EUR currency, non-negative stock and matching availability, plus
+exactly three ready images with stored keys, allowed MIME metadata, and minimum
+512px dimensions. The storage adapter already decodes every generated source
+with Sharp before it can be persisted as WebP, so an image with READY metadata
+has passed decode and non-empty-byte validation at write time.
+
+The Export tab shows products, styles, variant rows, referenced images, excluded
+products, and the first validation issues before download. A catalog with no
+exportable variants returns HTTP 422 instead of a misleading header-only file.
+The optional ZIP archive is not implemented: hosted image URLs are the intended
+Demoware contract and avoid duplicating persisted media.
 
 ## Catalog profiles
 
@@ -227,11 +259,14 @@ remains internal-only.
 - `src/modules/synthetic_catalog/server/catalog-worker.ts`
 - `src/modules/synthetic_catalog/server/admin-catalogs.ts`
 - `src/modules/synthetic_catalog/server/admin-actions.ts`
+- `src/modules/synthetic_catalog/server/catalog-export.ts`
+- `src/modules/synthetic_catalog/export/demoware-csv.ts`
 - `src/app/admin/catalogs/page.tsx`
 - `src/app/admin/catalogs/[catalogRef]/page.tsx`
 - `src/modules/synthetic_catalog/storage/generated-asset-storage.ts`
 - `src/modules/llm/lib/images.ts`
 - `src/app/api/catalog-assets/[publicId]/route.ts`
+- `src/app/api/admin/catalogs/[catalogRef]/export.csv/route.ts`
 - `src/modules/synthetic_catalog/server/generation-jobs.ts`
 - `src/modules/synthetic_catalog/server/sequence-reservation.ts`
 - `src/workers/catalog-generation-worker.ts`
@@ -321,6 +356,20 @@ visual direction. The add-products dialog deliberately does not expose a model
 override: one reviewed default per catalog is easier to operate, while the
 persisted job still records the exact models used.
 
+### 2026-10-21 — Export is a strict persisted-data adapter
+
+The CSV never serializes an LLM response or partially generated record. One
+pure adapter validates database-shaped input and emits the fixed Demoware
+contract, while the server layer only loads relations and the authenticated
+route handles download/audit concerns. Failed validation excludes the whole
+product so Demoware never receives only some sizes or images for a style.
+
+No Demoware importer implementation, private staging endpoint, or exact schema
+was available in this repository or public documentation. Phase 7 therefore
+uses the explicit schema approved in the project plan. An actual staging import
+remains an external integration check once Demoware access and the current
+importer are supplied; it is not represented as completed by unit tests.
+
 ## Pitfalls
 
 - Do not decrement or manually recycle `nextProductSequence`.
@@ -333,6 +382,10 @@ persisted job still records the exact models used.
   attempt policy is changed at the same time.
 - Before adding media routes, use the S3 prefix registry and `authorizeS3Read()`.
 - Do not write direct S3/CDN URLs to catalog exports; use the opaque asset route.
+- Do not change CSV column names or image role ordering without validating the
+  current Demoware importer. `image_url_1` must remain the front/primary image.
+- Keep deployed `APP_URL` aligned with the externally reachable HTTPS hostname;
+  it is the origin written into exported image and product URLs.
 - Do not send nested `metadata` as a multipart image-edit form field; use the
   LiteLLM spend-metadata header implemented by `llmEditImage()`.
 - Do not call generation providers from catalog server actions. Enqueue a task

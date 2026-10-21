@@ -9,6 +9,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import type { CatalogOverviewView } from "@/modules/synthetic_catalog/admin/types";
 import AddProductsModal from "./AddProductsModal";
 import CatalogStatusBadge from "./CatalogStatusBadge";
+import DownloadCsvButton from "./DownloadCsvButton";
 
 export default function CatalogOverviewClient({
   initialCatalogs,
@@ -42,6 +43,7 @@ export default function CatalogOverviewClient({
             headerActions={catalog.latestJob ? <CatalogStatusBadge status={catalog.latestJob.status} /> : null}
             footer={
               <div className="flex justify-end gap-2">
+                <DownloadCsvButton catalogSlug={catalog.slug} disabled={catalog.productCount === 0} />
                 {canEdit && (
                   <Button variant="secondary" size="sm" onClick={() => setSelected(catalog)}>
                     <Icon type="plus" size="sm" /> Add products

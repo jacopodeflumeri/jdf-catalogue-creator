@@ -27,7 +27,11 @@ const config: Config = {
   //
   // .claude/worktrees/ holds full checkouts made by coding agents working in
   // isolation; without this their copies of every test run too.
-  modulePathIgnorePatterns: ["<rootDir>/infra/dist/", "<rootDir>/.claude/"],
+  modulePathIgnorePatterns: [
+    "<rootDir>/.next/",
+    "<rootDir>/infra/dist/",
+    "<rootDir>/.claude/",
+  ],
   testMatch: [
     "**/__tests__/**/*.test.[jt]s?(x)",
     "**/?(*.)+(spec|test).[jt]s?(x)",

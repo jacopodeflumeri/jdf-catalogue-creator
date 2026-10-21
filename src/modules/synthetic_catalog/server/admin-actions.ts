@@ -14,6 +14,8 @@ import type { CatalogActionResult, CatalogDetailView } from "../admin/types";
 import { parseCatalogProfileConfig } from "../config/profiles";
 import { createGenerationJob, resumeGenerationJob } from "./generation-jobs";
 import { enqueueImageRegeneration, getCatalogDetail } from "./admin-catalogs";
+import { getCatalogExportSummary } from "./catalog-export";
+import type { CatalogExportSummary } from "../export/demoware-csv";
 
 function adminId(session: Awaited<ReturnType<typeof requireAdmin>>): number | undefined {
   const parsed = Number(session.user.adminId);
@@ -36,6 +38,11 @@ function revalidateCatalog(slug: string): void {
 export async function getCatalogDetailAction(reference: string): Promise<CatalogDetailView | null> {
   await requireAdmin({});
   return getCatalogDetail(reference);
+}
+
+export async function getCatalogExportSummaryAction(reference: string): Promise<CatalogExportSummary | null> {
+  await requireAdmin({});
+  return getCatalogExportSummary(reference);
 }
 
 export async function createCatalogGenerationJobAction(input: unknown): Promise<CatalogActionResult> {

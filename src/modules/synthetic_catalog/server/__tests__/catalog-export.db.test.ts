@@ -1,0 +1,89 @@
+/** @jest-environment node */
+
+import type { Prisma } from "@/generated/prisma/client";
+import { prisma } from "@/lib/prisma/client";
+import {
+  disconnectPrisma,
+  requireTestDatabase,
+  truncateAllTables,
+} from "@test/utils/db";
+import { CATALOG_PROFILES } from "../../config/profiles";
+import { createCatalogCsvExport } from "../catalog-export";
+
+function json(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+describe("catalog export persistence", () => {
+  beforeAll(() => requireTestDatabase());
+  beforeEach(() => truncateAllTables());
+  afterAll(() => disconnectPrisma());
+
+  it("loads persisted relations and repeats role-ordered style images across variants", async () => {
+    const profile = CATALOG_PROFILES[0];
+    const catalog = await prisma.syntheticCatalog.create({
+      data: {
+        slug: profile.slug,
+        name: profile.name,
+        segment: profile.segment,
+        brandName: profile.brandName,
+        externalPrefix: profile.externalPrefix,
+        config: json(profile.config),
+        defaultTextModel: profile.defaultTextModel,
+        defaultImageModel: profile.defaultImageModel,
+      },
+    });
+    await prisma.syntheticProduct.create({
+      data: {
+        catalogId: catalog.id,
+        sequence: 1,
+        externalId: "PRE-W-000001",
+        name: "Alpine Shell",
+        description: "A refined outer layer",
+        department: "WOMEN",
+        category: "coats",
+        subcategory: "wool coats",
+        material: "cashmere",
+        season: "Autumn/Winter",
+        basePrice: "220.00",
+        salePrice: "180.00",
+        currency: "EUR",
+        productUrl: "/catalogs/premium-apparel/products/PRE-W-000001",
+        status: "READY",
+        styles: {
+          create: {
+            externalId: "PRE-W-000001-NAVY",
+            colorName: "Midnight Navy",
+            colorCode: "NAVY",
+            status: "READY",
+            variants: {
+              create: [
+                { externalId: "PRE-W-000001-NAVY-S", sku: "PRE-W-000001-NAVY-S", size: "S", stock: 5, availability: "IN_STOCK" },
+                { externalId: "PRE-W-000001-NAVY-M", sku: "PRE-W-000001-NAVY-M", size: "M", stock: 0, availability: "OUT_OF_STOCK" },
+              ],
+            },
+            images: {
+              create: [
+                { publicId: "00000000-0000-4000-8000-000000000001", role: "FRONT", status: "READY", storageKey: "public/catalogs/front.webp", mimeType: "image/webp", width: 1024, height: 1536 },
+                { publicId: "00000000-0000-4000-8000-000000000002", role: "BACK", status: "READY", storageKey: "public/catalogs/back.webp", mimeType: "image/webp", width: 1024, height: 1536 },
+                { publicId: "00000000-0000-4000-8000-000000000003", role: "ON_MODEL", status: "READY", storageKey: "public/catalogs/model.webp", mimeType: "image/webp", width: 1024, height: 1536 },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    const result = await createCatalogCsvExport(profile.slug, "https://catalogs.example.test");
+    expect(result?.summary).toEqual(expect.objectContaining({
+      productsExported: 1,
+      stylesExported: 1,
+      variantsExported: 2,
+      imagesReferenced: 3,
+      incompleteProductsExcluded: 0,
+    }));
+    expect(result?.csv.match(/00000000-0000-4000-8000-000000000001/g)).toHaveLength(2);
+    expect(result?.csv.match(/00000000-0000-4000-8000-000000000002/g)).toHaveLength(2);
+    expect(result?.csv.match(/00000000-0000-4000-8000-000000000003/g)).toHaveLength(2);
+  });
+});
