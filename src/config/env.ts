@@ -28,6 +28,11 @@ const envSchema = z.object({
   // Application
   APP_NAME: z.string().default('Mapp Labs'),
   APP_URL: z.string().url().default('http://localhost:3000'),
+
+  // Synthetic catalog spend guards. The feature applies an additional hard
+  // ceiling in code so a typo cannot authorize an unbounded generation job.
+  CATALOG_MAX_PRODUCTS_PER_JOB: z.string().regex(/^\d+$/).optional(),
+  CATALOG_LARGE_JOB_THRESHOLD: z.string().regex(/^\d+$/).optional(),
   
   // Database
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),

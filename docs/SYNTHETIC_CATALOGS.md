@@ -6,11 +6,12 @@ This app creates persistent synthetic fashion catalogs for internal Mapp users.
 It is deliberately admin-only: there is no customer-facing `/account` experience,
 and company-context login is disabled with `COMPANY_LOGIN_ENABLED=false`.
 
-Phases 1–7 provide the data model, four stable catalog profiles, identifier
+Phases 1–8 provide the data model, four stable catalog profiles, identifier
 rules, deterministic generation domain, resumable job state machine, real
 LiteLLM text and image generation, persistent generated-image storage, and an
 independent database-backed worker, the internal admin workflow used to operate
-them, and validated Demoware CSV export.
+them, validated Demoware CSV export, configurable spend guards, full readiness
+reporting, and operational recovery guidance.
 
 ## Admin workflow
 
@@ -24,12 +25,15 @@ also accepted so audit-log links remain stable.
 All reads use `requireAdmin({})`. Viewer-level users see the same operational
 state but no mutation controls. Adding products, manually retrying failures,
 regenerating one image, and changing catalog defaults all require editor access
-and write audit records. A batch of 25 or more products requires a separate
+and write audit records. A batch at or above the configured large-job threshold
+(`CATALOG_LARGE_JOB_THRESHOLD`, default 25) requires a separate
 confirmation showing the expected LiteLLM call count. The request enqueues work
 only; browser navigation and polling never perform model or S3 work.
 
 The detail client polls persisted state every three seconds only while a job is
-queued or running. Product batches are capped at 100. Catalog model values are
+queued or running. Product batches use `CATALOG_MAX_PRODUCTS_PER_JOB` (default
+100, hard safety ceiling 500), enforced independently in the form, server action,
+and job service. Catalog model values are
 stored as LiteLLM `provider/model` names and are applied only to new jobs. The
 image selector is restricted to the app's reviewed image-capable model list;
 already queued jobs retain their recorded model names for attribution and
@@ -44,13 +48,14 @@ and each successful export is audited as `exported_csv`. The route returns
 UTF-8 `text/csv`, RFC 4180 quoting and CRLF rows, disables caching, and uses a
 stable filename derived from the catalog slug.
 
-The adapter reads persisted catalog records and emits one row per variant in the
-24-column order documented in `SYNTHETIC_CATALOG_CODEX_PLAN.md`. IDs and SKUs are
+The adapter reads persisted catalog records and emits one row per variant in a
+fixed 23-column order. IDs and SKUs are
 never regenerated during export. Front, back, and on-model assets map to
 `image_url_1`, `image_url_2`, and `image_url_3` respectively, and the same three
 stable opaque URLs repeat across every size row in a style. URL values use
 `APP_URL`; deployed environments must set it to the HTTPS hostname Demoware can
-reach.
+reach. Text beginning with `=`, `+`, `-`, or `@` is prefixed with an apostrophe
+to prevent spreadsheet formula execution when an operator opens the file.
 
 Only products whose product and styles are `READY` pass export validation. The
 validator also checks required values, identifier uniqueness and parentage,
@@ -62,7 +67,12 @@ with Sharp before it can be persisted as WebP, so an image with READY metadata
 has passed decode and non-empty-byte validation at write time.
 
 The Export tab shows products, styles, variant rows, referenced images, excluded
-products, and the first validation issues before download. A catalog with no
+products, and the first validation issues before download. The companion
+`/api/admin/catalogs/{slug}/validation-report.json` download contains the full
+issue list, readiness checks, schema version, generation timestamp, and the
+front/back/on-model contract. A catalog is `readyForImport` only when it contains
+at least one product and variant row, every product is exportable, and there are
+no validation issues. A catalog with no
 exportable variants returns HTTP 422 instead of a misleading header-only file.
 The optional ZIP archive is not implemented: hosted image URLs are the intended
 Demoware contract and avoid duplicating persisted media.
@@ -160,6 +170,12 @@ Product and image counters, the job stage, and final status are recalculated
 from persisted task state after every item, so refreshes and worker restarts do
 not lose progress.
 
+Every worker failure is logged with job/task IDs, catalog, persisted entity IDs,
+model, image role, attempt, retry category, and the sanitized error message.
+The Jobs tab displays persisted failed-task reasons and attempt counts. “Retry
+failures” resets and requeues only failed tasks; completed products and images
+remain untouched.
+
 ECS runs the command in a second, essential container in the existing Fargate
 task. It shares the app image, task role, network, tags, and deployment lifecycle,
 but has its own process and a three-connection database pool. This avoids a
@@ -246,6 +262,7 @@ remains internal-only.
 - `prisma/schema.prisma`
 - `prisma/seed.ts`
 - `src/modules/synthetic_catalog/config/profiles.ts`
+- `src/modules/synthetic_catalog/config/generation-limits.ts`
 - `src/modules/synthetic_catalog/domain/ids.ts`
 - `src/modules/synthetic_catalog/domain/planner.ts`
 - `src/modules/synthetic_catalog/domain/rules.ts`
@@ -267,6 +284,7 @@ remains internal-only.
 - `src/modules/llm/lib/images.ts`
 - `src/app/api/catalog-assets/[publicId]/route.ts`
 - `src/app/api/admin/catalogs/[catalogRef]/export.csv/route.ts`
+- `src/app/api/admin/catalogs/[catalogRef]/validation-report.json/route.ts`
 - `src/modules/synthetic_catalog/server/generation-jobs.ts`
 - `src/modules/synthetic_catalog/server/sequence-reservation.ts`
 - `src/workers/catalog-generation-worker.ts`
@@ -370,6 +388,41 @@ uses the explicit schema approved in the project plan. An actual staging import
 remains an external integration check once Demoware access and the current
 importer are supplied; it is not represented as completed by unit tests.
 
+### 2026-10-21 — Generation caps fail closed
+
+The per-job limit is environment-configurable but cannot exceed 500 products.
+Invalid or inconsistent values fail startup/request validation instead of
+silently authorizing more LiteLLM calls. Large jobs require a second explicit UI
+confirmation and the enforced values are returned with each catalog view so the
+browser and server cannot drift.
+
+## Operations and sample approval runbook
+
+1. Confirm the web and worker containers are healthy and that the catalog worker
+   is polling. Inspect the `catalog-worker` CloudWatch stream for structured
+   task failures; never paste LiteLLM keys or request headers into tickets.
+2. Keep `CATALOG_MAX_PRODUCTS_PER_JOB=100` and
+   `CATALOG_LARGE_JOB_THRESHOLD=25` unless the expected spend and operational
+   window have been reviewed. A change requires a normal app deployment.
+3. Queue a one-product sample in each profile: Premium, Fast Fashion, Luxury,
+   and Activewear. This produces four attributed LiteLLM calls per profile.
+4. Wait for each job to reach a terminal state. For failures, read the persisted
+   task reason in the Jobs tab. Retry the job for failed tasks, or regenerate one
+   failed/unsuitable image from its image tile; do not restart successful work.
+5. Human-review all three roles for garment consistency, absence of logos/text,
+   and correct front/back/on-model framing. Download the validation report; it
+   must say `readyForImport: true` before downloading the CSV.
+6. With the current Demoware staging importer contract and access supplied,
+   import each small CSV, verify all three image URLs are fetchable, then run the
+   Labeller. Record manual approval outside the application.
+7. Only after all four samples are manually approved may an operator queue larger
+   batches. The application does not automatically expand a sample into a full
+   four-catalog generation run.
+
+If a worker stops mid-task, restart or redeploy it normally; the lease recovery
+loop requeues expired work. Do not edit task rows, reset sequence counters, or
+delete stored assets as a recovery mechanism.
+
 ## Pitfalls
 
 - Do not decrement or manually recycle `nextProductSequence`.
@@ -390,6 +443,10 @@ importer are supplied; it is not represented as completed by unit tests.
   LiteLLM spend-metadata header implemented by `llmEditImage()`.
 - Do not call generation providers from catalog server actions. Enqueue a task
   and let the worker execute it.
+- Do not raise generation limits merely to bypass the large-job confirmation;
+  the 500-product hard ceiling is a spend-safety boundary.
+- Do not start full four-catalog generation until one sample from every profile
+  has passed human image review and Demoware staging validation.
 - Do not add free-form per-job model controls; validate and store catalog
   defaults as LiteLLM `provider/model` names.
 - When authenticated admin actions are added, their consequential generation,

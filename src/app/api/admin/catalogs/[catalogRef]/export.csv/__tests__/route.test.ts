@@ -17,6 +17,7 @@ jest.mock("@/modules/audit", () => ({
 import { GET } from "../route";
 
 const summary = {
+  readyForImport: true,
   totalProducts: 1,
   productsExported: 1,
   stylesExported: 1,
@@ -67,7 +68,7 @@ describe("catalog CSV export route", () => {
     mockExport.mockResolvedValue({
       catalog: { id: 4, slug: "premium-apparel", name: "Premium Apparel" },
       csv: "product_id\r\n",
-      summary: { ...summary, productsExported: 0, variantsExported: 0, incompleteProductsExcluded: 1 },
+      summary: { ...summary, readyForImport: false, productsExported: 0, variantsExported: 0, incompleteProductsExcluded: 1 },
     });
     const response = await GET(new Request("https://app.test/api/admin/catalogs/premium-apparel/export.csv"), {
       params: Promise.resolve({ catalogRef: "premium-apparel" }),

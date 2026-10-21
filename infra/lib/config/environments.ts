@@ -45,6 +45,10 @@ export interface EnvironmentConfig {
   minCapacity: number;
   maxCapacity: number;
 
+  // Synthetic catalog generation spend guards
+  catalogMaxProductsPerJob: number;
+  catalogLargeJobThreshold: number;
+
   // Database
   dbInstanceClass: string;
   dbAllocatedStorage: number;
@@ -112,6 +116,8 @@ export const environments: Record<string, EnvironmentConfig> = {
     desiredCount: 1,
     minCapacity: 1,
     maxCapacity: 2,
+    catalogMaxProductsPerJob: 100,
+    catalogLargeJobThreshold: 25,
 
     // Database - t3.micro for cost savings
     dbInstanceClass: "t3.micro",
@@ -142,6 +148,8 @@ export const environments: Record<string, EnvironmentConfig> = {
     desiredCount: 1,
     minCapacity: 1,
     maxCapacity: 4,
+    catalogMaxProductsPerJob: 100,
+    catalogLargeJobThreshold: 25,
 
     // Database - t3.small for production with backups
     dbInstanceClass: "t3.small",

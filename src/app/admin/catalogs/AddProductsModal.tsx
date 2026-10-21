@@ -10,12 +10,16 @@ import NoticeBox from "@/components/ui/NoticeBox";
 import { createCatalogGenerationJobAction } from "@/modules/synthetic_catalog/server/admin-actions";
 
 interface AddProductsModalProps {
-  catalog: { id: number; name: string; estimatedSizesPerProduct: number } | null;
+  catalog: {
+    id: number;
+    name: string;
+    estimatedSizesPerProduct: number;
+    maxProductsPerJob: number;
+    largeJobThreshold: number;
+  } | null;
   onClose: () => void;
   onCreated: (jobId: number) => void;
 }
-
-const LARGE_JOB_THRESHOLD = 25;
 
 export default function AddProductsModal({ catalog, onClose, onCreated }: AddProductsModalProps) {
   const [count, setCount] = useState(5);
@@ -25,7 +29,7 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
   const [error, setError] = useState<string | null>(null);
 
   if (!catalog) return null;
-  const isLarge = count >= LARGE_JOB_THRESHOLD;
+  const isLarge = count >= catalog.largeJobThreshold;
   const estimatedImages = Math.max(0, count) * 3;
   const estimatedVariants = Math.max(0, count) * catalog.estimatedSizesPerProduct;
 
@@ -55,13 +59,13 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
           label="Number of products"
           type="number"
           min={1}
-          max={100}
+          max={catalog.maxProductsPerJob}
           value={count}
           onChange={(event) => {
             setCount(Number(event.target.value));
             setConfirmed(false);
           }}
-          helpText="One style and three image views are generated for each product."
+          helpText={`One style and three image views are generated for each product. Maximum ${catalog.maxProductsPerJob} products per job.`}
         />
         <FormSelect
           id="catalog-department"
@@ -92,7 +96,7 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
         {error && <NoticeBox variant="error">{error}</NoticeBox>}
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
-          <Button type="submit" loading={loading} disabled={count < 1 || count > 100 || (isLarge && !confirmed)}>
+          <Button type="submit" loading={loading} disabled={count < 1 || count > catalog.maxProductsPerJob || (isLarge && !confirmed)}>
             Queue generation
           </Button>
         </div>

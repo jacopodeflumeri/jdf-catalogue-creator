@@ -1,13 +1,24 @@
 import { z } from "zod";
 import { CATALOG_IMAGE_MODEL_OPTIONS } from "../config/profiles";
+import {
+  DEFAULT_MAX_PRODUCTS_PER_JOB,
+  getCatalogGenerationLimits,
+} from "../config/generation-limits";
 
-const MAX_PRODUCTS_PER_JOB = 100;
+export function createAddProductsInputSchema(maxProductsPerJob: number) {
+  return z.object({
+    catalogId: z.number().int().positive(),
+    requestedProducts: z.number().int().min(1).max(maxProductsPerJob),
+    departmentMode: z.enum(["AUTO", "WOMEN", "MEN"]),
+  });
+}
 
-export const addProductsInputSchema = z.object({
-  catalogId: z.number().int().positive(),
-  requestedProducts: z.number().int().min(1).max(MAX_PRODUCTS_PER_JOB),
-  departmentMode: z.enum(["AUTO", "WOMEN", "MEN"]),
-});
+export const addProductsInputSchema = createAddProductsInputSchema(DEFAULT_MAX_PRODUCTS_PER_JOB);
+
+export function parseAddProductsInput(input: unknown) {
+  const { maxProductsPerJob } = getCatalogGenerationLimits();
+  return createAddProductsInputSchema(maxProductsPerJob).parse(input);
+}
 
 export const catalogSettingsInputSchema = z.object({
   catalogId: z.number().int().positive(),

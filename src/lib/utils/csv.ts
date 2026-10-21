@@ -14,18 +14,22 @@ export function escapeCsvValue(value: string): string {
   if (!value) return '';
   
   const stringValue = String(value).trim();
+  // Spreadsheet applications can interpret these prefixes as formulas even
+  // when the value is correctly quoted as CSV. Prefixing with an apostrophe is
+  // the portable neutralization recommended for human-opened exports.
+  const safeValue = /^[=+\-@]/.test(stringValue) ? `'${stringValue}` : stringValue;
   
   // Check if value needs escaping (contains comma, quote, or newline)
-  const needsEscaping = /[",\n\r]/.test(stringValue);
+  const needsEscaping = /[",\n\r]/.test(safeValue);
   
   if (needsEscaping) {
     // Escape existing double quotes by doubling them
-    const escaped = stringValue.replace(/"/g, '""');
+    const escaped = safeValue.replace(/"/g, '""');
     // Wrap in double quotes
     return `"${escaped}"`;
   }
   
-  return stringValue;
+  return safeValue;
 }
 
 /**

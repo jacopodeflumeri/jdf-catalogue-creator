@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import { useToast } from "@/components/providers/ToastProvider";
 
-export default function DownloadCsvButton({
+function DownloadCatalogFileButton({
   catalogSlug,
+  kind,
   disabled = false,
   size = "sm",
 }: {
   catalogSlug: string;
+  kind: "csv" | "validation-report";
   disabled?: boolean;
   size?: "sm" | "md";
 }) {
@@ -21,21 +23,24 @@ export default function DownloadCsvButton({
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/admin/catalogs/${encodeURIComponent(catalogSlug)}/export.csv`,
+        kind === "csv"
+          ? `/api/admin/catalogs/${encodeURIComponent(catalogSlug)}/export.csv`
+          : `/api/admin/catalogs/${encodeURIComponent(catalogSlug)}/validation-report.json`,
         { cache: "no-store" },
       );
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         addToast({
           type: "error",
-          message: payload?.error ?? "The catalog CSV could not be generated",
+          message: payload?.error ?? "The catalog file could not be generated",
         });
         return;
       }
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${catalogSlug}.csv`;
+      link.download =
+        kind === "csv" ? `${catalogSlug}.csv` : `${catalogSlug}-validation-report.json`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -43,7 +48,7 @@ export default function DownloadCsvButton({
     } catch {
       addToast({
         type: "error",
-        message: "The catalog CSV could not be downloaded",
+        message: "The catalog file could not be downloaded",
       });
     } finally {
       setLoading(false);
@@ -52,7 +57,20 @@ export default function DownloadCsvButton({
 
   return (
     <Button variant="secondary" size={size} onClick={() => void download()} disabled={disabled} loading={loading}>
-      <Icon type="download" size="sm" /> Download CSV
+      <Icon type="download" size="sm" />
+      {kind === "csv" ? "Download CSV" : "Validation report"}
     </Button>
   );
+}
+
+export default function DownloadCsvButton(
+  props: Omit<ComponentProps<typeof DownloadCatalogFileButton>, "kind">,
+) {
+  return <DownloadCatalogFileButton {...props} kind="csv" />;
+}
+
+export function DownloadValidationReportButton(
+  props: Omit<ComponentProps<typeof DownloadCatalogFileButton>, "kind">,
+) {
+  return <DownloadCatalogFileButton {...props} kind="validation-report" />;
 }

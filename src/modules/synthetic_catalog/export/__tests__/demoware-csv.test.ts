@@ -75,6 +75,7 @@ describe("Demoware CSV export", () => {
       first.slice(index("image_url_1"), index("image_url_3") + 1),
     );
     expect(result.summary).toEqual(expect.objectContaining({
+      readyForImport: true,
       totalProducts: 1,
       productsExported: 1,
       stylesExported: 1,
@@ -105,12 +106,24 @@ describe("Demoware CSV export", () => {
     });
     const result = buildDemowareCsv(source([incomplete, invalid]), "https://catalogs.example.test");
     expect(result.summary.productsExported).toBe(0);
+    expect(result.summary.readyForImport).toBe(false);
     expect(result.summary.variantsExported).toBe(0);
     expect(result.summary.incompleteProductsExcluded).toBe(2);
     expect(result.summary.issues.map((issue) => issue.code)).toEqual(
       expect.arrayContaining(["product_not_ready", "category", "sale_price", "styles"]),
     );
     expect(result.csv).toBe(`${DEMOWARE_CSV_COLUMNS.join(",")}\r\n`);
+  });
+
+  it("does not mark an empty catalog ready for import", () => {
+    const result = buildDemowareCsv(source([]), "https://catalogs.example.test");
+    expect(result.summary).toEqual(
+      expect.objectContaining({
+        readyForImport: false,
+        totalProducts: 0,
+        variantsExported: 0,
+      }),
+    );
   });
 
   it("rejects duplicate IDs and image metadata below export quality", () => {

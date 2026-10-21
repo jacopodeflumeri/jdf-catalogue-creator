@@ -348,6 +348,8 @@ export class AppStack extends cdk.Stack {
         // the AWS `Product` cost-allocation tag. Set always (harmless when the
         // LLM capability is unused) so the tag and the runtime value never drift.
         APP_PRODUCT: config.product,
+        CATALOG_MAX_PRODUCTS_PER_JOB: String(config.catalogMaxProductsPerJob),
+        CATALOG_LARGE_JOB_THRESHOLD: String(config.catalogLargeJobThreshold),
         // This app is intentionally Mapp-internal-only. Keycloak remains the
         // internal identity broker, but company-context/customer login is off.
         COMPANY_LOGIN_ENABLED: "false",

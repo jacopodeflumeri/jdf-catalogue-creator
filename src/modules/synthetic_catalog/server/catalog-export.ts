@@ -2,10 +2,29 @@ import { prisma } from "@/lib/prisma/client";
 import { parseCatalogProfileConfig } from "../config/profiles";
 import {
   buildDemowareCsv,
+  DEMOWARE_CSV_COLUMNS,
   type CatalogCsvExport,
   type CatalogExportSource,
   type CatalogExportSummary,
 } from "../export/demoware-csv";
+
+export interface CatalogValidationReport {
+  schemaVersion: 1;
+  generatedAt: string;
+  catalog: { id: number; slug: string; name: string };
+  contract: {
+    format: "demoware-csv";
+    columns: number;
+    imageOrder: ["FRONT", "BACK", "ON_MODEL"];
+  };
+  checks: {
+    hasProducts: boolean;
+    allProductsExportable: boolean;
+    hasVariantRows: boolean;
+    noValidationIssues: boolean;
+  };
+  summary: CatalogExportSummary;
+}
 
 async function loadCatalogExportSource(reference: string): Promise<CatalogExportSource | null> {
   const numericId = /^\d+$/.test(reference) ? Number(reference) : null;
@@ -88,4 +107,31 @@ export async function getCatalogExportSummary(reference: string): Promise<Catalo
   const source = await loadCatalogExportSource(reference);
   if (!source) return null;
   return buildDemowareCsv(source, "http://localhost").summary;
+}
+
+export async function createCatalogValidationReport(
+  reference: string,
+  generatedAt = new Date(),
+): Promise<CatalogValidationReport | null> {
+  const result = await createCatalogCsvExport(reference, "http://localhost");
+  if (!result) return null;
+  const { summary } = result;
+  return {
+    schemaVersion: 1,
+    generatedAt: generatedAt.toISOString(),
+    catalog: result.catalog,
+    contract: {
+      format: "demoware-csv",
+      columns: DEMOWARE_CSV_COLUMNS.length,
+      imageOrder: ["FRONT", "BACK", "ON_MODEL"],
+    },
+    checks: {
+      hasProducts: summary.totalProducts > 0,
+      allProductsExportable:
+        summary.totalProducts > 0 && summary.productsExported === summary.totalProducts,
+      hasVariantRows: summary.variantsExported > 0,
+      noValidationIssues: summary.issues.length === 0,
+    },
+    summary,
+  };
 }

@@ -91,6 +91,7 @@ export interface CatalogExportIssue {
 }
 
 export interface CatalogExportSummary {
+  readyForImport: boolean;
   totalProducts: number;
   productsExported: number;
   stylesExported: number;
@@ -264,16 +265,22 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
     }
   }
 
+  const summary: CatalogExportSummary = {
+    readyForImport:
+      source.products.length > 0 &&
+      exportable.length === source.products.length &&
+      rows.length > 1 &&
+      issues.length === 0,
+    totalProducts: source.products.length,
+    productsExported: exportable.length,
+    stylesExported,
+    variantsExported: rows.length - 1,
+    imagesReferenced,
+    incompleteProductsExcluded: source.products.length - exportable.length,
+    issues,
+  };
   return {
     csv: `${rows.join("\r\n")}\r\n`,
-    summary: {
-      totalProducts: source.products.length,
-      productsExported: exportable.length,
-      stylesExported,
-      variantsExported: rows.length - 1,
-      imagesReferenced,
-      incompleteProductsExcluded: source.products.length - exportable.length,
-      issues,
-    },
+    summary,
   };
 }

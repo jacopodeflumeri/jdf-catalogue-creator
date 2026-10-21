@@ -6,8 +6,8 @@ import { prisma } from "@/lib/prisma/client";
 import { requireAdmin } from "@/modules/auth/server";
 import { sessionAuditActor, writeAuditLog } from "@/modules/audit";
 import {
-  addProductsInputSchema,
   catalogSettingsInputSchema,
+  parseAddProductsInput,
   positiveIdSchema,
 } from "../admin/input";
 import type { CatalogActionResult, CatalogDetailView } from "../admin/types";
@@ -48,7 +48,7 @@ export async function getCatalogExportSummaryAction(reference: string): Promise<
 export async function createCatalogGenerationJobAction(input: unknown): Promise<CatalogActionResult> {
   const session = await requireAdmin({ requireEditorAccess: true });
   try {
-    const values = addProductsInputSchema.parse(input);
+    const values = parseAddProductsInput(input);
     const job = await createGenerationJob({
       ...values,
       createdByMappTeamId: adminId(session),

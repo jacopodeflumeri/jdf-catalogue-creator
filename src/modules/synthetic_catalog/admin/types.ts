@@ -25,6 +25,14 @@ export interface CatalogJobView {
   startedAt: string | null;
   finishedAt: string | null;
   errorMessage: string | null;
+  failedTaskDetails: Array<{
+    id: number;
+    taskType: string;
+    reference: string;
+    attempts: number;
+    maxAttempts: number;
+    lastError: string;
+  }>;
 }
 
 export interface CatalogOverviewView {
@@ -39,6 +47,8 @@ export interface CatalogOverviewView {
   readyImageCount: number;
   failedImageCount: number;
   estimatedSizesPerProduct: number;
+  maxProductsPerJob: number;
+  largeJobThreshold: number;
   latestJob: CatalogJobView | null;
 }
 
@@ -94,6 +104,8 @@ export interface CatalogDetailView {
     defaultImageModel: string;
     visualDirection: string;
     estimatedSizesPerProduct: number;
+    maxProductsPerJob: number;
+    largeJobThreshold: number;
   };
   counts: {
     products: number;

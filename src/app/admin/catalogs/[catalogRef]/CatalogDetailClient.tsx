@@ -30,7 +30,7 @@ import {
 import type { CatalogExportSummary } from "@/modules/synthetic_catalog/export/demoware-csv";
 import AddProductsModal from "../AddProductsModal";
 import CatalogStatusBadge from "../CatalogStatusBadge";
-import DownloadCsvButton from "../DownloadCsvButton";
+import DownloadCsvButton, { DownloadValidationReportButton } from "../DownloadCsvButton";
 
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 const ACTIVE_IMAGE_STATUSES = new Set(["QUEUED", "GENERATING"]);
@@ -252,6 +252,31 @@ export default function CatalogDetailClient({
       content: <div className="mt-6 space-y-4">{detail.jobs.map((job) => (
         <Card key={job.id} title={`${job.jobType.toLowerCase().replaceAll("_", " ")} · ${formatDate(job.createdAt)}`} headerActions={<CatalogStatusBadge status={job.status} />}>
           <JobProgress job={job} />
+          {(job.errorMessage || job.failedTaskDetails.length > 0) && (
+            <NoticeBox variant="error" title="Generation failures">
+              {job.errorMessage && <p>{job.errorMessage}</p>}
+              {job.failedTaskDetails.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {job.failedTaskDetails.slice(0, 8).map((task) => (
+                    <li key={task.id}>
+                      <span className="font-medium">
+                        {task.taskType.toLowerCase().replaceAll("_", " ")} · {task.reference}
+                      </span>{" "}
+                      (attempt {task.attempts}/{task.maxAttempts}): {task.lastError}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {job.failedTaskDetails.length > 8 && (
+                <p className="mt-2">Plus {job.failedTaskDetails.length - 8} more failed task(s).</p>
+              )}
+              {canEdit && (
+                <p className="mt-2">
+                  Retry failures requeues only failed tasks and preserves completed products and images.
+                </p>
+              )}
+            </NoticeBox>
+          )}
           <div className="mt-4 flex items-center justify-between gap-4">
             <p className="text-xs text-[#1a1a1a]/55">Department: {job.departmentMode.toLowerCase()} · Job {job.publicId}</p>
             {canEdit && (job.status === "FAILED" || job.status === "COMPLETED_WITH_ERRORS") && <Button variant="secondary" size="sm" loading={busyJobId === job.id} onClick={() => void retry(job.id)}><Icon type="refresh" size="sm" /> Retry failures</Button>}
@@ -268,7 +293,12 @@ export default function CatalogDetailClient({
           <Card
             title="Demoware CSV"
             description="One row per variant, with front, back, and on-model image URLs in deterministic order."
-            headerActions={<DownloadCsvButton catalogSlug={detail.catalog.slug} disabled={exportSummary.variantsExported === 0} />}
+            headerActions={
+              <div className="flex gap-2">
+                <DownloadValidationReportButton catalogSlug={detail.catalog.slug} />
+                <DownloadCsvButton catalogSlug={detail.catalog.slug} disabled={exportSummary.variantsExported === 0} />
+              </div>
+            }
           >
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
               {[
@@ -285,15 +315,19 @@ export default function CatalogDetailClient({
               ))}
             </div>
           </Card>
-          {exportSummary.issues.length > 0 ? (
+          {!exportSummary.readyForImport ? (
             <NoticeBox variant="warning" title="Excluded product validation">
-              <ul className="list-disc space-y-1 pl-5">
-                {exportSummary.issues.slice(0, 10).map((issue, index) => (
-                  <li key={`${issue.productId}-${issue.code}-${index}`}>
-                    <span className="font-medium">{issue.productId}</span>: {issue.message}
-                  </li>
-                ))}
-              </ul>
+              {exportSummary.totalProducts === 0 ? (
+                <p>Add and complete at least one product before exporting.</p>
+              ) : (
+                <ul className="list-disc space-y-1 pl-5">
+                  {exportSummary.issues.slice(0, 10).map((issue, index) => (
+                    <li key={`${issue.productId}-${issue.code}-${index}`}>
+                      <span className="font-medium">{issue.productId}</span>: {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {exportSummary.issues.length > 10 && <p className="mt-2">Plus {exportSummary.issues.length - 10} more validation issue(s).</p>}
             </NoticeBox>
           ) : (

@@ -1,5 +1,6 @@
 import type { CatalogGenerationTask } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
+import logger from "@/lib/utils/logger";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CatalogImageGenerator } from "../providers/image-generator";
 import { isRetryableProductGenerationError } from "../providers/litellm-product-generator";
@@ -217,9 +218,17 @@ export class CatalogGenerationWorker {
   async runOnce(): Promise<boolean> {
     const task = await claimNextCatalogTask(this.options.workerId);
     if (!task) return false;
+    let catalogSlug: string | null = null;
+    let model: string | null = null;
+    let imageRole: string | null = null;
 
     try {
-      const job = await prisma.catalogGenerationJob.findUniqueOrThrow({ where: { id: task.jobId } });
+      const job = await prisma.catalogGenerationJob.findUniqueOrThrow({
+        where: { id: task.jobId },
+        include: { catalog: { select: { slug: true } } },
+      });
+      catalogSlug = job.catalog.slug;
+      model = task.taskType === "GENERATE_IMAGE" ? job.imageModel : job.textModel;
       if (job.status === "CANCELLED") {
         await prisma.catalogGenerationTask.updateMany({
           where: { id: task.id, status: "RUNNING", lockedBy: this.options.workerId },
@@ -237,6 +246,7 @@ export class CatalogGenerationWorker {
         const asset = await prisma.syntheticImageAsset.findUniqueOrThrow({
           where: { id: task.imageAssetId },
         });
+        imageRole = asset.role;
         const regeneration =
           task.payload != null &&
           typeof task.payload === "object" &&
@@ -258,6 +268,20 @@ export class CatalogGenerationWorker {
       }
       await completeTask(task, this.options.workerId);
     } catch (error) {
+      logger.error("Catalog generation task failed", {
+        workerId: this.options.workerId,
+        jobId: task.jobId,
+        taskId: task.id,
+        taskType: task.taskType,
+        catalog: catalogSlug,
+        productId: task.productId,
+        styleId: task.styleId,
+        imageRole,
+        model,
+        attempt: task.attempts,
+        failureCategory: isRetryableCatalogWorkerError(error) ? "transient" : "permanent",
+        error: errorMessage(error),
+      });
       await settleFailedTask(
         task,
         this.options.workerId,

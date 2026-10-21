@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
 import { parseCatalogProfileConfig } from "../config/profiles";
+import { getCatalogGenerationLimits } from "../config/generation-limits";
 import type {
   CatalogDetailView,
   CatalogJobView,
@@ -23,7 +24,18 @@ function jobView(job: {
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
-  tasks: Array<{ status: string }>;
+  tasks: Array<{
+    id: number;
+    status: string;
+    taskType: string;
+    dedupeKey: string;
+    attempts: number;
+    maxAttempts: number;
+    lastError: string | null;
+    product: { externalId: string } | null;
+    style: { externalId: string } | null;
+    imageAsset: { role: string } | null;
+  }>;
 }): CatalogJobView {
   return {
     id: job.id,
@@ -44,14 +56,42 @@ function jobView(job: {
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
     errorMessage: job.errorMessage,
+    failedTaskDetails: job.tasks
+      .filter((task) => task.status === "FAILED")
+      .map((task) => ({
+        id: task.id,
+        taskType: task.taskType,
+        reference:
+          task.imageAsset?.role ??
+          task.style?.externalId ??
+          task.product?.externalId ??
+          task.dedupeKey,
+        attempts: task.attempts,
+        maxAttempts: task.maxAttempts,
+        lastError: task.lastError ?? "No failure reason was recorded",
+      })),
   };
 }
 
 const jobInclude = {
-  tasks: { select: { status: true } },
+  tasks: {
+    select: {
+      id: true,
+      status: true,
+      taskType: true,
+      dedupeKey: true,
+      attempts: true,
+      maxAttempts: true,
+      lastError: true,
+      product: { select: { externalId: true } },
+      style: { select: { externalId: true } },
+      imageAsset: { select: { role: true } },
+    },
+  },
 } satisfies Prisma.CatalogGenerationJobInclude;
 
 export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
+  const generationLimits = getCatalogGenerationLimits();
   const catalogs = await prisma.syntheticCatalog.findMany({
     where: { active: true },
     orderBy: { id: "asc" },
@@ -86,12 +126,14 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
       readyImageCount: images.filter((image) => image.status === "READY").length,
       failedImageCount: images.filter((image) => image.status === "FAILED").length,
       estimatedSizesPerProduct: config.sizes.length,
+      ...generationLimits,
       latestJob: catalog.jobs[0] ? jobView(catalog.jobs[0]) : null,
     };
   });
 }
 
 export async function getCatalogDetail(reference: string): Promise<CatalogDetailView | null> {
+  const generationLimits = getCatalogGenerationLimits();
   const numericId = /^\d+$/.test(reference) ? Number(reference) : null;
   const catalog = await prisma.syntheticCatalog.findFirst({
     where: numericId == null ? { slug: reference } : { id: numericId },
@@ -135,6 +177,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       defaultImageModel: catalog.defaultImageModel,
       visualDirection: config.visualDirection,
       estimatedSizesPerProduct: config.sizes.length,
+      ...generationLimits,
     },
     counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages },
     products: catalog.products.map((product) => {

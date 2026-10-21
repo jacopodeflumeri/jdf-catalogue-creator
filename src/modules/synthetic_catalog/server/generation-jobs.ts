@@ -17,8 +17,7 @@ import {
 } from "../providers/product-generator";
 import { reserveProductSequenceRange } from "./sequence-reservation";
 import { CATALOG_IMAGE_ROLES } from "../providers/image-generator";
-
-export const MAX_PRODUCTS_PER_JOB = 100;
+import { getCatalogGenerationLimits } from "../config/generation-limits";
 
 export interface CreateGenerationJobInput {
   catalogId: number;
@@ -35,8 +34,9 @@ function asInputJson(value: unknown): Prisma.InputJsonValue {
 }
 
 function validateRequestedProducts(count: number): void {
-  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_PRODUCTS_PER_JOB) {
-    throw new Error(`Requested products must be between 1 and ${MAX_PRODUCTS_PER_JOB}`);
+  const { maxProductsPerJob } = getCatalogGenerationLimits();
+  if (!Number.isSafeInteger(count) || count < 1 || count > maxProductsPerJob) {
+    throw new Error(`Requested products must be between 1 and ${maxProductsPerJob}`);
   }
 }
 
