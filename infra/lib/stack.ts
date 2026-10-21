@@ -348,6 +348,9 @@ export class AppStack extends cdk.Stack {
         // the AWS `Product` cost-allocation tag. Set always (harmless when the
         // LLM capability is unused) so the tag and the runtime value never drift.
         APP_PRODUCT: config.product,
+        // This app is intentionally Mapp-internal-only. Keycloak remains the
+        // internal identity broker, but company-context/customer login is off.
+        COMPANY_LOGIN_ENABLED: "false",
         APP_URL: `https://${config.domainName}`,
         NEXTAUTH_URL: `https://${config.domainName}`,
         LOG_LEVEL: config.envName === "staging" ? "info" : "error",
@@ -557,25 +560,24 @@ export class AppStack extends cdk.Stack {
             },
           ),
         ),
-        // Uncomment if LLM capability is enabled (see docs/template/capabilities/LLM.md)
-        // LITELLM_API_KEY: ecs.Secret.fromSsmParameter(
-        //   ssm.StringParameter.fromSecureStringParameterAttributes(
-        //     this,
-        //     "LitellmApiKey",
-        //     {
-        //       parameterName: `/${prefix}/LITELLM_API_KEY`,
-        //     },
-        //   ),
-        // ),
-        // LITELLM_BASE_URL: ecs.Secret.fromSsmParameter(
-        //   ssm.StringParameter.fromSecureStringParameterAttributes(
-        //     this,
-        //     "LitellmBaseUrl",
-        //     {
-        //       parameterName: `/${prefix}/LITELLM_BASE_URL`,
-        //     },
-        //   ),
-        // ),
+        LITELLM_API_KEY: ecs.Secret.fromSsmParameter(
+          ssm.StringParameter.fromSecureStringParameterAttributes(
+            this,
+            "LitellmApiKey",
+            {
+              parameterName: `/${prefix}/LITELLM_API_KEY`,
+            },
+          ),
+        ),
+        LITELLM_BASE_URL: ecs.Secret.fromSsmParameter(
+          ssm.StringParameter.fromSecureStringParameterAttributes(
+            this,
+            "LitellmBaseUrl",
+            {
+              parameterName: `/${prefix}/LITELLM_BASE_URL`,
+            },
+          ),
+        ),
       },
       portMappings: [
         {

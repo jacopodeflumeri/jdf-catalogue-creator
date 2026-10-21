@@ -13,6 +13,7 @@
 import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../src/generated/prisma/client'
+import { CATALOG_PROFILES } from '../src/modules/synthetic_catalog/config/profiles'
 
 // Match the app's runtime behavior: construct DATABASE_URL from DB_* if it
 // isn't set explicitly. Keeps the seed script working when users follow the
@@ -330,10 +331,37 @@ async function main() {
   console.log('  Created notification preferences')
 
   // =========================================================================
-  // Add your seed data below
+  // Synthetic catalog profiles
   // =========================================================================
-  // When extending this template, add new seed sections here following
-  // the same pattern: upsert for idempotency, console.log for progress.
+  console.log('Creating synthetic catalog profiles...')
+
+  for (const profile of CATALOG_PROFILES) {
+    await prisma.syntheticCatalog.upsert({
+      where: { slug: profile.slug },
+      update: {
+        name: profile.name,
+        segment: profile.segment,
+        brandName: profile.brandName,
+        externalPrefix: profile.externalPrefix,
+        config: JSON.parse(JSON.stringify(profile.config)),
+        defaultTextModel: profile.defaultTextModel,
+        defaultImageModel: profile.defaultImageModel,
+        active: true,
+      },
+      create: {
+        slug: profile.slug,
+        name: profile.name,
+        segment: profile.segment,
+        brandName: profile.brandName,
+        externalPrefix: profile.externalPrefix,
+        config: JSON.parse(JSON.stringify(profile.config)),
+        defaultTextModel: profile.defaultTextModel,
+        defaultImageModel: profile.defaultImageModel,
+      },
+    })
+  }
+
+  console.log(`  Created ${CATALOG_PROFILES.length} synthetic catalog profiles`)
 
   console.log('\nSeeding complete!')
 }

@@ -37,6 +37,19 @@ export const AUDIT_ENTITY_TYPES = [
     label: "Company",
     href: (id) => (id != null ? `/admin/company-users?q=${id}` : "/admin/company-users"),
   },
+  {
+    key: "synthetic_catalog",
+    label: "Synthetic Catalog",
+    href: (id) => (id != null ? `/admin/catalogs/${id}` : "/admin/catalogs"),
+  },
+  {
+    key: "catalog_generation_job",
+    label: "Catalog Generation Job",
+  },
+  {
+    key: "synthetic_image_asset",
+    label: "Synthetic Image",
+  },
   // Add your app's entities here, e.g.:
   //   { key: "api_key", label: "API Key", href: (id) => `/admin/api-keys/${id}` },
 ] as const satisfies readonly AuditEntityTypeDef[];

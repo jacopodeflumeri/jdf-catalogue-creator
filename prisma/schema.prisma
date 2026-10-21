@@ -57,10 +57,11 @@ model MappTeam {
   accessNotes  String?   @map("access_notes") // Admin notes about access decision
 
   // Relationships
-  authorizedByMember MappTeam?         @relation("MappTeamAuthorizer", fields: [authorizedBy], references: [id], onDelete: SetNull)
-  authorizedMembers  MappTeam[]        @relation("MappTeamAuthorizer")
-  activities         AccountActivity[] @relation("ActivityMappUser")
-  auditLogs          AuditLog[]
+  authorizedByMember    MappTeam?              @relation("MappTeamAuthorizer", fields: [authorizedBy], references: [id], onDelete: SetNull)
+  authorizedMembers     MappTeam[]             @relation("MappTeamAuthorizer")
+  activities            AccountActivity[]      @relation("ActivityMappUser")
+  auditLogs             AuditLog[]
+  catalogGenerationJobs CatalogGenerationJob[]
 
   @@index([email])
   @@index([accessStatus])
@@ -286,4 +287,275 @@ model MagicLink {
   @@index([expiresAt])
   @@index([used])
   @@map("magic_link")
+}
+
+// -----------------------------------------------------------------------------
+// Synthetic catalog foundation
+// -----------------------------------------------------------------------------
+
+enum CatalogDepartment {
+  WOMEN
+  MEN
+}
+
+enum CatalogEntityStatus {
+  DRAFT
+  GENERATING
+  READY
+  FAILED
+}
+
+enum CatalogAvailability {
+  IN_STOCK
+  OUT_OF_STOCK
+}
+
+enum CatalogImageRole {
+  FRONT
+  BACK
+  ON_MODEL
+}
+
+enum CatalogImageStatus {
+  QUEUED
+  GENERATING
+  READY
+  FAILED
+}
+
+enum CatalogJobType {
+  INITIAL
+  ADD_PRODUCTS
+  RETRY
+  REGENERATE_IMAGE
+}
+
+enum CatalogDepartmentMode {
+  AUTO
+  WOMEN
+  MEN
+}
+
+enum CatalogJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+enum CatalogJobStage {
+  PLANNING
+  PRODUCTS
+  IMAGES
+  VALIDATING
+  COMPLETE
+}
+
+enum CatalogTaskType {
+  GENERATE_PRODUCT
+  GENERATE_IMAGE
+  VALIDATE_PRODUCT
+}
+
+enum CatalogTaskStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model SyntheticCatalog {
+  id                  Int      @id @default(autoincrement())
+  slug                String   @unique
+  name                String
+  segment             String
+  brandName           String   @map("brand_name")
+  externalPrefix      String   @unique @map("external_prefix")
+  config              Json     @map("config_json")
+  defaultTextModel    String   @map("default_text_model")
+  defaultImageModel   String   @map("default_image_model")
+  nextProductSequence Int      @default(1) @map("next_product_sequence")
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  products SyntheticProduct[]
+  jobs     CatalogGenerationJob[]
+
+  @@index([active])
+  @@map("synthetic_catalog")
+}
+
+model SyntheticProduct {
+  id              Int                 @id @default(autoincrement())
+  catalogId       Int                 @map("catalog_id")
+  generationJobId Int?                @map("generation_job_id")
+  sequence        Int
+  externalId      String              @unique @map("external_id")
+  name            String
+  description     String
+  department      CatalogDepartment
+  category        String
+  subcategory     String
+  material        String
+  season          String
+  basePrice       Decimal             @map("base_price") @db.Decimal(12, 2)
+  salePrice       Decimal?            @map("sale_price") @db.Decimal(12, 2)
+  currency        String              @default("EUR")
+  productUrl      String?             @map("product_url")
+  status          CatalogEntityStatus @default(DRAFT)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  catalog       SyntheticCatalog        @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  generationJob CatalogGenerationJob?   @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
+  styles        SyntheticStyle[]
+  tasks         CatalogGenerationTask[]
+
+  @@unique([catalogId, sequence])
+  @@index([catalogId, department])
+  @@index([generationJobId])
+  @@index([status])
+  @@map("synthetic_product")
+}
+
+model SyntheticStyle {
+  id         Int                 @id @default(autoincrement())
+  productId  Int                 @map("product_id")
+  externalId String              @unique @map("external_id")
+  colorName  String              @map("color_name")
+  colorCode  String              @map("color_code")
+  visualSpec Json?               @map("visual_spec")
+  status     CatalogEntityStatus @default(DRAFT)
+  createdAt  DateTime            @default(now()) @map("created_at")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+
+  product  SyntheticProduct        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variants SyntheticVariant[]
+  images   SyntheticImageAsset[]
+  tasks    CatalogGenerationTask[]
+
+  @@unique([productId, colorCode])
+  @@index([productId])
+  @@index([status])
+  @@map("synthetic_style")
+}
+
+model SyntheticVariant {
+  id           Int                 @id @default(autoincrement())
+  styleId      Int                 @map("style_id")
+  externalId   String              @unique @map("external_id")
+  sku          String              @unique
+  size         String
+  stock        Int                 @default(0)
+  availability CatalogAvailability @default(OUT_OF_STOCK)
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  style SyntheticStyle @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@unique([styleId, size])
+  @@index([styleId])
+  @@index([availability])
+  @@map("synthetic_variant")
+}
+
+model SyntheticImageAsset {
+  id               Int                @id @default(autoincrement())
+  publicId         String             @unique @default(uuid()) @map("public_id")
+  styleId          Int                @map("style_id")
+  role             CatalogImageRole
+  status           CatalogImageStatus @default(QUEUED)
+  storageKey       String?            @map("storage_key")
+  mimeType         String?            @map("mime_type")
+  width            Int?
+  height           Int?
+  model            String?
+  prompt           String?
+  referenceAssetId Int?               @map("reference_asset_id")
+  errorMessage     String?            @map("error_message")
+  attemptCount     Int                @default(0) @map("attempt_count")
+  generatedAt      DateTime?          @map("generated_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  style          SyntheticStyle          @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  referenceAsset SyntheticImageAsset?    @relation("ImageAssetReference", fields: [referenceAssetId], references: [id], onDelete: SetNull)
+  derivedAssets  SyntheticImageAsset[]   @relation("ImageAssetReference")
+  tasks          CatalogGenerationTask[]
+
+  @@unique([styleId, role])
+  @@index([status])
+  @@index([referenceAssetId])
+  @@map("synthetic_image_asset")
+}
+
+model CatalogGenerationJob {
+  id                  Int                   @id @default(autoincrement())
+  publicId            String                @unique @default(uuid()) @map("public_id")
+  catalogId           Int                   @map("catalog_id")
+  createdByMappTeamId Int?                  @map("created_by_mapp_team_id")
+  jobType             CatalogJobType        @map("job_type")
+  requestedProducts   Int                   @map("requested_products")
+  departmentMode      CatalogDepartmentMode @default(AUTO) @map("department_mode")
+  textModel           String                @map("text_model")
+  imageModel          String                @map("image_model")
+  status              CatalogJobStatus      @default(QUEUED)
+  stage               CatalogJobStage       @default(PLANNING)
+  completedProducts   Int                   @default(0) @map("completed_products")
+  failedProducts      Int                   @default(0) @map("failed_products")
+  completedImages     Int                   @default(0) @map("completed_images")
+  failedImages        Int                   @default(0) @map("failed_images")
+  errorMessage        String?               @map("error_message")
+  startedAt           DateTime?             @map("started_at")
+  finishedAt          DateTime?             @map("finished_at")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  catalog   SyntheticCatalog        @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  createdBy MappTeam?               @relation(fields: [createdByMappTeamId], references: [id], onDelete: SetNull)
+  products  SyntheticProduct[]
+  tasks     CatalogGenerationTask[]
+
+  @@index([catalogId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdByMappTeamId])
+  @@map("catalog_generation_job")
+}
+
+model CatalogGenerationTask {
+  id           Int               @id @default(autoincrement())
+  jobId        Int               @map("job_id")
+  productId    Int?              @map("product_id")
+  styleId      Int?              @map("style_id")
+  imageAssetId Int?              @map("image_asset_id")
+  taskType     CatalogTaskType   @map("task_type")
+  status       CatalogTaskStatus @default(QUEUED)
+  dedupeKey    String            @map("dedupe_key")
+  payload      Json?
+  attempts     Int               @default(0)
+  maxAttempts  Int               @default(3) @map("max_attempts")
+  availableAt  DateTime          @default(now()) @map("available_at")
+  lockedAt     DateTime?         @map("locked_at")
+  lockedBy     String?           @map("locked_by")
+  lastError    String?           @map("last_error")
+  startedAt    DateTime?         @map("started_at")
+  finishedAt   DateTime?         @map("finished_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  job        CatalogGenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  product    SyntheticProduct?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  style      SyntheticStyle?      @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  imageAsset SyntheticImageAsset? @relation(fields: [imageAssetId], references: [id], onDelete: SetNull)
+
+  @@unique([jobId, dedupeKey])
+  @@index([status, availableAt])
+  @@index([jobId, status])
+  @@index([productId])
+  @@index([styleId])
+  @@index([imageAssetId])
+  @@map("catalog_generation_task")
 }

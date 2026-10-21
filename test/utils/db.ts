@@ -40,6 +40,13 @@ export function requireTestDatabase(): void {
 
 // Tables in deletion order (children before parents to respect FK constraints)
 const TABLES = [
+  'catalog_generation_task',
+  'synthetic_image_asset',
+  'synthetic_variant',
+  'synthetic_style',
+  'synthetic_product',
+  'catalog_generation_job',
+  'synthetic_catalog',
   'account_activity',
   'account_notifications',
   'account_data',

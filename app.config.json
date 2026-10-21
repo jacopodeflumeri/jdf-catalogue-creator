@@ -9,5 +9,5 @@
   "createdBy": "jacopo.deflumeri",
   "managedBy": "jacopo.deflumeri",
   "immutableDeploy": false,
-  "enabledCapabilities": ["company_login"]
+  "enabledCapabilities": ["llm"]
 }

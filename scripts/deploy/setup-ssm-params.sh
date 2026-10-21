@@ -233,9 +233,9 @@ else
     echo "  OK: ${SHARED_INTERNAL_API}/internal-api/client-secret is present."
 fi
 
-# Optional: LLM (uncomment if LLM capability is enabled)
-# put_parameter "LITELLM_API_KEY" "LiteLLM proxy virtual key (self-service: https://infra-tools.deproxy.muc.domeus.com/ai-keys/gptkeyreq.php)" ""
-# put_parameter "LITELLM_BASE_URL" "LiteLLM proxy URL" "https://llm-proxy.labs.mapp.com"
+# LLM capability
+put_parameter "LITELLM_API_KEY" "LiteLLM proxy virtual key (self-service: https://infra-tools.deproxy.muc.domeus.com/ai-keys/gptkeyreq.php)" ""
+put_parameter "LITELLM_BASE_URL" "LiteLLM proxy URL" "https://llm-proxy.labs.mapp.com"
 
 echo ""
 echo "=========================================="
