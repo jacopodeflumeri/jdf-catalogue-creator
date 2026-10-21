@@ -6,10 +6,10 @@ This app creates persistent synthetic fashion catalogs for internal Mapp users.
 It is deliberately admin-only: there is no customer-facing `/account` experience,
 and company-context login is disabled with `COMPANY_LOGIN_ENABLED=false`.
 
-Phases 1–3 provide the data model, four stable catalog profiles, identifier
-rules, deterministic generation domain, resumable job state machine, and real
-LiteLLM text generation. Catalog pages and image generation are not implemented
-yet.
+Phases 1–4 provide the data model, four stable catalog profiles, identifier
+rules, deterministic generation domain, resumable job state machine, real
+LiteLLM text and image generation, and persistent generated-image storage.
+Catalog pages and the independent background worker are not implemented yet.
 
 ## Catalog profiles
 
@@ -101,16 +101,49 @@ selected connection errors) receive bounded exponential-backoff retries.
 Authentication/configuration errors and invalid model output fail immediately to
 avoid wasteful repeat spend. There is no direct-provider fallback.
 
+## Image generation
+
+Each style owns exactly three durable `SyntheticImageAsset` rows: `FRONT`,
+`BACK`, and `ON_MODEL`. Product persistence creates these rows in `QUEUED`
+state. `generateStyleImages()` processes front first, then supplies the stored
+front bytes to back and on-model generation through LiteLLM's image-edit
+endpoint. If the proxy explicitly reports that edits are unsupported, the same
+adapter falls back to attributed prompt-only generation; it never calls a
+provider directly.
+
+Role-specific prompts require a complete product-only front/back view or a
+clearly visible on-model garment, while prohibiting real brands, logos, text,
+watermarks, and recognizable campaigns. Every non-streaming call uses the
+persisted image model, a role-specific feature name, and a 240-second timeout.
+JSON image-generation requests carry normal billing metadata. Multipart image
+edits carry the same spend metadata through LiteLLM's
+`x-litellm-spend-logs-metadata` header because forwarding a multipart
+`metadata` form field to OpenAI is rejected.
+
+`regenerateImageAsset()` targets one role only. Generation completes before the
+deterministic S3 key is overwritten, and failures remain on that asset without
+regenerating its siblings.
+
 ## Storage
 
 Generated media will use the app-owned S3 bucket
 `mapp-labs-catalogues-creator-{staging|prod}`. ECS receives access through its
-task role, so no S3 access-key secret is required in AWS. Local development can
-eventually use the normal AWS credential chain, but the template's current S3
-validator still requires explicit access-key variables. Do not add long-lived
-keys to work around that: the validator will be corrected in the storage phase.
-Stable media storage and authorization are scheduled for that later phase;
-Phase 1 stores only nullable object metadata.
+task role, so no S3 access-key secret is required in AWS. The S3 service now
+uses the standard AWS credential chain when an explicit key pair is absent;
+local development can therefore use the `labs-power` profile or another normal
+SDK credential source rather than long-lived app secrets. Set
+`AWS_PROFILE=labs-power` locally when that profile is not already selected.
+
+Generated images are normalized to WebP and stored at deterministic validated
+keys such as
+`public/catalogs/premium-apparel/PRE-W-000001-IVY/front.webp`. The bucket stays
+private. CSV-safe URLs use the stable opaque route
+`/api/catalog-assets/{publicId}`, which resolves only one persisted generated
+asset, calls the framework's `authorizeS3Read()`, and redirects to a fresh
+short-lived presigned URL. There is no object listing or caller-controlled key.
+The `public/` prefix is deliberate: synthetic media must be fetchable by
+Demoware without an interactive app session, while the admin application itself
+remains internal-only.
 
 ## Key files
 
@@ -124,6 +157,12 @@ Phase 1 stores only nullable object metadata.
 - `src/modules/synthetic_catalog/providers/mock-product-generator.ts`
 - `src/modules/synthetic_catalog/providers/product-prompt.ts`
 - `src/modules/synthetic_catalog/providers/litellm-product-generator.ts`
+- `src/modules/synthetic_catalog/providers/image-prompt.ts`
+- `src/modules/synthetic_catalog/providers/litellm-image-generator.ts`
+- `src/modules/synthetic_catalog/server/image-assets.ts`
+- `src/modules/synthetic_catalog/storage/generated-asset-storage.ts`
+- `src/modules/llm/lib/images.ts`
+- `src/app/api/catalog-assets/[publicId]/route.ts`
 - `src/modules/synthetic_catalog/server/generation-jobs.ts`
 - `src/modules/synthetic_catalog/server/sequence-reservation.ts`
 - `infra/lib/stack.ts`
@@ -168,6 +207,20 @@ provider clients are intentionally absent, ensuring every successful call has
 Mapp app/product/environment/feature spend attribution. Controlled-vocabulary
 validation remains outside the prompt as an enforceable application boundary.
 
+### 2026-10-21 — Reference images remain proxy-attributed
+
+Front-reference edits use the same LiteLLM virtual key and spend subject as
+normal image generation. LiteLLM's dedicated spend-metadata header is used for
+the multipart edit endpoint; dropping metadata or calling OpenAI directly would
+make cost attribution incomplete and is not an acceptable fallback.
+
+### 2026-10-21 — Stable application URLs over a private bucket
+
+S3 keys are deterministic for replacement and persistence, while public URLs
+are opaque database IDs owned by the application. This keeps URLs stable across
+deployments and regenerations without exposing a bucket, directory listing, or
+one-hour S3 signature in exported feeds.
+
 ## Pitfalls
 
 - Do not decrement or manually recycle `nextProductSequence`.
@@ -175,5 +228,10 @@ validation remains outside the prompt as an enforceable application boundary.
 - Do not put LiteLLM or AWS credentials in profile JSON, prompts, logs, or docs.
 - Do not perform long-running image work inside a Next.js request.
 - Before adding media routes, use the S3 prefix registry and `authorizeS3Read()`.
-- Consequential generation, retry, regeneration, and deletion actions must use
-  the audit entity types registered in `src/modules/audit/entity-types.ts`.
+- Do not write direct S3/CDN URLs to catalog exports; use the opaque asset route.
+- Do not send nested `metadata` as a multipart image-edit form field; use the
+  LiteLLM spend-metadata header implemented by `llmEditImage()`.
+- When authenticated admin actions are added, their consequential generation,
+  retry, regeneration, and deletion requests must write audit records using the
+  entity types registered in `src/modules/audit/entity-types.ts`. The Phase 4
+  worker-facing services intentionally have no session or actor context.

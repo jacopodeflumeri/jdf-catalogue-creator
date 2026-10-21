@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { S3Client, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Upload } from '@aws-sdk/lib-storage';
 import sharp from 'sharp';
@@ -30,23 +30,21 @@ export class S3ImageService {
       logger.warn('S3 configuration invalid, S3 features will be disabled:', validation.errors.join(', '));
       // Still need to initialize with dummy config to prevent runtime errors
       this.config = getS3Config();
-      this.s3Client = new S3Client({
-        region: this.config.region || 'us-east-1',
-        credentials: {
-          accessKeyId: this.config.accessKeyId || 'dummy',
-          secretAccessKey: this.config.secretAccessKey || 'dummy',
-        },
-      });
+      this.s3Client = new S3Client({ region: this.config.region || 'us-east-1' });
       return;
     }
 
     this.config = getS3Config();
     this.s3Client = new S3Client({
       region: this.config.region,
-      credentials: {
-        accessKeyId: this.config.accessKeyId!,
-        secretAccessKey: this.config.secretAccessKey!,
-      },
+      ...(this.config.accessKeyId && this.config.secretAccessKey
+        ? {
+            credentials: {
+              accessKeyId: this.config.accessKeyId,
+              secretAccessKey: this.config.secretAccessKey,
+            },
+          }
+        : {}),
     });
   }
 
@@ -62,6 +60,63 @@ export class S3ImageService {
    */
   isS3Available(): boolean {
     return this.available;
+  }
+
+  /**
+   * Store a server-generated object at an exact, policy-validated key.
+   *
+   * User uploads should continue to use uploadImage/uploadFile. This narrower
+   * method exists for deterministic generated assets whose key is part of the
+   * persisted catalog contract.
+   */
+  async putGeneratedCatalogObject(
+    key: string,
+    body: Buffer,
+    contentType: string,
+    metadata: Record<string, string> = {},
+  ): Promise<void> {
+    if (!this.available) {
+      throw new Error('S3 service is not available. Please check your S3 configuration.');
+    }
+    const { policy } = resolveS3Key(key);
+    if (!key.startsWith('public/catalogs/')) {
+      throw new Error('Generated catalog objects must use the public/catalogs/ prefix');
+    }
+    if (body.length > this.config.imageProcessing.maxFileSize) {
+      throw new Error(`File too large: ${body.length} bytes (max: ${this.config.imageProcessing.maxFileSize})`);
+    }
+
+    await this.s3Client.send(
+      new PutObjectCommand({
+        Bucket: this.config.bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        Metadata: metadata,
+        CacheControl:
+          policy.read === 'public'
+            ? 'public, max-age=31536000, immutable'
+            : 'private, max-age=300',
+      }),
+    );
+  }
+
+  /** Read a policy-validated object for server-side reference-image generation. */
+  async getGeneratedCatalogObjectBuffer(key: string): Promise<Buffer> {
+    if (!this.available) {
+      throw new Error('S3 service is not available. Please check your S3 configuration.');
+    }
+    resolveS3Key(key);
+    if (!key.startsWith('public/catalogs/')) {
+      throw new Error('Generated catalog objects must use the public/catalogs/ prefix');
+    }
+    const response = await this.s3Client.send(
+      new GetObjectCommand({ Bucket: this.config.bucket, Key: key }),
+    );
+    if (!response.Body) {
+      throw new Error(`S3 object '${key}' returned an empty body`);
+    }
+    return Buffer.from(await response.Body.transformToByteArray());
   }
 
   /**

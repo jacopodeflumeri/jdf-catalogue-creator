@@ -120,8 +120,8 @@ export interface ImageVariantConfig {
 export interface S3ServiceConfig {
   bucket: string;
   region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
   cdnDomain?: string;
 }
 

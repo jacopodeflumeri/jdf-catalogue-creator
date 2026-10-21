@@ -239,7 +239,10 @@ export const featureFlags = {
     (env.SFTP_PASSWORD || env.SFTP_PRIVATE_KEY) &&
     (env.SFTP_HOST_FINGERPRINT || env.SFTP_ALLOW_UNKNOWN_HOST_KEY)
   ),
-  s3: !!(env.S3_REGION && env.S3_BUCKET_NAME && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY),
+  // ECS uses the task-role credential provider. Static keys are optional and
+  // only useful for local setups that do not already have an AWS credential
+  // chain configured.
+  s3: !!(env.S3_REGION && env.S3_BUCKET_NAME),
   llm: !!(env.LITELLM_API_KEY && env.LITELLM_BASE_URL),
 } as const;
 

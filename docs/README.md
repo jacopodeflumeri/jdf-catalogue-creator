@@ -17,4 +17,4 @@ in it. See "Documenting your work" in [`AGENTS.md`](../AGENTS.md).
 
 <!-- One line per doc: link to the doc, then what it covers. -->
 
-- [Synthetic Catalogs](SYNTHETIC_CATALOGS.md) — profiles, identifiers, persistence, LiteLLM attribution, and implementation decisions.
+- [Synthetic Catalogs](SYNTHETIC_CATALOGS.md) — profiles, identifiers, jobs, LiteLLM text/image generation, persistent media, and implementation decisions.

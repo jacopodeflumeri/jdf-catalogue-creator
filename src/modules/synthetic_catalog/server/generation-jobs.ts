@@ -16,6 +16,7 @@ import {
   type ProductGenerator,
 } from "../providers/product-generator";
 import { reserveProductSequenceRange } from "./sequence-reservation";
+import { CATALOG_IMAGE_ROLES } from "../providers/image-generator";
 
 export const MAX_PRODUCTS_PER_JOB = 100;
 
@@ -177,6 +178,14 @@ async function persistGeneratedProduct(input: {
         status: "DRAFT",
       },
     });
+
+    for (const role of CATALOG_IMAGE_ROLES) {
+      await tx.syntheticImageAsset.upsert({
+        where: { styleId_role: { styleId: style.id, role } },
+        update: {},
+        create: { styleId: style.id, role, status: "QUEUED" },
+      });
+    }
 
     for (let index = 0; index < inventory.length; index += 1) {
       const item = inventory[index]!;

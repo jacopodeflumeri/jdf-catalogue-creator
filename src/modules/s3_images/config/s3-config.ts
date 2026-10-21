@@ -86,17 +86,17 @@ const PLACEHOLDER_VALUES = [
 // Validation
 export function validateS3Config(): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
-  if (!S3_CONFIG.accessKeyId) {
-    errors.push('S3_ACCESS_KEY_ID environment variable is required');
-  } else if (PLACEHOLDER_VALUES.includes(S3_CONFIG.accessKeyId.toLowerCase())) {
+
+  if (S3_CONFIG.accessKeyId && PLACEHOLDER_VALUES.includes(S3_CONFIG.accessKeyId.toLowerCase())) {
     errors.push('S3_ACCESS_KEY_ID contains placeholder value - please set your actual AWS access key');
   }
-  
-  if (!S3_CONFIG.secretAccessKey) {
-    errors.push('S3_SECRET_ACCESS_KEY environment variable is required');
-  } else if (PLACEHOLDER_VALUES.includes(S3_CONFIG.secretAccessKey.toLowerCase())) {
+
+  if (S3_CONFIG.secretAccessKey && PLACEHOLDER_VALUES.includes(S3_CONFIG.secretAccessKey.toLowerCase())) {
     errors.push('S3_SECRET_ACCESS_KEY contains placeholder value - please set your actual AWS secret key');
+  }
+
+  if (Boolean(S3_CONFIG.accessKeyId) !== Boolean(S3_CONFIG.secretAccessKey)) {
+    errors.push('S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be provided together');
   }
   
   if (!S3_CONFIG.bucket) {

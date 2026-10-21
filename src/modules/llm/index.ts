@@ -14,6 +14,7 @@
  */
 
 export { llmCompletion, getLLMClient, buildBillingParams } from "./lib/client";
+export { llmGenerateImage, llmEditImage, IMAGE_TIMEOUT_MS } from "./lib/images";
 
 export { MODELS, type ModelName } from "./lib/models";
 
@@ -21,4 +22,7 @@ export type {
   LLMCompletionParams,
   LLMMetadata,
   LLMConfig,
+  LLMImageParams,
+  LLMImageResult,
+  LLMImageSource,
 } from "./lib/types";

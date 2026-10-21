@@ -52,3 +52,20 @@ export interface LLMCompletionParams extends LLMMetadata {
    */
   stream_options?: { include_usage?: boolean };
 }
+
+export interface LLMImageParams extends LLMMetadata {
+  model: string;
+  prompt: string;
+  size?: string;
+  quality?: "low" | "medium" | "high" | "auto";
+  outputFormat?: "png" | "webp" | "jpeg";
+}
+
+export interface LLMImageSource {
+  data: Buffer;
+  mimeType: string;
+}
+
+export interface LLMImageResult extends LLMImageSource {
+  revisedPrompt?: string;
+}

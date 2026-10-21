@@ -21,6 +21,14 @@ export {
   ProductResponseError,
 } from "./providers/litellm-product-generator";
 export { buildProductPrompt } from "./providers/product-prompt";
+export { buildCatalogImagePrompt } from "./providers/image-prompt";
+export { LiteLLMImageGenerator, isReferenceImageUnsupportedError } from "./providers/litellm-image-generator";
+export { CATALOG_IMAGE_ROLES, type CatalogImageGenerator } from "./providers/image-generator";
+export {
+  buildGeneratedImageStorageKey,
+  S3GeneratedAssetStorage,
+  type GeneratedAssetStorage,
+} from "./storage/generated-asset-storage";
 export {
   generatedProductSpecSchema,
   validateGeneratedProductSpec,
