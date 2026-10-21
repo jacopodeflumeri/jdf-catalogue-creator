@@ -16,6 +16,13 @@ export { planAssortment, plannedProductSchema } from "./domain/planner";
 export { generateInventory, generatePrice, sizesForCategory } from "./domain/rules";
 export { MockProductGenerator } from "./providers/mock-product-generator";
 export {
+  isRetryableProductGenerationError,
+  LiteLLMProductGenerator,
+  ProductResponseError,
+} from "./providers/litellm-product-generator";
+export { buildProductPrompt } from "./providers/product-prompt";
+export {
   generatedProductSpecSchema,
+  validateGeneratedProductSpec,
   type ProductGenerator,
 } from "./providers/product-generator";

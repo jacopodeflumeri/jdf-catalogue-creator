@@ -11,7 +11,7 @@ import {
 } from "../domain/planner";
 import { generateInventory, generatePrice } from "../domain/rules";
 import {
-  generatedProductSpecSchema,
+  validateGeneratedProductSpec,
   type GeneratedProductSpec,
   type ProductGenerator,
 } from "../providers/product-generator";
@@ -89,21 +89,6 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   });
 }
 
-function validateProviderSpec(
-  rawSpec: GeneratedProductSpec,
-  config: ReturnType<typeof parseCatalogProfileConfig>,
-): GeneratedProductSpec {
-  const spec = generatedProductSpecSchema.parse(rawSpec);
-  if (!config.materials.includes(spec.material)) {
-    throw new Error(`Generated material '${spec.material}' is outside the catalog vocabulary`);
-  }
-  const color = config.colors.find((item) => item.code === spec.colorCode);
-  if (!color || color.name !== spec.colorName) {
-    throw new Error(`Generated color '${spec.colorCode}' is outside the catalog palette`);
-  }
-  return spec;
-}
-
 async function persistGeneratedProduct(input: {
   jobId: number;
   taskId: number;
@@ -115,7 +100,7 @@ async function persistGeneratedProduct(input: {
     include: { catalog: true },
   });
   const config = parseCatalogProfileConfig(job.catalog.config);
-  const spec = validateProviderSpec(input.spec, config);
+  const spec = validateGeneratedProductSpec(input.spec, config);
   const departmentCode = input.plan.department === "WOMEN" ? "W" : "M";
   const externalId = formatProductId({
     catalogPrefix: job.catalog.externalPrefix,
@@ -308,6 +293,7 @@ export async function runGenerationJob(
     try {
       const plan = plannedProductSchema.parse(task.payload);
       const spec = await provider.generateProduct({
+        model: job.textModel,
         catalog: {
           slug: job.catalog.slug,
           segment: job.catalog.segment,

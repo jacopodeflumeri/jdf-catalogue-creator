@@ -6,10 +6,10 @@ This app creates persistent synthetic fashion catalogs for internal Mapp users.
 It is deliberately admin-only: there is no customer-facing `/account` experience,
 and company-context login is disabled with `COMPANY_LOGIN_ENABLED=false`.
 
-Phases 1 and 2 provide the data model, four stable catalog profiles, identifier
-rules, deterministic generation domain, resumable job state machine, and
-LiteLLM deployment wiring. They do not make model calls or expose catalog
-generation pages yet.
+Phases 1–3 provide the data model, four stable catalog profiles, identifier
+rules, deterministic generation domain, resumable job state machine, and real
+LiteLLM text generation. Catalog pages and image generation are not implemented
+yet.
 
 ## Catalog profiles
 
@@ -64,8 +64,8 @@ generation provider—owns prices, sale eligibility, currency, sizes, stock,
 availability, IDs, and URLs.
 
 `ProductGenerator` is the structured seam for product copy and visual concepts.
-Phase 2 uses `MockProductGenerator`, which is deterministic and network-free.
-The real LiteLLM implementation is intentionally deferred to Phase 3.
+Phase 2 tests use `MockProductGenerator`, which is deterministic and
+network-free. Phase 3 adds `LiteLLMProductGenerator` for real calls.
 
 `createGenerationJob()` reserves all sequences before persisting one
 `GENERATE_PRODUCT` task per planned product. `runGenerationJob()` persists each
@@ -90,6 +90,17 @@ and feature metadata. Never call a model provider directly or bypass the proxy.
 The key is a LiteLLM virtual key and is the only additional LLM secret. Do not
 commit it. The setup script writes it as a SecureString for each environment.
 
+`LiteLLMProductGenerator` calls only the framework's `llmCompletion()` helper
+with feature `synthetic-catalog-product-generation`. The job's persisted
+`textModel` is passed through, so catalog defaults and per-job overrides remain
+observable. Responses must be a single JSON object and pass both Zod shape
+validation and the catalog's material, season, and color-pair vocabularies.
+
+Only transient proxy/network failures (`408`, `409`, `425`, `429`, `5xx`, and
+selected connection errors) receive bounded exponential-backoff retries.
+Authentication/configuration errors and invalid model output fail immediately to
+avoid wasteful repeat spend. There is no direct-provider fallback.
+
 ## Storage
 
 Generated media will use the app-owned S3 bucket
@@ -111,6 +122,8 @@ Phase 1 stores only nullable object metadata.
 - `src/modules/synthetic_catalog/domain/rules.ts`
 - `src/modules/synthetic_catalog/providers/product-generator.ts`
 - `src/modules/synthetic_catalog/providers/mock-product-generator.ts`
+- `src/modules/synthetic_catalog/providers/product-prompt.ts`
+- `src/modules/synthetic_catalog/providers/litellm-product-generator.ts`
 - `src/modules/synthetic_catalog/server/generation-jobs.ts`
 - `src/modules/synthetic_catalog/server/sequence-reservation.ts`
 - `infra/lib/stack.ts`
@@ -147,6 +160,13 @@ constraints.
 Product, style, variants, and task completion are committed together. A stopped
 run leaves other tasks queued; a retry upserts the same deterministic identities
 instead of generating duplicates.
+
+### 2026-10-21 — Proxy-only structured text generation
+
+Real product copy uses `src/modules/llm` and the job's stored model. Direct
+provider clients are intentionally absent, ensuring every successful call has
+Mapp app/product/environment/feature spend attribution. Controlled-vocabulary
+validation remains outside the prompt as an enforceable application boundary.
 
 ## Pitfalls
 

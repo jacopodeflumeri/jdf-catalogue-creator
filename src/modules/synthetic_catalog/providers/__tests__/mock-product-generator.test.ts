@@ -14,6 +14,7 @@ describe("MockProductGenerator", () => {
     })[0]!;
     const provider = new MockProductGenerator();
     const input = {
+      model: profile.defaultTextModel,
       catalog: {
         slug: profile.slug,
         segment: profile.segment,

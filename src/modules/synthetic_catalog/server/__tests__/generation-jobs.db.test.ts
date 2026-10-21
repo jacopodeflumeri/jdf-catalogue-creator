@@ -88,13 +88,16 @@ describe("catalog generation jobs", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 3,
+      textModel: "openai/gpt-4o-mini",
       seed: "resumable-job",
     });
     const baseProvider = new MockProductGenerator();
     const generatedSequences: number[] = [];
+    const receivedModels: string[] = [];
     const trackingProvider: ProductGenerator = {
       async generateProduct(input: ProductGenerationInput) {
         generatedSequences.push(input.plan.sequence);
+        receivedModels.push(input.model);
         return baseProvider.generateProduct(input);
       },
     };
@@ -109,6 +112,8 @@ describe("catalog generation jobs", () => {
     expect(finished.completedProducts).toBe(3);
     expect(generatedSequences).toHaveLength(3);
     expect(new Set(generatedSequences).size).toBe(3);
+    expect(finished.textModel).toBe("openai/gpt-4o-mini");
+    expect(new Set(receivedModels)).toEqual(new Set(["openai/gpt-4o-mini"]));
   });
 
   it("can requeue a bounded provider failure and finish on retry", async () => {

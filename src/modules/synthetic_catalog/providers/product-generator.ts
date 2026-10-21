@@ -18,7 +18,27 @@ export const generatedProductSpecSchema = z.object({
 
 export type GeneratedProductSpec = z.infer<typeof generatedProductSpecSchema>;
 
+export function validateGeneratedProductSpec(
+  rawSpec: unknown,
+  config: CatalogProfileConfig,
+): GeneratedProductSpec {
+  const spec = generatedProductSpecSchema.parse(rawSpec);
+  if (!config.materials.includes(spec.material)) {
+    throw new Error(`Generated material '${spec.material}' is outside the catalog vocabulary`);
+  }
+  if (!config.seasons.includes(spec.season)) {
+    throw new Error(`Generated season '${spec.season}' is outside the catalog vocabulary`);
+  }
+  const color = config.colors.find((item) => item.code === spec.colorCode);
+  if (!color || color.name !== spec.colorName) {
+    throw new Error(`Generated color '${spec.colorCode}' is outside the catalog palette`);
+  }
+  return spec;
+}
+
 export interface ProductGenerationInput {
+  /** Persisted model selected for this generation job. */
+  model: string;
   catalog: {
     slug: string;
     segment: string;
