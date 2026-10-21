@@ -6,10 +6,34 @@ This app creates persistent synthetic fashion catalogs for internal Mapp users.
 It is deliberately admin-only: there is no customer-facing `/account` experience,
 and company-context login is disabled with `COMPANY_LOGIN_ENABLED=false`.
 
-Phases 1–5 provide the data model, four stable catalog profiles, identifier
+Phases 1–6 provide the data model, four stable catalog profiles, identifier
 rules, deterministic generation domain, resumable job state machine, real
 LiteLLM text and image generation, persistent generated-image storage, and an
-independent database-backed worker. Catalog pages are not implemented yet.
+independent database-backed worker, plus the internal admin workflow used to
+operate them.
+
+## Admin workflow
+
+`/admin` redirects to `/admin/catalogs`, where every active profile appears as
+one overview card with product, style, variant, image, and latest-job state.
+`/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
+up to the 100 most recent products with three image previews, size-level stock,
+job history, retry controls, and generation settings. Numeric catalog IDs are
+also accepted so audit-log links remain stable.
+
+All reads use `requireAdmin({})`. Viewer-level users see the same operational
+state but no mutation controls. Adding products, manually retrying failures,
+regenerating one image, and changing catalog defaults all require editor access
+and write audit records. A batch of 25 or more products requires a separate
+confirmation showing the expected LiteLLM call count. The request enqueues work
+only; browser navigation and polling never perform model or S3 work.
+
+The detail client polls persisted state every three seconds only while a job is
+queued or running. Product batches are capped at 100. Catalog model values are
+stored as LiteLLM `provider/model` names and are applied only to new jobs. The
+image selector is restricted to the app's reviewed image-capable model list;
+already queued jobs retain their recorded model names for attribution and
+repeatability.
 
 ## Catalog profiles
 
@@ -72,8 +96,9 @@ network-free. Phase 3 adds `LiteLLMProductGenerator` for real calls.
 product, its single MVP color style, all size variants, and task completion in
 one transaction. A bounded run returns the job to `QUEUED`; calling it again
 processes only unfinished tasks. Provider failures become `FAILED` tasks and a
-`COMPLETED_WITH_ERRORS` job; `resumeGenerationJob()` requeues failures below the
-attempt limit.
+`COMPLETED_WITH_ERRORS` job. `resumeGenerationJob()` is the explicit manual
+retry boundary: it requeues failed tasks and resets their bounded attempt budget.
+Automatic worker retries remain bounded by `maxAttempts`.
 
 The Phase 2 application service remains a narrow product-generation test seam.
 The production workflow is owned by the Phase 5 worker described below.
@@ -156,7 +181,10 @@ edits carry the same spend metadata through LiteLLM's
 `x-litellm-spend-logs-metadata` header because forwarding a multipart
 `metadata` form field to OpenAI is rejected.
 
-`regenerateImageAsset()` targets one role only. Generation completes before the
+The admin regeneration action targets one role only and creates a dedicated
+`REGENERATE_IMAGE` job/task with an explicit regeneration payload. Duplicate
+queued/running work for the same asset is rejected. The worker honors that flag
+even when the current asset is `READY`; generation completes before the
 deterministic S3 key is overwritten, and failures remain on that asset without
 regenerating its siblings.
 
@@ -197,6 +225,10 @@ remains internal-only.
 - `src/modules/synthetic_catalog/providers/litellm-image-generator.ts`
 - `src/modules/synthetic_catalog/server/image-assets.ts`
 - `src/modules/synthetic_catalog/server/catalog-worker.ts`
+- `src/modules/synthetic_catalog/server/admin-catalogs.ts`
+- `src/modules/synthetic_catalog/server/admin-actions.ts`
+- `src/app/admin/catalogs/page.tsx`
+- `src/app/admin/catalogs/[catalogRef]/page.tsx`
 - `src/modules/synthetic_catalog/storage/generated-asset-storage.ts`
 - `src/modules/llm/lib/images.ts`
 - `src/app/api/catalog-assets/[publicId]/route.ts`
@@ -275,6 +307,20 @@ worker together, reuses task-role S3 credentials and cost tags, and avoids the
 fixed cost of a second service. Worker concurrency remains one per ECS task and
 is coordinated by database claims.
 
+### 2026-10-21 — Admin actions enqueue; workers execute
+
+The internal UI never waits for LiteLLM. Server actions authorize, validate,
+persist a job/task, audit the request, and return. The worker owns every remote
+generation call and the page derives progress from database state. This keeps
+request timeouts, refreshes, and duplicate clicks from becoming duplicate spend.
+
+### 2026-10-21 — Catalog defaults, not per-job model overrides
+
+Editors can maintain each catalog's default text model, image model, brand, and
+visual direction. The add-products dialog deliberately does not expose a model
+override: one reviewed default per catalog is easier to operate, while the
+persisted job still records the exact models used.
+
 ## Pitfalls
 
 - Do not decrement or manually recycle `nextProductSequence`.
@@ -289,6 +335,10 @@ is coordinated by database claims.
 - Do not write direct S3/CDN URLs to catalog exports; use the opaque asset route.
 - Do not send nested `metadata` as a multipart image-edit form field; use the
   LiteLLM spend-metadata header implemented by `llmEditImage()`.
+- Do not call generation providers from catalog server actions. Enqueue a task
+  and let the worker execute it.
+- Do not add free-form per-job model controls; validate and store catalog
+  defaults as LiteLLM `provider/model` names.
 - When authenticated admin actions are added, their consequential generation,
   retry, regeneration, and deletion requests must write audit records using the
   entity types registered in `src/modules/audit/entity-types.ts`. The Phase 4

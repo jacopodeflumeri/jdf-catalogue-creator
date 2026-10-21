@@ -144,8 +144,14 @@ describe("catalog generation jobs", () => {
     expect(withError.status).toBe("RUNNING");
     expect(withError.failedProducts).toBe(1);
 
+    await prisma.catalogGenerationTask.updateMany({
+      where: { jobId: job.id, status: "FAILED" },
+      data: { attempts: 3 },
+    });
+
     const resumed = await resumeGenerationJob(job.id);
     expect(resumed.status).toBe("QUEUED");
+    expect(resumed.tasks.find((task) => task.status === "QUEUED")?.attempts).toBe(0);
     const completed = await runGenerationJob(job.id, baseProvider);
     expect(completed.status).toBe("RUNNING");
     expect(completed.stage).toBe("IMAGES");

@@ -237,13 +237,20 @@ export class CatalogGenerationWorker {
         const asset = await prisma.syntheticImageAsset.findUniqueOrThrow({
           where: { id: task.imageAssetId },
         });
-        if (asset.status !== "READY") {
+        const regeneration =
+          task.payload != null &&
+          typeof task.payload === "object" &&
+          !Array.isArray(task.payload) &&
+          "regeneration" in task.payload &&
+          task.payload.regeneration === true;
+        if (asset.status !== "READY" || regeneration) {
           await generateStyleImage({
             styleId: task.styleId,
             role: asset.role,
             model: job.imageModel,
             generator: this.dependencies.imageGenerator,
             storage: this.dependencies.storage,
+            regeneration,
           });
         }
       } else {

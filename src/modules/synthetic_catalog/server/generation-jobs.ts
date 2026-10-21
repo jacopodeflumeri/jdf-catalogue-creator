@@ -412,12 +412,10 @@ export async function resumeGenerationJob(jobId: number) {
     where: { id: jobId },
   });
   assertJobTransition(job.status, "QUEUED");
-  const resumable = (
-    await prisma.catalogGenerationTask.findMany({
-      where: { jobId, status: "FAILED" },
-      select: { id: true, taskType: true, attempts: true, maxAttempts: true },
-    })
-  ).filter((task) => task.attempts < task.maxAttempts);
+  const resumable = await prisma.catalogGenerationTask.findMany({
+    where: { jobId, status: "FAILED" },
+    select: { id: true, taskType: true, imageAssetId: true },
+  });
   if (resumable.length === 0) {
     throw new Error("Generation job has no resumable tasks");
   }
@@ -425,6 +423,7 @@ export async function resumeGenerationJob(jobId: number) {
     where: { id: { in: resumable.map((task) => task.id) } },
     data: {
       status: "QUEUED",
+      attempts: 0,
       availableAt: new Date(),
       lockedAt: null,
       lockedBy: null,
@@ -432,6 +431,15 @@ export async function resumeGenerationJob(jobId: number) {
       finishedAt: null,
     },
   });
+  const imageAssetIds = resumable.flatMap((task) =>
+    task.imageAssetId == null ? [] : [task.imageAssetId],
+  );
+  if (imageAssetIds.length > 0) {
+    await prisma.syntheticImageAsset.updateMany({
+      where: { id: { in: imageAssetIds } },
+      data: { status: "QUEUED", errorMessage: null },
+    });
+  }
   const [failedProducts, failedImages] = await Promise.all([
     prisma.catalogGenerationTask.count({
       where: { jobId, taskType: "GENERATE_PRODUCT", status: "FAILED" },

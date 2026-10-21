@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const DEFAULT_TEXT_MODEL = "openai/gpt-5.4-mini";
 export const DEFAULT_IMAGE_MODEL = "openai/gpt-image-2";
+export const CATALOG_IMAGE_MODEL_OPTIONS = [
+  "openai/gpt-image-2",
+  "openai/gpt-image-1.5",
+] as const;
 
 export interface CatalogProfileConfig {
   priceRangeEur: { min: number; max: number };

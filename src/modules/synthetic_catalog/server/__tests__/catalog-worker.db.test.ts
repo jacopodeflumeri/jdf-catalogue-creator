@@ -20,6 +20,7 @@ import {
   claimNextCatalogTask,
 } from "../catalog-worker";
 import { createGenerationJob } from "../generation-jobs";
+import { enqueueImageRegeneration } from "../admin-catalogs";
 
 const IMAGE = Buffer.from("worker-image");
 
@@ -77,7 +78,7 @@ function createWorker(
 ) {
   const imageGenerator: CatalogImageGenerator = {
     async generateImage(input) {
-      imageCalls.push(`${input.role}:${Boolean(input.reference)}`);
+      imageCalls.push(`${input.role}:${Boolean(input.reference)}:${Boolean(input.regeneration)}`);
       return { data: IMAGE, mimeType: "image/png", usedReference: Boolean(input.reference) };
     },
   };
@@ -265,5 +266,32 @@ describe("catalog generation worker", () => {
     );
     expect((await prisma.catalogGenerationJob.findUniqueOrThrow({ where: { id: job.id } })).status)
       .toBe("RUNNING");
+  });
+
+  it("replaces a ready image only through an explicit regeneration task", async () => {
+    const catalog = await createTestCatalog();
+    const storage = new MemoryStorage();
+    const initialCalls: string[] = [];
+    await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, seed: "regenerate" });
+    await createWorker("worker-initial", new MockProductGenerator(), initialCalls, storage).runUntilIdle();
+    const asset = await prisma.syntheticImageAsset.findFirstOrThrow({ where: { role: "FRONT" } });
+    expect(asset.status).toBe("READY");
+
+    const requests = await Promise.allSettled([
+      enqueueImageRegeneration(asset.id),
+      enqueueImageRegeneration(asset.id),
+    ]);
+    expect(requests.filter((request) => request.status === "fulfilled")).toHaveLength(1);
+    expect(requests.filter((request) => request.status === "rejected")).toHaveLength(1);
+    const regeneration = requests.find((request) => request.status === "fulfilled")!.value;
+    const regenerationCalls: string[] = [];
+    await createWorker("worker-regenerate", new MockProductGenerator(), regenerationCalls, storage)
+      .runUntilIdle();
+
+    expect(regenerationCalls).toEqual(["FRONT:false:true"]);
+    expect(await prisma.catalogGenerationJob.findUniqueOrThrow({ where: { id: regeneration.id } }))
+      .toEqual(expect.objectContaining({ status: "COMPLETED", completedImages: 1 }));
+    expect(await prisma.syntheticImageAsset.findUniqueOrThrow({ where: { id: asset.id } }))
+      .toEqual(expect.objectContaining({ status: "READY", attemptCount: 2 }));
   });
 });

@@ -17,6 +17,13 @@ type SettingsSection = {
 
 const SETTINGS_SECTIONS: SettingsSection[] = [
   {
+    label: "Synthetic Catalogs",
+    icon: "fashion",
+    href: "/admin/catalogs",
+    description: "Generate products, imagery, and catalog feeds",
+    requiredLevel: "viewer",
+  },
+  {
     label: "Mapp Team",
     icon: "rocket",
     href: "/admin/mapp-team",
