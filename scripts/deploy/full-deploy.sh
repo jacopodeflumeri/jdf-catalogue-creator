@@ -35,7 +35,7 @@ echo ""
 
 # Step 1: Build and push Docker image
 echo "Step 1/4: Building and pushing Docker image..."
-${SCRIPT_DIR}/build-and-push.sh ${ENV} ${IMAGE_TAG}
+"${SCRIPT_DIR}/build-and-push.sh" "${ENV}" "${IMAGE_TAG}"
 
 # Step 2: Deploy to ECS
 # No image tag passed: let deploy-app.sh pick the tag per the active deploy model
@@ -46,12 +46,12 @@ ${SCRIPT_DIR}/build-and-push.sh ${ENV} ${IMAGE_TAG}
 # path would pin a non-`${ENV}-`prefixed tag that escapes the ECR lifecycle rules.
 echo ""
 echo "Step 2/4: Deploying to ECS..."
-${SCRIPT_DIR}/deploy-app.sh ${ENV}
+"${SCRIPT_DIR}/deploy-app.sh" "${ENV}"
 
 # Step 3: Run migrations
 echo ""
 echo "Step 3/4: Running database migrations..."
-${SCRIPT_DIR}/run-migration.sh ${ENV}
+"${SCRIPT_DIR}/run-migration.sh" "${ENV}"
 
 # Step 4: Register this app's URIs on the INT KC labs-portal client.
 # Non-fatal: if Keycloak is unreachable or the SSM creds aren't set up yet,
@@ -59,7 +59,7 @@ ${SCRIPT_DIR}/run-migration.sh ${ENV}
 # someone runs the script manually.
 echo ""
 echo "Step 4/4: Registering Keycloak labs-portal URIs..."
-if ! ${SCRIPT_DIR}/register-keycloak-uris.sh ${ENV}; then
+if ! "${SCRIPT_DIR}/register-keycloak-uris.sh" "${ENV}"; then
     echo ""
     echo "WARNING: Keycloak URI registration failed. The app is deployed but"
     echo "         logins will fail with 'Invalid redirect URI' until URIs are"

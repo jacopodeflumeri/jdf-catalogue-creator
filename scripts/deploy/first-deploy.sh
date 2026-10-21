@@ -104,7 +104,7 @@ fi
 # header and the 2026-07-10 MIGRATION.md entry. Runs on every bootstrap; safe to
 # re-run. Non-fatal so a first deploy still proceeds if the caller lacks
 # ecr:PutLifecyclePolicy.
-if ! ${SCRIPT_DIR}/set-ecr-lifecycle.sh; then
+if ! "${SCRIPT_DIR}/set-ecr-lifecycle.sh"; then
     echo -e "  ${YELLOW}WARNING:${NC} could not set the ECR lifecycle policy."
     echo "           The app still deploys, but old images won't be expired."
     echo "           Re-run later: make ecr-lifecycle-set"
@@ -131,10 +131,10 @@ if [ -n "$EXISTING_PARAMS" ]; then
     echo -n "  Re-run SSM setup? [y/N]: "
     read -r RERUN_SSM
     if [ "$RERUN_SSM" = "y" ] || [ "$RERUN_SSM" = "Y" ]; then
-        ${SCRIPT_DIR}/setup-ssm-params.sh ${ENV}
+        "${SCRIPT_DIR}/setup-ssm-params.sh" "${ENV}"
     fi
 else
-    ${SCRIPT_DIR}/setup-ssm-params.sh ${ENV}
+    "${SCRIPT_DIR}/setup-ssm-params.sh" "${ENV}"
 fi
 echo ""
 
@@ -146,7 +146,7 @@ echo "  (The image must exist in ECR before infrastructure deploy,"
 echo "   otherwise the ECS service will fail to start and the"
 echo "   CloudFormation stack will roll back.)"
 echo ""
-${SCRIPT_DIR}/build-and-push.sh ${ENV}
+"${SCRIPT_DIR}/build-and-push.sh" "${ENV}"
 echo ""
 
 # =========================================================================
@@ -156,7 +156,7 @@ echo "Step 4/7: Deploying infrastructure (CDK)..."
 echo "  This creates: ECS cluster, RDS database, ALB, Route53 DNS,"
 echo "  ACM certificate, security groups, IAM roles, CloudWatch logs."
 echo ""
-${SCRIPT_DIR}/deploy-infra.sh ${ENV}
+"${SCRIPT_DIR}/deploy-infra.sh" "${ENV}"
 echo ""
 
 # =========================================================================
@@ -173,7 +173,7 @@ aws ecs wait services-stable \
     --region ${AWS_REGION} \
     --profile ${AWS_PROFILE} 2>/dev/null || true
 
-${SCRIPT_DIR}/run-migration.sh ${ENV}
+"${SCRIPT_DIR}/run-migration.sh" "${ENV}"
 echo ""
 
 # =========================================================================
@@ -181,7 +181,7 @@ echo ""
 # =========================================================================
 echo "Step 6/7: Seeding the database..."
 echo ""
-${SCRIPT_DIR}/run-seed.sh ${ENV}
+"${SCRIPT_DIR}/run-seed.sh" "${ENV}"
 echo ""
 
 # =========================================================================
@@ -191,7 +191,7 @@ echo ""
 # until someone runs the script manually.
 # =========================================================================
 echo "Step 7/7: Registering Keycloak labs-portal URIs..."
-if ! ${SCRIPT_DIR}/register-keycloak-uris.sh ${ENV}; then
+if ! "${SCRIPT_DIR}/register-keycloak-uris.sh" "${ENV}"; then
     echo ""
     echo -e "${YELLOW}WARNING:${NC} Keycloak URI registration failed. The app is deployed but"
     echo "         logins will fail with 'Invalid redirect URI' until URIs are"
