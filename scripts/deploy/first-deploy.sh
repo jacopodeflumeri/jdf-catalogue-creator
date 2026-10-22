@@ -9,7 +9,7 @@ set -e
 # breaker issue (the ECS service tries to pull a Docker image immediately —
 # if the ECR repo is empty, the entire CloudFormation stack rolls back).
 #
-# Order: ECR repo → SSM params → build+push image → infra deploy → migrate → seed
+# Order: ECR repo → S3 bucket → SSM params → image → infra → migrate → seed → Keycloak
 #
 # Usage: ./first-deploy.sh [staging|production]
 # =============================================================================
@@ -66,7 +66,7 @@ echo ""
 # =========================================================================
 # Step 1: Ensure ECR repository exists
 # =========================================================================
-echo "Step 1/7: Checking ECR repository..."
+echo "Step 1/8: Checking ECR repository..."
 if aws ecr describe-repositories --repository-names "${APP_NAME}" --region ${AWS_REGION} --profile ${AWS_PROFILE} > /dev/null 2>&1; then
     echo -e "  ${GREEN}✓${NC} ECR repository '${APP_NAME}' already exists"
 else
@@ -112,9 +112,68 @@ fi
 echo ""
 
 # =========================================================================
-# Step 2: Set up SSM parameters
+# Step 2: Ensure the per-environment S3 bucket exists
 # =========================================================================
-echo "Step 2/7: Setting up SSM parameters..."
+if [ "${SHORT_ENV}" = "prod" ]; then
+    S3_BUCKET_NAME="mapp-labs-${APP_NAME}-prod"
+    S3_ENVIRONMENT_TAG="production"
+else
+    S3_BUCKET_NAME="mapp-labs-${APP_NAME}-staging"
+    S3_ENVIRONMENT_TAG="staging"
+fi
+
+echo "Step 2/8: Checking S3 bucket..."
+if aws s3api head-bucket \
+    --bucket "${S3_BUCKET_NAME}" \
+    --region "${AWS_REGION}" \
+    --profile "${AWS_PROFILE}" > /dev/null 2>&1; then
+    echo -e "  ${GREEN}✓${NC} S3 bucket '${S3_BUCKET_NAME}' already exists"
+else
+    echo "  Creating S3 bucket '${S3_BUCKET_NAME}'..."
+    aws s3api create-bucket \
+        --bucket "${S3_BUCKET_NAME}" \
+        --create-bucket-configuration "LocationConstraint=${AWS_REGION}" \
+        --object-ownership BucketOwnerEnforced \
+        --region "${AWS_REGION}" \
+        --profile "${AWS_PROFILE}" > /dev/null
+    echo -e "  ${GREEN}✓${NC} S3 bucket created"
+fi
+
+# Buckets are intentionally private. Generated public assets are served through
+# the app's authorized S3 routes rather than anonymous bucket access.
+aws s3api put-public-access-block \
+    --bucket "${S3_BUCKET_NAME}" \
+    --public-access-block-configuration \
+        "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" \
+    --region "${AWS_REGION}" \
+    --profile "${AWS_PROFILE}"
+
+S3_TAGGING_JSON=$(node -e '
+const [project, environment, product, team, owner] = process.argv.slice(1);
+const entries = [
+  ["Project", project],
+  ["Environment", environment],
+  ["Product", product],
+  ["Team", team],
+  ["AppOwner", owner],
+  ["ManagedBy", "manual-bootstrap"],
+];
+console.log(JSON.stringify({
+  TagSet: entries.filter(([, value]) => value).map(([Key, Value]) => ({ Key, Value })),
+}));
+' "${APP_NAME}" "${S3_ENVIRONMENT_TAG}" "${APP_PRODUCT}" "${APP_TEAM}" "${APP_OWNER}")
+aws s3api put-bucket-tagging \
+    --bucket "${S3_BUCKET_NAME}" \
+    --tagging "${S3_TAGGING_JSON}" \
+    --region "${AWS_REGION}" \
+    --profile "${AWS_PROFILE}"
+echo -e "  ${GREEN}✓${NC} S3 public access blocked and cost-allocation tags applied"
+echo ""
+
+# =========================================================================
+# Step 3: Set up SSM parameters
+# =========================================================================
+echo "Step 3/8: Setting up SSM parameters..."
 echo "  Checking for existing parameters..."
 
 EXISTING_PARAMS=$(aws ssm get-parameters-by-path \
@@ -139,9 +198,9 @@ fi
 echo ""
 
 # =========================================================================
-# Step 3: Build and push Docker image
+# Step 4: Build and push Docker image
 # =========================================================================
-echo "Step 3/7: Building and pushing Docker image..."
+echo "Step 4/8: Building and pushing Docker image..."
 echo "  (The image must exist in ECR before infrastructure deploy,"
 echo "   otherwise the ECS service will fail to start and the"
 echo "   CloudFormation stack will roll back.)"
@@ -150,9 +209,9 @@ echo ""
 echo ""
 
 # =========================================================================
-# Step 4: Deploy infrastructure
+# Step 5: Deploy infrastructure
 # =========================================================================
-echo "Step 4/7: Deploying infrastructure (CDK)..."
+echo "Step 5/8: Deploying infrastructure (CDK)..."
 echo "  This creates: ECS cluster, RDS database, ALB, Route53 DNS,"
 echo "  ACM certificate, security groups, IAM roles, CloudWatch logs."
 echo ""
@@ -160,9 +219,9 @@ echo ""
 echo ""
 
 # =========================================================================
-# Step 5: Run database migrations
+# Step 6: Run database migrations
 # =========================================================================
-echo "Step 5/7: Running database migrations..."
+echo "Step 6/8: Running database migrations..."
 echo "  Waiting for ECS service to stabilize before running migrations..."
 echo ""
 
@@ -177,20 +236,20 @@ aws ecs wait services-stable \
 echo ""
 
 # =========================================================================
-# Step 6: Seed the database
+# Step 7: Seed the database
 # =========================================================================
-echo "Step 6/7: Seeding the database..."
+echo "Step 7/8: Seeding the database..."
 echo ""
 "${SCRIPT_DIR}/run-seed.sh" "${ENV}"
 echo ""
 
 # =========================================================================
-# Step 7: Register this app's URIs on the INT KC labs-portal client.
+# Step 8: Register this app's URIs on the INT KC labs-portal client.
 # Non-fatal: if Keycloak is unreachable or the registrar creds aren't set
 # up yet, the app deploys fine but auth callbacks won't be whitelisted
 # until someone runs the script manually.
 # =========================================================================
-echo "Step 7/7: Registering Keycloak labs-portal URIs..."
+echo "Step 8/8: Registering Keycloak labs-portal URIs..."
 if ! "${SCRIPT_DIR}/register-keycloak-uris.sh" "${ENV}"; then
     echo ""
     echo -e "${YELLOW}WARNING:${NC} Keycloak URI registration failed. The app is deployed but"

@@ -253,6 +253,11 @@ local development can therefore use the `labs-power` profile or another normal
 SDK credential source rather than long-lived app secrets. Set
 `AWS_PROFILE=labs-power` locally when that profile is not already selected.
 
+`make {env}-first-deploy` creates the environment bucket if it is missing,
+enforces S3 Block Public Access, and applies the app/environment cost tags. CDK
+imports this out-of-band bucket by name, so a plain infrastructure deployment
+cannot detect that it is absent.
+
 Generated images are normalized to WebP and stored at deterministic validated
 keys such as
 `public/catalogs/premium-apparel/PRE-W-000001-IVY/front.webp`. The bucket stays
