@@ -116,8 +116,11 @@ The four profiles are defined in
 
 Each profile owns its price and stock ranges, department mix, taxonomy inputs,
 palette, materials, sizes, seasons, naming tone, visual direction, and default
-text/image models. Keep the seed idempotent and update existing profiles by
-`slug`; never reset `nextProductSequence` during an update.
+text/image models. Seeding creates taxonomy defaults for new catalogs. On
+existing catalogs it refreshes static profile settings while merging in the
+current normalized taxonomy, so departments, categories, and subcategories
+added through Settings survive a reseed. Keep the seed idempotent and update
+existing profiles by `slug`; never reset `nextProductSequence` during an update.
 
 Department configuration is now stored as `{ key, label, code, generationWeight }`
 entries. Existing JSON with `departmentWeights` is normalized at read time to

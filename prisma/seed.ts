@@ -14,6 +14,7 @@ import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../src/generated/prisma/client'
 import { CATALOG_PROFILES } from '../src/modules/synthetic_catalog/config/profiles'
+import { mergeSeedCatalogConfig } from '../src/modules/synthetic_catalog/config/seed-config'
 
 // Match the app's runtime behavior: construct DATABASE_URL from DB_* if it
 // isn't set explicitly. Keeps the seed script working when users follow the
@@ -336,6 +337,13 @@ async function main() {
   console.log('Creating synthetic catalog profiles...')
 
   for (const profile of CATALOG_PROFILES) {
+    const current = await prisma.syntheticCatalog.findUnique({
+      where: { slug: profile.slug },
+      select: { config: true },
+    })
+    const config = current
+      ? mergeSeedCatalogConfig(profile.config, current.config)
+      : profile.config
     await prisma.syntheticCatalog.upsert({
       where: { slug: profile.slug },
       update: {
@@ -343,7 +351,7 @@ async function main() {
         segment: profile.segment,
         brandName: profile.brandName,
         externalPrefix: profile.externalPrefix,
-        config: JSON.parse(JSON.stringify(profile.config)),
+        config: JSON.parse(JSON.stringify(config)),
         defaultTextModel: profile.defaultTextModel,
         defaultImageModel: profile.defaultImageModel,
         active: true,
@@ -354,7 +362,7 @@ async function main() {
         segment: profile.segment,
         brandName: profile.brandName,
         externalPrefix: profile.externalPrefix,
-        config: JSON.parse(JSON.stringify(profile.config)),
+        config: JSON.parse(JSON.stringify(config)),
         defaultTextModel: profile.defaultTextModel,
         defaultImageModel: profile.defaultImageModel,
       },
