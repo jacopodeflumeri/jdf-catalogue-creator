@@ -284,6 +284,8 @@ describe("catalog generation worker", () => {
     expect(requests.filter((request) => request.status === "fulfilled")).toHaveLength(1);
     expect(requests.filter((request) => request.status === "rejected")).toHaveLength(1);
     const regeneration = requests.find((request) => request.status === "fulfilled")!.value;
+    expect(await prisma.syntheticImageAsset.findUniqueOrThrow({ where: { id: asset.id } }))
+      .toEqual(expect.objectContaining({ status: "QUEUED", errorMessage: null }));
     const regenerationCalls: string[] = [];
     await createWorker("worker-regenerate", new MockProductGenerator(), regenerationCalls, storage)
       .runUntilIdle();

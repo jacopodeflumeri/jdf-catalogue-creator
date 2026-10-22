@@ -6,7 +6,67 @@ import type {
   CatalogDetailView,
   CatalogJobView,
   CatalogOverviewView,
+  CatalogProductDetailView,
+  CatalogProductView,
 } from "../admin/types";
+
+const productInclude = {
+  styles: {
+    orderBy: { id: "asc" },
+    include: {
+      variants: { orderBy: { id: "asc" } },
+      images: { orderBy: { role: "asc" } },
+    },
+  },
+} satisfies Prisma.SyntheticProductInclude;
+
+type ProductWithRelations = Prisma.SyntheticProductGetPayload<{
+  include: typeof productInclude;
+}>;
+
+function productView(product: ProductWithRelations): CatalogProductView {
+  const style = product.styles[0];
+  return {
+    id: product.id,
+    externalId: product.externalId,
+    name: product.name,
+    description: product.description,
+    department: product.department,
+    category: product.category,
+    subcategory: product.subcategory,
+    material: product.material,
+    season: product.season,
+    basePrice: product.basePrice.toFixed(2),
+    salePrice: product.salePrice?.toFixed(2) ?? null,
+    currency: product.currency,
+    status: product.status,
+    style: style
+      ? {
+          id: style.id,
+          externalId: style.externalId,
+          colorName: style.colorName,
+          colorCode: style.colorCode,
+          status: style.status,
+          variants: style.variants.map((variant) => ({
+            id: variant.id,
+            externalId: variant.externalId,
+            sku: variant.sku,
+            size: variant.size,
+            stock: variant.stock,
+            availability: variant.availability,
+          })),
+          images: style.images.map((image) => ({
+            id: image.id,
+            publicId: image.publicId,
+            role: image.role,
+            status: image.status,
+            url: image.status === "READY" ? `/api/catalog-assets/${image.publicId}` : null,
+            errorMessage: image.errorMessage,
+          })),
+        }
+      : null,
+  };
+}
 
 function jobView(job: {
   id: number;
@@ -140,15 +200,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
     include: {
       products: {
         orderBy: { sequence: "desc" },
-        include: {
-          styles: {
-            orderBy: { id: "asc" },
-            include: {
-              variants: { orderBy: { id: "asc" } },
-              images: { orderBy: { role: "asc" } },
-            },
-          },
-        },
+        include: productInclude,
       },
       jobs: { orderBy: { createdAt: "desc" }, take: 20, include: jobInclude },
     },
@@ -179,50 +231,35 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       ...generationLimits,
     },
     counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages },
-    products: catalog.products.map((product) => {
-      const style = product.styles[0];
-      return {
-        id: product.id,
-        externalId: product.externalId,
-        name: product.name,
-        description: product.description,
-        department: product.department,
-        category: product.category,
-        subcategory: product.subcategory,
-        material: product.material,
-        season: product.season,
-        basePrice: product.basePrice.toFixed(2),
-        salePrice: product.salePrice?.toFixed(2) ?? null,
-        currency: product.currency,
-        status: product.status,
-        style: style
-          ? {
-              id: style.id,
-              externalId: style.externalId,
-              colorName: style.colorName,
-              colorCode: style.colorCode,
-              status: style.status,
-              variants: style.variants.map((variant) => ({
-                id: variant.id,
-                externalId: variant.externalId,
-                size: variant.size,
-                stock: variant.stock,
-                availability: variant.availability,
-              })),
-              images: style.images.map((image) => ({
-                id: image.id,
-                publicId: image.publicId,
-                role: image.role,
-                status: image.status,
-                url: image.status === "READY" ? `/api/catalog-assets/${image.publicId}` : null,
-                errorMessage: image.errorMessage,
-              })),
-            }
-          : null,
-      };
-    }),
+    products: catalog.products.map(productView),
     jobs: catalog.jobs.map(jobView),
   };
+}
+
+export async function getCatalogProductDetail(
+  catalogReference: string,
+  productReference: string,
+): Promise<CatalogProductDetailView | null> {
+  const numericCatalogId = /^\d+$/.test(catalogReference) ? Number(catalogReference) : null;
+  const catalog = await prisma.syntheticCatalog.findFirst({
+    where: numericCatalogId == null ? { slug: catalogReference } : { id: numericCatalogId },
+    select: { id: true, slug: true, name: true, segment: true, brandName: true },
+  });
+  if (!catalog) return null;
+
+  const numericProductId = /^\d+$/.test(productReference) ? Number(productReference) : null;
+  const product = await prisma.syntheticProduct.findFirst({
+    where: {
+      catalogId: catalog.id,
+      ...(numericProductId == null
+        ? { externalId: productReference }
+        : { id: numericProductId }),
+    },
+    include: productInclude,
+  });
+  if (!product) return null;
+
+  return { catalog, product: productView(product) };
 }
 
 export async function enqueueImageRegeneration(imageAssetId: number, createdByMappTeamId?: number) {
@@ -240,7 +277,7 @@ export async function enqueueImageRegeneration(imageAssetId: number, createdByMa
     });
     if (duplicate) throw new Error("This image already has generation work in progress");
 
-    return tx.catalogGenerationJob.create({
+    const job = await tx.catalogGenerationJob.create({
       data: {
         catalogId: asset.style.product.catalogId,
         createdByMappTeamId,
@@ -262,5 +299,10 @@ export async function enqueueImageRegeneration(imageAssetId: number, createdByMa
         },
       },
     });
+    await tx.syntheticImageAsset.update({
+      where: { id: asset.id },
+      data: { status: "QUEUED", errorMessage: null },
+    });
+    return job;
   });
 }

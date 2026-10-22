@@ -84,12 +84,24 @@ export interface CatalogProductView {
     variants: Array<{
       id: number;
       externalId: string;
+      sku: string;
       size: string;
       stock: number;
       availability: string;
     }>;
     images: CatalogImageView[];
   } | null;
+}
+
+export interface CatalogProductDetailView {
+  catalog: {
+    id: number;
+    slug: string;
+    name: string;
+    segment: string;
+    brandName: string;
+  };
+  product: CatalogProductView;
 }
 
 export interface CatalogDetailView {
