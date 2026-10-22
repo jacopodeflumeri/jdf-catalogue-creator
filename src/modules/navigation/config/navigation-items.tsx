@@ -16,6 +16,11 @@ export const ADMIN_NAVIGATION_ITEMS: NavigationItem[] = [
     href: '/admin',
     icon: 'home'
   },
+  {
+    name: 'LiteLLM Usage',
+    href: '/admin/llm-usage',
+    icon: 'chart'
+  },
   // The "Companies" entry (and the /admin/companies routes) ship with the
   // client_catalog capability — see src/modules/client_catalog/scaffold/.
   // Add it back here when you install that scaffold:

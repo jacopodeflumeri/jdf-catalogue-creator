@@ -42,7 +42,18 @@ monitoring failure is logged but never fails catalog generation.
 - `src/modules/llm/lib/usage-recorder.ts` — non-blocking persistence.
 - `src/modules/llm/lib/client.ts` — completion instrumentation.
 - `src/modules/llm/lib/images.ts` — image generation/edit instrumentation.
+- `src/modules/llm/lib/usage-analytics.ts` — filtered aggregate and recent-call queries.
+- `src/app/admin/llm-usage/` — read-only monitoring dashboard and charts.
+- `src/modules/navigation/config/navigation-items.tsx` — dedicated sidebar entry.
 - `prisma/schema.prisma` — `LlmUsage` and cost/operation enums.
+
+## Admin dashboard
+
+The dedicated **LiteLLM Usage** sidebar item opens `/admin/llm-usage`. Any active Mapp
+admin can read it; there are no mutations. The page supports 7/30/90-day, custom-date,
+and all-time views plus model, feature, and operation filters. It shows summary totals,
+daily cost by model, model/feature/operation breakdowns, recent calls, and the live local
+price reference.
 
 ## Decisions
 
@@ -52,6 +63,9 @@ monitoring failure is logged but never fails catalog generation.
   time so historical totals remain stable.
 - **2026-10-22 — Fail open for monitoring only.** Generation is the business operation;
   monitoring persistence must not turn a successful paid call into a failed job.
+- **2026-10-22 — Dedicated navigation.** This monitoring view is a primary operational
+  workflow, and the product owner explicitly requested a left-sidebar item rather than a
+  Settings card.
 
 ## Pitfalls
 
