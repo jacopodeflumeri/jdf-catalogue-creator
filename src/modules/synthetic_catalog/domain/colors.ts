@@ -22,13 +22,23 @@ export function estimateGenerationOutput(input: {
   products: number;
   colorVariantCount: number;
   sizeCount: number;
+  categories?: readonly string[];
+  categorySizeCounts?: Readonly<Record<string, number>>;
+  categoryOffset?: number;
+  fixedCategory?: string;
 }) {
   const styles = input.products * input.colorVariantCount;
+  const sizeRows = input.fixedCategory
+    ? input.products * input.colorVariantCount * (input.categorySizeCounts?.[input.fixedCategory] ?? input.sizeCount)
+    : input.categories?.length && input.categorySizeCounts
+      ? Array.from({ length: input.products }, (_, index) => input.categories![((input.categoryOffset ?? 0) + index) % input.categories!.length]!)
+        .reduce((total, category) => total + input.colorVariantCount * (input.categorySizeCounts?.[category] ?? input.sizeCount), 0)
+      : styles * input.sizeCount;
   return {
     products: input.products,
     styles,
     images: styles * 3,
-    sizeRows: styles * input.sizeCount,
+    sizeRows,
     tasks: input.products + styles * 3,
     liteLlmCalls: input.products + styles * 3,
   };

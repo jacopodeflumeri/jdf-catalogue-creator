@@ -40,6 +40,7 @@ export interface CatalogJobView {
 
 export interface CatalogOverviewView {
   id: number;
+  nextProductSequence: number;
   slug: string;
   name: string;
   segment: string;
@@ -119,6 +120,7 @@ export interface CatalogDetailView {
     segment: string;
     brandName: string;
     externalPrefix: string;
+    nextProductSequence: number;
     defaultTextModel: string;
     defaultImageModel: string;
     visualDirection: string;

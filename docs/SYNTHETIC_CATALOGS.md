@@ -42,6 +42,8 @@ only; browser navigation and polling never perform model or S3 work.
 The generation wizard selects all-catalogue, department, or category scope,
 then parent product count and two or three color variants. Its review shows
 parent products, styles, image assets, size rows, and attributed LiteLLM calls.
+Size-row estimates use the category-specific size rule and the same deterministic
+category rotation and next product sequence used when the job is queued.
 Editors can add departments, categories with their first subcategory, and
 subcategories from catalog Settings. Taxonomy controls are add-only; viewers see
 the configured values without mutation controls. Taxonomy writes are validated,

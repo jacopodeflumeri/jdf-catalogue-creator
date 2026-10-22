@@ -181,6 +181,7 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
     const images = styles.flatMap((style) => style.images);
     return {
       id: catalog.id,
+      nextProductSequence: catalog.nextProductSequence,
       slug: catalog.slug,
       name: catalog.name,
       segment: catalog.segment,
@@ -232,6 +233,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       segment: catalog.segment,
       brandName: catalog.brandName,
       externalPrefix: catalog.externalPrefix,
+      nextProductSequence: catalog.nextProductSequence,
       defaultTextModel: catalog.defaultTextModel,
       defaultImageModel: catalog.defaultImageModel,
       visualDirection: config.visualDirection,

@@ -18,4 +18,22 @@ describe("multi-color generation rules", () => {
       products: 10, styles: 30, images: 90, sizeRows: 150, tasks: 100, liteLlmCalls: 100,
     });
   });
+
+  it("estimates scope-specific size rows from the same deterministic category rotation", () => {
+    expect(estimateGenerationOutput({
+      products: 3,
+      colorVariantCount: 2,
+      sizeCount: 5,
+      categories: ["accessories", "coats"],
+      categorySizeCounts: { accessories: 1, coats: 5 },
+      categoryOffset: 1,
+    }).sizeRows).toBe(22);
+    expect(estimateGenerationOutput({
+      products: 3,
+      colorVariantCount: 2,
+      sizeCount: 5,
+      categorySizeCounts: { coats: 5 },
+      fixedCategory: "coats",
+    }).sizeRows).toBe(30);
+  });
 });

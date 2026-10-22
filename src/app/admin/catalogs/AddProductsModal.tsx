@@ -9,11 +9,14 @@ import FormSelect from "@/components/ui/form/FormSelect";
 import Modal from "@/components/ui/modal/Modal";
 import NoticeBox from "@/components/ui/NoticeBox";
 import { estimateGenerationOutput } from "@/modules/synthetic_catalog/domain/colors";
+import { seededInteger } from "@/modules/synthetic_catalog/domain/random";
 import { createCatalogGenerationJobAction } from "@/modules/synthetic_catalog/server/admin-actions";
 
 interface AddProductsModalProps {
   catalog: {
     id: number;
+    slug: string;
+    nextProductSequence: number;
     name: string;
     estimatedSizesPerProduct: number;
     categorySizeCounts: Record<string, number>;
@@ -39,7 +42,20 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
 
   if (!catalog) return null;
   const sizeCount = scopeType === "CATEGORY" ? catalog.categorySizeCounts[category] ?? catalog.estimatedSizesPerProduct : catalog.estimatedSizesPerProduct;
-  const estimate = estimateGenerationOutput({ products: Math.max(0, count), colorVariantCount, sizeCount });
+  const estimateScope = scopeType === "ALL" ? { type: "ALL" as const }
+    : scopeType === "DEPARTMENT" ? { type: "DEPARTMENT" as const, departmentKey }
+      : { type: "CATEGORY" as const, category };
+  const estimateSeed = `${catalog.slug}:${catalog.nextProductSequence}:${count}:${JSON.stringify(estimateScope)}:${colorVariantCount}`;
+  const categoryOffset = catalog.categories.length > 0 ? seededInteger(`${estimateSeed}:categories`, 0, catalog.categories.length - 1) : 0;
+  const estimate = estimateGenerationOutput({
+    products: Math.max(0, count),
+    colorVariantCount,
+    sizeCount,
+    categories: scopeType === "CATEGORY" ? undefined : catalog.categories,
+    categorySizeCounts: catalog.categorySizeCounts,
+    categoryOffset,
+    fixedCategory: scopeType === "CATEGORY" ? category : undefined,
+  });
   const isLarge = count >= catalog.largeJobThreshold;
   const canContinueScope = scopeType === "ALL" || (scopeType === "DEPARTMENT" ? Boolean(departmentKey) : Boolean(category));
 
