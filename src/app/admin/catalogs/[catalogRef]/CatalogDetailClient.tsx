@@ -12,6 +12,7 @@ import Icon from "@/components/ui/Icon";
 import NoticeBox from "@/components/ui/NoticeBox";
 import PageHeader from "@/components/ui/PageHeader";
 import Tabs from "@/components/ui/Tabs";
+import { useConfirm } from "@/components/providers/ConfirmProvider";
 import type {
   CatalogDetailView,
   CatalogJobView,
@@ -21,6 +22,7 @@ import {
   getCatalogDetailAction,
   getCatalogExportSummaryAction,
   addCatalogTaxonomyAction,
+  cancelCatalogGenerationJobAction,
   retryCatalogGenerationJobAction,
   updateCatalogSettingsAction,
 } from "@/modules/synthetic_catalog/server/admin-actions";
@@ -161,11 +163,13 @@ export default function CatalogDetailClient({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const { confirm } = useConfirm();
   const [detail, setDetail] = useState(initialDetail);
   const [exportSummary, setExportSummary] = useState(initialExportSummary);
   const [showAdd, setShowAdd] = useState(false);
   const [busyJobId, setBusyJobId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const hasActiveJob = detail.jobs.some((job) => ACTIVE_STATUSES.has(job.status));
 
   const refresh = useCallback(async () => {
@@ -189,6 +193,24 @@ export default function CatalogDetailClient({
     const result = await retryCatalogGenerationJobAction(jobId);
     setBusyJobId(null);
     if (!result.ok) setError(result.message ?? "Could not retry generation job");
+    await refresh();
+  }
+
+  async function stop(job: CatalogJobView) {
+    const confirmed = await confirm({
+      title: "Stop generation?",
+      message: "Stopping prevents further work. A provider request that has already started may finish and incur its cost.",
+      confirmText: "Stop generation",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+    setBusyJobId(job.id);
+    setError(null);
+    setSuccess(null);
+    const result = await cancelCatalogGenerationJobAction(job.id);
+    setBusyJobId(null);
+    if (result.ok) setSuccess("Generation stopped. Completed products and images were preserved.");
+    else setError(result.message ?? "Could not stop generation job");
     await refresh();
   }
 
@@ -241,7 +263,10 @@ export default function CatalogDetailClient({
           )}
           <div className="mt-4 flex items-center justify-between gap-4">
             <p className="text-xs text-[#1a1a1a]/55">Scope: {job.scopeType === "LEGACY" ? job.departmentMode.toLowerCase() : job.scopeType === "ALL" ? "all catalogue" : `${job.scopeType.toLowerCase()}: ${job.scopeValue ?? ""}`} · {job.colorVariantCount} color(s) per product · Job {job.publicId}</p>
-            {canEdit && (job.status === "FAILED" || job.status === "COMPLETED_WITH_ERRORS") && <Button variant="secondary" size="sm" loading={busyJobId === job.id} onClick={() => void retry(job.id)}><Icon type="refresh" size="sm" /> Retry failures</Button>}
+            <div className="flex gap-2">
+              {canEdit && (job.status === "QUEUED" || job.status === "RUNNING") && <Button variant="danger" size="sm" loading={busyJobId === job.id} onClick={() => void stop(job)}><Icon type="warning" size="sm" /> Stop</Button>}
+              {canEdit && (job.status === "FAILED" || job.status === "COMPLETED_WITH_ERRORS") && <Button variant="secondary" size="sm" loading={busyJobId === job.id} onClick={() => void retry(job.id)}><Icon type="refresh" size="sm" /> Retry failures</Button>}
+            </div>
           </div>
         </Card>
       ))}</div>,
@@ -316,6 +341,7 @@ export default function CatalogDetailClient({
         actions={<><Button variant="secondary" onClick={() => router.push("/admin/catalogs")}><Icon type="arrow-left" size="sm" /> All catalogs</Button>{canEdit && <Button onClick={() => setShowAdd(true)}><Icon type="plus" size="sm" /> Add products</Button>}</>}
       />
       {error && <NoticeBox variant="error">{error}</NoticeBox>}
+      {success && <NoticeBox variant="success">{success}</NoticeBox>}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         {[
           ["Products", detail.counts.products],

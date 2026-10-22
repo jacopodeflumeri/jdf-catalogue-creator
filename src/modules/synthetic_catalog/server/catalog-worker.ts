@@ -12,6 +12,7 @@ import {
 } from "./generation-jobs";
 import { generateStyleImage } from "./image-assets";
 import { isCatalogWorkerSchemaMissing } from "./worker-readiness";
+import { assertCatalogJobActive, CatalogJobCancelledError } from "./job-cancellation";
 
 export const DEFAULT_WORKER_POLL_MS = 2_000;
 export const DEFAULT_WORKER_LEASE_MS = 30 * 60 * 1_000;
@@ -152,15 +153,19 @@ async function refreshProductImageState(styleId: number): Promise<void> {
 }
 
 async function completeTask(task: CatalogGenerationTask, workerId: string): Promise<void> {
-  await prisma.catalogGenerationTask.updateMany({
-    where: { id: task.id, status: "RUNNING", lockedBy: workerId },
-    data: {
-      status: "COMPLETED",
-      lockedAt: null,
-      lockedBy: null,
-      lastError: null,
-      finishedAt: new Date(),
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM catalog_generation_job WHERE id = ${task.jobId} FOR UPDATE`;
+    const job = await tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: task.jobId }, select: { status: true } });
+    await tx.catalogGenerationTask.updateMany({
+      where: { id: task.id, status: "RUNNING", lockedBy: workerId },
+      data: {
+        status: job.status === "CANCELLED" ? "CANCELLED" : "COMPLETED",
+        lockedAt: null,
+        lockedBy: null,
+        lastError: null,
+        finishedAt: new Date(),
+      },
+    });
   });
 }
 
@@ -170,32 +175,40 @@ async function settleFailedTask(
   error: unknown,
   retryDelayMs: number,
 ): Promise<void> {
-  const retry = isRetryableCatalogWorkerError(error) && task.attempts < task.maxAttempts;
-  await prisma.catalogGenerationTask.updateMany({
-    where: { id: task.id, status: "RUNNING", lockedBy: workerId },
-    data: retry
-      ? {
-          status: "QUEUED",
-          availableAt: new Date(Date.now() + retryDelayMs * 2 ** Math.max(0, task.attempts - 1)),
-          lockedAt: null,
-          lockedBy: null,
-          lastError: errorMessage(error),
-          finishedAt: null,
-        }
-      : {
-          status: "FAILED",
-          lockedAt: null,
-          lockedBy: null,
-          lastError: errorMessage(error),
-          finishedAt: new Date(),
-        },
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM catalog_generation_job WHERE id = ${task.jobId} FOR UPDATE`;
+    const job = await tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: task.jobId }, select: { status: true } });
+    const cancelled = job.status === "CANCELLED" || error instanceof CatalogJobCancelledError;
+    const retry = !cancelled && isRetryableCatalogWorkerError(error) && task.attempts < task.maxAttempts;
+    await tx.catalogGenerationTask.updateMany({
+      where: { id: task.id, status: "RUNNING", lockedBy: workerId },
+      data: cancelled
+        ? { status: "CANCELLED", lockedAt: null, lockedBy: null, finishedAt: new Date(), lastError: null }
+        : retry
+          ? {
+              status: "QUEUED",
+              availableAt: new Date(Date.now() + retryDelayMs * 2 ** Math.max(0, task.attempts - 1)),
+              lockedAt: null,
+              lockedBy: null,
+              lastError: errorMessage(error),
+              finishedAt: null,
+            }
+          : {
+              status: "FAILED",
+              lockedAt: null,
+              lockedBy: null,
+              lastError: errorMessage(error),
+              finishedAt: new Date(),
+            },
+    });
+    return { cancelled, retry };
   });
   if (task.imageAssetId != null) {
     await prisma.syntheticImageAsset.update({
       where: { id: task.imageAssetId },
       data: {
-        status: retry ? "QUEUED" : "FAILED",
-        errorMessage: retry ? null : errorMessage(error),
+        status: result.cancelled || result.retry ? "QUEUED" : "FAILED",
+        errorMessage: result.cancelled || result.retry ? null : errorMessage(error),
       },
     });
   }
@@ -237,7 +250,7 @@ export class CatalogGenerationWorker {
       if (job.status === "CANCELLED") {
         await prisma.catalogGenerationTask.updateMany({
           where: { id: task.id, status: "RUNNING", lockedBy: this.options.workerId },
-          data: { status: "QUEUED", lockedAt: null, lockedBy: null },
+          data: { status: "CANCELLED", lockedAt: null, lockedBy: null, finishedAt: new Date() },
         });
         return true;
       }
@@ -262,6 +275,7 @@ export class CatalogGenerationWorker {
           ? task.payload.catalogSnapshot as { brandName: string; segment: string; visualDirection: string }
           : undefined;
         if (asset.status !== "READY" || regeneration) {
+          await assertCatalogJobActive(task.jobId);
           await generateStyleImage({
             styleId: task.styleId,
             role: asset.role,
@@ -270,6 +284,7 @@ export class CatalogGenerationWorker {
             storage: this.dependencies.storage,
             regeneration,
             catalogSnapshot,
+            assertActive: () => assertCatalogJobActive(task.jobId),
           });
         }
       } else {
@@ -277,7 +292,7 @@ export class CatalogGenerationWorker {
       }
       await completeTask(task, this.options.workerId);
     } catch (error) {
-      logger.error("Catalog generation task failed", {
+      if (!(error instanceof CatalogJobCancelledError)) logger.error("Catalog generation task failed", {
         workerId: this.options.workerId,
         jobId: task.jobId,
         taskId: task.id,
@@ -315,30 +330,37 @@ export class CatalogGenerationWorker {
     const staleBefore = new Date(Date.now() - this.leaseMs);
     const stale = await prisma.catalogGenerationTask.findMany({
       where: { status: "RUNNING", lockedAt: { lte: staleBefore } },
+      include: { job: { select: { status: true } } },
     });
     const affectedJobs = new Set<number>();
     let recovered = 0;
     for (const task of stale) {
-      const retry = task.attempts < task.maxAttempts;
-      const updated = await prisma.catalogGenerationTask.updateMany({
-        where: { id: task.id, status: "RUNNING", lockedAt: task.lockedAt },
-        data: {
-          status: retry ? "QUEUED" : "FAILED",
-          availableAt: new Date(),
-          lockedAt: null,
-          lockedBy: null,
-          lastError: "Worker lease expired before task completion",
-          finishedAt: retry ? null : new Date(),
-        },
+      const outcome = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM catalog_generation_job WHERE id = ${task.jobId} FOR UPDATE`;
+        const job = await tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: task.jobId }, select: { status: true } });
+        const cancelled = job.status === "CANCELLED";
+        const retry = !cancelled && task.attempts < task.maxAttempts;
+        const updated = await tx.catalogGenerationTask.updateMany({
+          where: { id: task.id, status: "RUNNING", lockedAt: task.lockedAt },
+          data: {
+            status: cancelled ? "CANCELLED" : retry ? "QUEUED" : "FAILED",
+            availableAt: new Date(),
+            lockedAt: null,
+            lockedBy: null,
+            lastError: cancelled ? null : "Worker lease expired before task completion",
+            finishedAt: retry ? null : new Date(),
+          },
+        });
+        return { count: updated.count, retry, cancelled };
       });
-      recovered += updated.count;
-      if (updated.count > 0) affectedJobs.add(task.jobId);
-      if (updated.count > 0 && task.imageAssetId != null) {
+      recovered += outcome.count;
+      if (outcome.count > 0) affectedJobs.add(task.jobId);
+      if (outcome.count > 0 && task.imageAssetId != null) {
         await prisma.syntheticImageAsset.update({
           where: { id: task.imageAssetId },
           data: {
-            status: retry ? "QUEUED" : "FAILED",
-            ...(!retry && { errorMessage: "Worker lease expired before task completion" }),
+            status: outcome.retry || outcome.cancelled ? "QUEUED" : "FAILED",
+            ...(!outcome.retry && !outcome.cancelled && { errorMessage: "Worker lease expired before task completion" }),
           },
         });
       }

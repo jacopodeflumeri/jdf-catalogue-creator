@@ -8,6 +8,7 @@ import {
 } from "../providers/image-generator";
 import { buildCatalogImagePrompt } from "../providers/image-prompt";
 import type { GeneratedAssetStorage } from "../storage/generated-asset-storage";
+import { CatalogJobCancelledError } from "./job-cancellation";
 
 export async function ensureStyleImageAssets(styleId: number) {
   await prisma.$transaction(
@@ -50,6 +51,7 @@ export async function generateStyleImage(input: {
   storage: GeneratedAssetStorage;
   regeneration?: boolean;
   catalogSnapshot?: { brandName: string; segment: string; visualDirection: string };
+  assertActive?: () => Promise<void>;
 }) {
   await ensureStyleImageAssets(input.styleId);
   const asset = await prisma.syntheticImageAsset.findUniqueOrThrow({
@@ -100,6 +102,7 @@ export async function generateStyleImage(input: {
   });
 
   try {
+    await input.assertActive?.();
     const generated = await input.generator.generateImage({
       model: input.model,
       role: input.role,
@@ -107,6 +110,7 @@ export async function generateStyleImage(input: {
       reference,
       regeneration: input.regeneration,
     });
+    await input.assertActive?.();
     const stored = await input.storage.put({
       catalogSlug: asset.style.product.catalog.slug,
       styleExternalId: asset.style.externalId,
@@ -115,6 +119,7 @@ export async function generateStyleImage(input: {
       data: generated.data,
       sourceMimeType: generated.mimeType,
     });
+    await input.assertActive?.();
     return await prisma.syntheticImageAsset.update({
       where: { id: asset.id },
       data: {
@@ -129,6 +134,13 @@ export async function generateStyleImage(input: {
       },
     });
   } catch (error) {
+    if (error instanceof CatalogJobCancelledError) {
+      await prisma.syntheticImageAsset.update({
+        where: { id: asset.id },
+        data: { status: "QUEUED", errorMessage: null },
+      });
+      throw error;
+    }
     const message = error instanceof Error ? error.message : "Unknown image generation error";
     await prisma.syntheticImageAsset.update({
       where: { id: asset.id },

@@ -20,6 +20,7 @@ import { reserveProductSequenceRange } from "./sequence-reservation";
 import { CATALOG_IMAGE_ROLES } from "../providers/image-generator";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
 import { selectStyleColors, snapshotGenerationSettings } from "../domain/colors";
+import { assertCatalogJobActive, CatalogJobCancelledError } from "./job-cancellation";
 
 export interface CreateGenerationJobInput {
   catalogId: number;
@@ -138,6 +139,9 @@ async function persistGeneratedProduct(input: {
     : selectStyleColors({ palette: config.colors, primaryColorCode: spec.colorCode, count: input.colorVariantCount, seed: input.plan.seed });
 
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM catalog_generation_job WHERE id = ${job.id} FOR UPDATE`;
+    const currentJob = await tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: job.id }, select: { status: true } });
+    if (currentJob.status === "CANCELLED") throw new CatalogJobCancelledError();
     const product = await tx.syntheticProduct.upsert({
       where: {
         catalogId_sequence: {
@@ -369,7 +373,28 @@ export async function processProductGenerationTask(
     },
     plan,
   });
+  await assertCatalogJobActive(task.jobId);
   return persistGeneratedProduct({ jobId: task.jobId, taskId: task.id, plan, spec, colorVariantCount, configSnapshot: snapshotGenerationSettings(config), brandName, segment });
+}
+
+export async function cancelGenerationJob(jobId: number) {
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM catalog_generation_job WHERE id = ${jobId} FOR UPDATE`;
+    const job = await tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
+    if (job.status !== "QUEUED" && job.status !== "RUNNING") {
+      throw new Error(`Cannot stop a generation job in ${job.status} state`);
+    }
+    const updated = await tx.catalogGenerationJob.updateMany({
+      where: { id: jobId, status: { in: ["QUEUED", "RUNNING"] } },
+      data: { status: "CANCELLED", finishedAt: new Date() },
+    });
+    if (updated.count !== 1) throw new Error("Generation job changed before it could be stopped");
+    await tx.catalogGenerationTask.updateMany({
+      where: { jobId, status: "QUEUED" },
+      data: { status: "CANCELLED", lockedAt: null, lockedBy: null, finishedAt: new Date() },
+    });
+    return { job, previousStatus: job.status };
+  });
 }
 
 export async function runGenerationJob(
@@ -440,6 +465,7 @@ export async function resumeGenerationJob(jobId: number) {
   const job = await prisma.catalogGenerationJob.findUniqueOrThrow({
     where: { id: jobId },
   });
+  if (job.status === "CANCELLED") throw new Error("Cancelled generation jobs cannot be resumed");
   assertJobTransition(job.status, "QUEUED");
   const resumable = await prisma.catalogGenerationTask.findMany({
     where: { jobId, status: "FAILED" },

@@ -178,6 +178,13 @@ processes only unfinished tasks. Provider failures become `FAILED` tasks and a
 retry boundary: it requeues failed tasks and resets their bounded attempt budget.
 Automatic worker retries remain bounded by `maxAttempts`.
 
+Editors can stop a queued or running job. Cancellation locks the job row, marks
+queued tasks `CANCELLED`, and leaves completed products, styles, variants, and
+images intact. Workers check cancellation after provider calls and before
+persisting or uploading follow-up work; an already-started LiteLLM or image
+request may still finish and incur cost. Cancelled jobs are terminal and cannot
+be resumed or included in retry-failures operations.
+
 New requests carry a frozen scope, color count, taxonomy/palette, brand, and
 segment snapshot in their persisted product tasks. Product text and all image
 tasks use that queued context even if catalog settings change later. Legacy

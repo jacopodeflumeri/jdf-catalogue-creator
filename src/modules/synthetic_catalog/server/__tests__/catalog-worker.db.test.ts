@@ -19,7 +19,7 @@ import {
   CatalogGenerationWorker,
   claimNextCatalogTask,
 } from "../catalog-worker";
-import { createGenerationJob } from "../generation-jobs";
+import { cancelGenerationJob, createGenerationJob, refreshGenerationJobState, resumeGenerationJob } from "../generation-jobs";
 import { enqueueImageRegeneration } from "../admin-catalogs";
 
 const IMAGE = Buffer.from("worker-image");
@@ -92,6 +92,45 @@ describe("catalog generation worker", () => {
   beforeAll(() => requireTestDatabase());
   beforeEach(() => truncateAllTables());
   afterAll(() => disconnectPrisma());
+
+  it("cancels queued work and keeps a cancelled job terminal", async () => {
+    const catalog = await createTestCatalog();
+    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 2, seed: "cancel-queued" });
+    await prisma.catalogGenerationJob.update({ where: { id: job.id }, data: { status: "RUNNING" } });
+    const cancelled = await cancelGenerationJob(job.id);
+    expect(cancelled.previousStatus).toBe("RUNNING");
+    expect(await prisma.catalogGenerationTask.count({ where: { jobId: job.id, status: "CANCELLED" } })).toBe(2);
+    expect((await refreshGenerationJobState(job.id)).status).toBe("CANCELLED");
+    expect(await claimNextCatalogTask("after-cancel")).toBeNull();
+    await expect(resumeGenerationJob(job.id)).rejects.toThrow("cannot be resumed");
+    await expect(cancelGenerationJob(job.id)).rejects.toThrow("CANCELLED state");
+  });
+
+  it("marks a product task cancelled when cancellation arrives during provider generation", async () => {
+    const catalog = await createTestCatalog();
+    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, seed: "cancel-in-flight" });
+    const base = new MockProductGenerator();
+    let notifyStarted!: () => void;
+    let finishGeneration!: () => void;
+    const started = new Promise<void>((resolve) => { notifyStarted = resolve; });
+    const pending = new Promise<void>((resolve) => { finishGeneration = resolve; });
+    const provider: ProductGenerator = {
+      async generateProduct(input) {
+        notifyStarted();
+        await pending;
+        return base.generateProduct(input);
+      },
+    };
+    const worker = createWorker("cancel-in-flight", provider, []);
+    const running = worker.runOnce();
+    await started;
+    await cancelGenerationJob(job.id);
+    finishGeneration();
+    await running;
+    expect(await prisma.syntheticProduct.count({ where: { generationJobId: job.id } })).toBe(0);
+    expect(await prisma.catalogGenerationTask.count({ where: { jobId: job.id, status: "CANCELLED" } })).toBe(1);
+    expect((await prisma.catalogGenerationJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("CANCELLED");
+  });
 
   it("atomically gives concurrent workers different tasks", async () => {
     const catalog = await createTestCatalog();

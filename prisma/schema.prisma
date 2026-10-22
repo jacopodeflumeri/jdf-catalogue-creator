@@ -364,6 +364,7 @@ enum CatalogTaskStatus {
   RUNNING
   COMPLETED
   FAILED
+  CANCELLED
 }
 
 enum LlmUsageOperation {

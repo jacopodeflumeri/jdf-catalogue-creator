@@ -18,7 +18,7 @@ import type {
 } from "../admin/types";
 import { parseCatalogProfileConfig } from "../config/profiles";
 import { addCatalogCategory, addCatalogDepartment, addCatalogSubcategory } from "../config/taxonomy";
-import { createGenerationJob, resumeGenerationJob } from "./generation-jobs";
+import { cancelGenerationJob, createGenerationJob, resumeGenerationJob } from "./generation-jobs";
 import {
   enqueueImageRegeneration,
   getCatalogDetail,
@@ -100,6 +100,27 @@ export async function retryCatalogGenerationJobAction(jobId: number): Promise<Ca
       entityId: job.id,
       message: `Retried failed generation tasks for ${catalog.name}`,
       data: { catalogId: catalog.id },
+    });
+    revalidateCatalog(catalog.slug);
+    return { ok: true, jobId: job.id };
+  } catch (error) {
+    return errorResult(error);
+  }
+}
+
+export async function cancelCatalogGenerationJobAction(jobId: number): Promise<CatalogActionResult> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const id = positiveIdSchema.parse(jobId);
+    const { job, previousStatus } = await cancelGenerationJob(id);
+    const catalog = await prisma.syntheticCatalog.findUniqueOrThrow({ where: { id: job.catalogId } });
+    await writeAuditLog({
+      ...sessionAuditActor(session),
+      action: "generation_cancelled",
+      entityType: "catalog_generation_job",
+      entityId: job.id,
+      message: `Stopped generation for ${catalog.name}`,
+      data: { catalogId: catalog.id, previousStatus },
     });
     revalidateCatalog(catalog.slug);
     return { ok: true, jobId: job.id };
