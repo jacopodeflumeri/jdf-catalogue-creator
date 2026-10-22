@@ -167,7 +167,7 @@ export default function ProductDetailClient({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Card title="Product attributes" description={product.description}>
           <dl className="grid grid-cols-2 gap-x-5 gap-y-6">
-            <DetailItem label="Department" value={product.department.toLowerCase()} />
+            <DetailItem label="Department" value={product.department} />
             <DetailItem label="Category" value={product.category} />
             <DetailItem label="Subcategory" value={product.subcategory} />
             <DetailItem label="Material" value={product.material} />

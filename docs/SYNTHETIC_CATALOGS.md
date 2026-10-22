@@ -127,7 +127,9 @@ entries. Existing JSON with `departmentWeights` is normalized at read time to
 Women (`W`) and Men (`M`), preserving existing IDs and historical products.
 Categories remain catalog-wide and each category must have at least one
 subcategory. Department codes are unique, uppercase alphanumeric values of up to
-six characters; taxonomy edits are additive.
+six characters; taxonomy edits are additive. Product records and filters keep
+the stable department key; the admin table and product detail page display the
+configured department label.
 
 ## Identifier hierarchy
 

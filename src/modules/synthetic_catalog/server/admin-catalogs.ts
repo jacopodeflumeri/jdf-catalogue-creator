@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
 import { parseCatalogProfileConfig } from "../config/profiles";
+import { configuredDepartmentLabel } from "../config/department-label";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
 import { sizesForCategory } from "../domain/rules";
 import type {
@@ -31,7 +32,8 @@ function productView(product: ProductWithRelations, config: ReturnType<typeof pa
     externalId: product.externalId,
     name: product.name,
     description: product.description,
-    department: product.department,
+    departmentKey: product.department,
+    department: configuredDepartmentLabel(config, product.department),
     category: product.category,
     subcategory: product.subcategory,
     material: product.material,

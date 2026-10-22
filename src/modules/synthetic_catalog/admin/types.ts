@@ -73,6 +73,7 @@ export interface CatalogProductView {
   externalId: string;
   name: string;
   description: string;
+  departmentKey: string;
   department: string;
   category: string;
   subcategory: string;

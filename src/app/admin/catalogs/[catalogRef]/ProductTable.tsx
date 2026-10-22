@@ -38,7 +38,8 @@ export default function ProductTable({
   const [status, setStatus] = useState("all");
 
   const departments = useMemo(
-    () => Array.from(new Set(products.map((product) => product.department))).sort(),
+    () => Array.from(new Map(products.map((product) => [product.departmentKey, product.department])).entries())
+      .sort(([a], [b]) => a.localeCompare(b)),
     [products],
   );
   const categories = useMemo(
@@ -60,7 +61,7 @@ export default function ProductTable({
     () =>
       products.filter(
         (product) =>
-          (department === "all" || product.department === department) &&
+          (department === "all" || product.departmentKey === department) &&
           (category === "all" || product.category === category) &&
           (subcategory === "all" || product.subcategory === subcategory) &&
           (status === "all" || getProductImageStatus(product) === status),
@@ -98,7 +99,7 @@ export default function ProductTable({
     <div className="mt-6 space-y-4">
       <div className="glass-card rounded-2xl p-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5 xl:items-end">
-          <FormSelect label="Department" value={department} onChange={(event) => setDepartment(event.target.value)} options={[{ value: "all", label: "All departments" }, ...departments.map((value) => ({ value, label: titleCase(value.toLowerCase()) }))]} />
+          <FormSelect label="Department" value={department} onChange={(event) => setDepartment(event.target.value)} options={[{ value: "all", label: "All departments" }, ...departments.map(([key, label]) => ({ value: key, label }))]} />
           <FormSelect label="Category" value={category} onChange={(event) => { setCategory(event.target.value); setSubcategory("all"); }} options={[{ value: "all", label: "All categories" }, ...categories.map((value) => ({ value, label: titleCase(value) }))]} />
           <FormSelect label="Subcategory" value={subcategory} onChange={(event) => setSubcategory(event.target.value)} options={[{ value: "all", label: "All subcategories" }, ...subcategories.map((value) => ({ value, label: titleCase(value) }))]} />
           <FormSelect label="Image status" value={status} onChange={(event) => setStatus(event.target.value)} options={[
@@ -144,7 +145,7 @@ export default function ProductTable({
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-sm capitalize">{product.department.toLowerCase()}</td>
+                    <td className="px-5 py-4 text-sm">{product.department}</td>
                     <td className="px-5 py-4 text-sm capitalize">{product.category}</td>
                     <td className="px-5 py-4 text-sm capitalize">{product.subcategory}</td>
                     <td className="px-5 py-4 text-sm capitalize">{product.material}</td>
