@@ -207,7 +207,7 @@ export default function CatalogDetailClient({
       content: exportSummary ? (
         <div className="mt-6 space-y-6">
           <Card
-            title="Demoware CSV"
+            title="Catalogue CSV"
             description="One row per variant, with front, back, and on-model image URLs in deterministic order."
             headerActions={
               <div className="flex gap-2">
@@ -247,7 +247,7 @@ export default function CatalogDetailClient({
               {exportSummary.issues.length > 10 && <p className="mt-2">Plus {exportSummary.issues.length - 10} more validation issue(s).</p>}
             </NoticeBox>
           ) : (
-            <NoticeBox variant="success" title="Ready for export">All persisted products pass the Demoware export checks.</NoticeBox>
+            <NoticeBox variant="success" title="Ready for export">All persisted products pass the Catalogue CSV export checks.</NoticeBox>
           )}
         </div>
       ) : (

@@ -17,6 +17,26 @@ export const ADMIN_NAVIGATION_ITEMS: NavigationItem[] = [
     icon: 'home'
   },
   {
+    name: 'Premium',
+    href: '/admin/catalogs/premium-apparel',
+    icon: 'fashion'
+  },
+  {
+    name: 'Fast Fashion',
+    href: '/admin/catalogs/fast-fashion',
+    icon: 'clothes'
+  },
+  {
+    name: 'Luxury',
+    href: '/admin/catalogs/luxury-fashion',
+    icon: 'dress'
+  },
+  {
+    name: 'Activewear',
+    href: '/admin/catalogs/activewear',
+    icon: 'lightning'
+  },
+  {
     name: 'LiteLLM Usage',
     href: '/admin/llm-usage',
     icon: 'chart'

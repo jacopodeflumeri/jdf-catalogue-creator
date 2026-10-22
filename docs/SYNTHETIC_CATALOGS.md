@@ -10,13 +10,15 @@ Phases 1–8 provide the data model, four stable catalog profiles, identifier
 rules, deterministic generation domain, resumable job state machine, real
 LiteLLM text and image generation, persistent generated-image storage, and an
 independent database-backed worker, the internal admin workflow used to operate
-them, validated Demoware CSV export, configurable spend guards, full readiness
+them, validated Catalogue CSV export, configurable spend guards, full readiness
 reporting, and operational recovery guidance.
 
 ## Admin workflow
 
 `/admin` redirects to `/admin/catalogs`, where every active profile appears as
 one overview card with product, style, variant, image, and latest-job state.
+The admin sidebar also links directly to Premium, Fast Fashion, Luxury, and
+Activewear using their stable profile slugs.
 `/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
 the full persisted product list in a table, job history, retry controls, and
 generation settings. The product table can be filtered by department, category,
@@ -44,9 +46,11 @@ image selector is restricted to the app's reviewed image-capable model list;
 already queued jobs retain their recorded model names for attribution and
 repeatability.
 
-## Demoware CSV export
+## Catalogue CSV export
 
-The catalog list and each detail workspace expose an authenticated CSV download.
+The UI calls this the Catalogue CSV; its persisted adapter and schema remain the
+Demoware-compatible integration contract. The catalog list and each detail
+workspace expose an authenticated CSV download.
 The download route is
 `/api/admin/catalogs/{slug}/export.csv`; viewer-level internal admins may export,
 and each successful export is audited as `exported_csv`. The route returns
