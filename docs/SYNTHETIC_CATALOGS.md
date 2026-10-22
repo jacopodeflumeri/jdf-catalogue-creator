@@ -18,9 +18,11 @@ reporting, and operational recovery guidance.
 `/admin` redirects to `/admin/catalogs`, where every active profile appears as
 one overview card with product, style, variant, image, and latest-job state.
 `/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
-up to the 100 most recent products with three image previews, size-level stock,
-job history, retry controls, and generation settings. Numeric catalog IDs are
-also accepted so audit-log links remain stable.
+the full persisted product list in a table, job history, retry controls, and
+generation settings. The product table can be filtered by department, category,
+subcategory, and aggregate image status (`READY`, `FAILED`, `GENERATING`, or
+`MISSING`). Numeric catalog IDs are also accepted so audit-log links remain
+stable.
 
 All reads use `requireAdmin({})`. Viewer-level users see the same operational
 state but no mutation controls. Adding products, manually retrying failures,

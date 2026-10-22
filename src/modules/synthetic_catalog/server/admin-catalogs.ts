@@ -140,7 +140,6 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
     include: {
       products: {
         orderBy: { sequence: "desc" },
-        take: 100,
         include: {
           styles: {
             orderBy: { id: "asc" },

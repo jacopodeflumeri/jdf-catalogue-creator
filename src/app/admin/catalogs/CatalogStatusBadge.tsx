@@ -10,6 +10,7 @@ const LABELS: Record<string, string> = {
   FAILED: "Failed",
   CANCELLED: "Cancelled",
   DRAFT: "Draft",
+  MISSING: "Missing",
 };
 
 export default function CatalogStatusBadge({ status }: { status: string }) {
