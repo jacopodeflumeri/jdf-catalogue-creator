@@ -315,6 +315,7 @@ enum CatalogImageRole {
   FRONT
   BACK
   ON_MODEL
+  COMPLETE_LOOK
 }
 
 enum CatalogImageStatus {
@@ -355,6 +356,16 @@ enum CatalogJobStage {
   IMAGES
   VALIDATING
   COMPLETE
+}
+
+enum SyntheticCompleteLookStatus {
+  PLANNED
+  QUEUED
+  GENERATING
+  READY
+  FAILED
+  SKIPPED
+  STALE
 }
 
 enum CatalogTaskType {
@@ -475,15 +486,18 @@ model SyntheticStyle {
   externalId String              @unique @map("external_id")
   colorName  String              @map("color_name")
   colorCode  String              @map("color_code")
+  colorHex   String?             @map("color_hex")
   visualSpec Json?               @map("visual_spec")
   status     CatalogEntityStatus @default(DRAFT)
   createdAt  DateTime            @default(now()) @map("created_at")
   updatedAt  DateTime            @updatedAt @map("updated_at")
 
-  product  SyntheticProduct        @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variants SyntheticVariant[]
-  images   SyntheticImageAsset[]
-  tasks    CatalogGenerationTask[]
+  product      SyntheticProduct            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variants     SyntheticVariant[]
+  images       SyntheticImageAsset[]
+  tasks        CatalogGenerationTask[]
+  completeLook SyntheticCompleteLook?      @relation("CompleteLookAnchor")
+  companionIn  SyntheticCompleteLookItem[] @relation("CompleteLookCompanion")
 
   @@unique([productId, colorCode])
   @@index([productId])
@@ -533,11 +547,49 @@ model SyntheticImageAsset {
   referenceAsset SyntheticImageAsset?    @relation("ImageAssetReference", fields: [referenceAssetId], references: [id], onDelete: SetNull)
   derivedAssets  SyntheticImageAsset[]   @relation("ImageAssetReference")
   tasks          CatalogGenerationTask[]
+  completeLook   SyntheticCompleteLook?  @relation("CompleteLookAsset")
 
   @@unique([styleId, role])
   @@index([status])
   @@index([referenceAssetId])
   @@map("synthetic_image_asset")
+}
+
+model SyntheticCompleteLook {
+  id              Int                         @id @default(autoincrement())
+  anchorStyleId   Int                         @unique @map("anchor_style_id")
+  imageAssetId    Int?                        @unique @map("image_asset_id")
+  status          SyntheticCompleteLookStatus @default(PLANNED)
+  selectionReason String?                     @map("selection_reason")
+  scoringSnapshot Json?                       @map("scoring_snapshot")
+  errorMessage    String?                     @map("error_message")
+  createdAt       DateTime                    @default(now()) @map("created_at")
+  updatedAt       DateTime                    @updatedAt @map("updated_at")
+
+  anchorStyle SyntheticStyle              @relation("CompleteLookAnchor", fields: [anchorStyleId], references: [id], onDelete: Cascade)
+  imageAsset  SyntheticImageAsset?        @relation("CompleteLookAsset", fields: [imageAssetId], references: [id], onDelete: SetNull)
+  items       SyntheticCompleteLookItem[]
+
+  @@index([status])
+  @@map("synthetic_complete_look")
+}
+
+model SyntheticCompleteLookItem {
+  id               Int      @id @default(autoincrement())
+  completeLookId   Int      @map("complete_look_id")
+  companionStyleId Int      @map("companion_style_id")
+  outfitSlot       String   @map("outfit_slot")
+  sortOrder        Int      @map("sort_order")
+  scoreSnapshot    Json?    @map("score_snapshot")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  completeLook   SyntheticCompleteLook @relation(fields: [completeLookId], references: [id], onDelete: Cascade)
+  companionStyle SyntheticStyle        @relation("CompleteLookCompanion", fields: [companionStyleId], references: [id], onDelete: Cascade)
+
+  @@unique([completeLookId, companionStyleId])
+  @@unique([completeLookId, sortOrder])
+  @@index([companionStyleId])
+  @@map("synthetic_complete_look_item")
 }
 
 model CatalogGenerationJob {

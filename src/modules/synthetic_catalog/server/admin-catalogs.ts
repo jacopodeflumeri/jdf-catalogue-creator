@@ -48,7 +48,7 @@ function productView(product: ProductWithRelations, config: ReturnType<typeof pa
           externalId: style.externalId,
           colorName: style.colorName,
           colorCode: style.colorCode,
-          colorHex: config.colors.find((color) => color.code === style.colorCode)?.hex ?? "#CCCCCC",
+          colorHex: style.colorHex ?? config.colors.find((color) => color.code === style.colorCode)?.hex ?? "#808080",
           status: style.status,
           variants: style.variants.map((variant) => ({
             id: variant.id,

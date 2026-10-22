@@ -58,6 +58,7 @@ export const catalogMixInputSchema = z.object({
     category: z.string().trim().min(1).max(120),
     subcategory: z.string().trim().min(1).max(120),
     productCount: z.number().int().positive(),
+    outfitSlot: z.enum(["TOP", "BOTTOM", "ONE_PIECE", "OUTERWEAR", "FOOTWEAR", "BAG", "ACCESSORY"]),
   })).min(1).max(500),
 }).superRefine(({ rows }, context) => {
   const seen = new Set<string>();

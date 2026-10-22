@@ -14,13 +14,38 @@ export interface CatalogProfileConfig {
   departments: readonly { key: string; label: string; code: string; generationWeight: number }[];
   categories: readonly string[];
   subcategories: Readonly<Record<string, readonly string[]>>;
-  assortmentPlan: readonly { departmentKey: string; category: string; subcategory: string; productCount: number }[];
+  assortmentPlan: readonly { departmentKey: string; category: string; subcategory: string; productCount: number; outfitSlot: OutfitSlot }[];
   materials: readonly string[];
   colors: readonly { name: string; code: string; hex: string }[];
   sizes: readonly string[];
   seasons: readonly string[];
   namingTone: string;
   visualDirection: string;
+}
+
+export const OUTFIT_SLOTS = ["TOP", "BOTTOM", "ONE_PIECE", "OUTERWEAR", "FOOTWEAR", "BAG", "ACCESSORY"] as const;
+export type OutfitSlot = (typeof OUTFIT_SLOTS)[number];
+
+const LEGACY_OUTFIT_SLOT_DEFAULTS: Record<string, OutfitSlot> = {
+  "dresses|midi dresses": "ONE_PIECE", "dresses|mini dresses": "ONE_PIECE", "eveningwear|column dresses": "ONE_PIECE",
+  "coats|wool coats": "OUTERWEAR", "shirts|poplin shirts": "TOP", "trousers|tailored trousers": "BOTTOM",
+  "denim|straight jeans": "BOTTOM", "tops|t-shirts": "TOP", "outerwear|bomber jackets": "OUTERWEAR",
+  "tailoring|single-breasted jackets": "OUTERWEAR", "leather goods|small leather goods": "ACCESSORY",
+  "sports bras|medium-support bras": "TOP", "leggings|full-length leggings": "BOTTOM",
+  "training tops|performance t-shirts": "TOP", "jackets|running jackets": "OUTERWEAR",
+};
+const LEGACY_CATEGORY_SLOT_DEFAULTS: Record<string, OutfitSlot> = {
+  dresses: "ONE_PIECE", "evening dresses": "ONE_PIECE", eveningwear: "ONE_PIECE",
+  shirts: "TOP", knitwear: "TOP", tops: "TOP", "training tops": "TOP", "sports bras": "TOP",
+  trousers: "BOTTOM", denim: "BOTTOM", leggings: "BOTTOM", shorts: "BOTTOM",
+  coats: "OUTERWEAR", jackets: "OUTERWEAR", outerwear: "OUTERWEAR",
+  bags: "BAG", handbags: "BAG", "leather goods": "ACCESSORY", accessories: "ACCESSORY",
+  caps: "ACCESSORY", "small leather goods": "ACCESSORY",
+};
+
+export function defaultOutfitSlot(category: string, subcategory: string): OutfitSlot | undefined {
+  const normalizedCategory = category.trim().toLocaleLowerCase();
+  return LEGACY_OUTFIT_SLOT_DEFAULTS[`${normalizedCategory}|${subcategory.trim().toLocaleLowerCase()}`] ?? LEGACY_CATEGORY_SLOT_DEFAULTS[normalizedCategory];
 }
 
 export interface CatalogProfileSeed {
@@ -57,10 +82,10 @@ export const CATALOG_PROFILES = [
         dresses: ["midi dresses", "shirt dresses"],
       },
       assortmentPlan: [
-        { departmentKey: "WOMEN", category: "dresses", subcategory: "midi dresses", productCount: 5 },
-        { departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 5 },
-        { departmentKey: "MEN", category: "shirts", subcategory: "poplin shirts", productCount: 5 },
-        { departmentKey: "MEN", category: "trousers", subcategory: "tailored trousers", productCount: 5 },
+        { departmentKey: "WOMEN", category: "dresses", subcategory: "midi dresses", productCount: 5, outfitSlot: "ONE_PIECE" },
+        { departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 5, outfitSlot: "OUTERWEAR" },
+        { departmentKey: "MEN", category: "shirts", subcategory: "poplin shirts", productCount: 5, outfitSlot: "TOP" },
+        { departmentKey: "MEN", category: "trousers", subcategory: "tailored trousers", productCount: 5, outfitSlot: "BOTTOM" },
       ],
       materials: ["cashmere", "merino wool", "silk", "linen", "organic cotton"],
       colors: [
@@ -97,10 +122,10 @@ export const CATALOG_PROFILES = [
         accessories: ["tote bags", "caps"],
       },
       assortmentPlan: [
-        { departmentKey: "WOMEN", category: "dresses", subcategory: "mini dresses", productCount: 5 },
-        { departmentKey: "WOMEN", category: "denim", subcategory: "straight jeans", productCount: 5 },
-        { departmentKey: "MEN", category: "tops", subcategory: "t-shirts", productCount: 5 },
-        { departmentKey: "MEN", category: "outerwear", subcategory: "bomber jackets", productCount: 5 },
+        { departmentKey: "WOMEN", category: "dresses", subcategory: "mini dresses", productCount: 5, outfitSlot: "ONE_PIECE" },
+        { departmentKey: "WOMEN", category: "denim", subcategory: "straight jeans", productCount: 5, outfitSlot: "BOTTOM" },
+        { departmentKey: "MEN", category: "tops", subcategory: "t-shirts", productCount: 5, outfitSlot: "TOP" },
+        { departmentKey: "MEN", category: "outerwear", subcategory: "bomber jackets", productCount: 5, outfitSlot: "OUTERWEAR" },
       ],
       materials: ["cotton", "viscose", "polyester", "denim", "faux leather"],
       colors: [
@@ -137,10 +162,10 @@ export const CATALOG_PROFILES = [
         "fine knitwear": ["cashmere pullovers", "silk-knit cardigans"],
       },
       assortmentPlan: [
-        { departmentKey: "WOMEN", category: "eveningwear", subcategory: "column dresses", productCount: 5 },
-        { departmentKey: "WOMEN", category: "tailoring", subcategory: "single-breasted jackets", productCount: 5 },
-        { departmentKey: "MEN", category: "tailoring", subcategory: "tailored trousers", productCount: 5 },
-        { departmentKey: "MEN", category: "leather goods", subcategory: "small leather goods", productCount: 5 },
+        { departmentKey: "WOMEN", category: "eveningwear", subcategory: "column dresses", productCount: 5, outfitSlot: "ONE_PIECE" },
+        { departmentKey: "WOMEN", category: "tailoring", subcategory: "single-breasted jackets", productCount: 5, outfitSlot: "OUTERWEAR" },
+        { departmentKey: "MEN", category: "tailoring", subcategory: "tailored trousers", productCount: 5, outfitSlot: "BOTTOM" },
+        { departmentKey: "MEN", category: "leather goods", subcategory: "small leather goods", productCount: 5, outfitSlot: "ACCESSORY" },
       ],
       materials: ["silk satin", "double-face cashmere", "lambskin", "velvet", "fine wool"],
       colors: [
@@ -177,10 +202,10 @@ export const CATALOG_PROFILES = [
         "sports bras": ["medium-support bras", "high-support bras"],
       },
       assortmentPlan: [
-        { departmentKey: "WOMEN", category: "sports bras", subcategory: "medium-support bras", productCount: 5 },
-        { departmentKey: "WOMEN", category: "leggings", subcategory: "full-length leggings", productCount: 5 },
-        { departmentKey: "MEN", category: "training tops", subcategory: "performance t-shirts", productCount: 5 },
-        { departmentKey: "MEN", category: "jackets", subcategory: "running jackets", productCount: 5 },
+        { departmentKey: "WOMEN", category: "sports bras", subcategory: "medium-support bras", productCount: 5, outfitSlot: "TOP" },
+        { departmentKey: "WOMEN", category: "leggings", subcategory: "full-length leggings", productCount: 5, outfitSlot: "BOTTOM" },
+        { departmentKey: "MEN", category: "training tops", subcategory: "performance t-shirts", productCount: 5, outfitSlot: "TOP" },
+        { departmentKey: "MEN", category: "jackets", subcategory: "running jackets", productCount: 5, outfitSlot: "OUTERWEAR" },
       ],
       materials: ["recycled nylon", "performance jersey", "elastane blend", "mesh", "fleece"],
       colors: [
@@ -217,6 +242,7 @@ const catalogProfileConfigSchema = z.object({
     category: z.string().trim().min(1).max(120),
     subcategory: z.string().trim().min(1).max(120),
     productCount: z.number().int().positive(),
+    outfitSlot: z.enum(OUTFIT_SLOTS).optional(),
   })).min(1).optional(),
   materials: z.array(z.string().min(1)).min(1),
   colors: z
@@ -263,7 +289,7 @@ export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig 
       throw new Error(`Catalog category '${category}' has no subcategories`);
     }
   }
-  const normalizedAssortmentPlan: Array<{ departmentKey: string; category: string; subcategory: string; productCount: number }> = [];
+  const normalizedAssortmentPlan: Array<{ departmentKey: string; category: string; subcategory: string; productCount: number; outfitSlot: OutfitSlot }> = [];
   const mixTuples = new Set<string>();
   for (const row of config.assortmentPlan) {
     const department = config.departments.find((item) => item.key.toLocaleLowerCase() === row.departmentKey.toLocaleLowerCase());
@@ -275,7 +301,9 @@ export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig 
     if (!category || !subcategory) {
       throw new Error(`Catalog mix row '${row.category} / ${row.subcategory}' is not in the catalog taxonomy`);
     }
-    const normalizedRow = { ...row, departmentKey: department.key, category, subcategory };
+    const outfitSlot = row.outfitSlot ?? defaultOutfitSlot(category, subcategory);
+    if (!outfitSlot) throw new Error(`Choose an outfit slot for catalogue mix row '${category} / ${subcategory}'`);
+    const normalizedRow = { ...row, departmentKey: department.key, category, subcategory, outfitSlot };
     const tuple = [normalizedRow.departmentKey, category, subcategory].map((value) => value.trim().toLocaleLowerCase()).join("\u0000");
     if (mixTuples.has(tuple)) throw new Error("Catalog mix rows must be unique by department, category, and subcategory");
     mixTuples.add(tuple);

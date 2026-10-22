@@ -40,6 +40,10 @@ const ROLE_DIRECTION: Record<CatalogImageRoleValue, string[]> = {
     "Keep the whole garment clearly visible, with a natural pose that does not hide its construction.",
     "Use a polished studio or restrained campaign setting consistent with the product-only image.",
   ],
+  COMPLETE_LOOK: [
+    "Create a complete outfit image using the ordered anchor and companion references supplied in the prompt.",
+    "Preserve the anchor item and all selected companion catalogue products exactly.",
+  ],
 };
 
 export function buildCatalogImagePrompt(input: CatalogImagePromptInput): string {

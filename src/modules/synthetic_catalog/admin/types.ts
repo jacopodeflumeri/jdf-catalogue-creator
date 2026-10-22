@@ -54,7 +54,7 @@ export interface CatalogOverviewView {
   departments: Array<{ key: string; label: string }>;
   categories: string[];
   categorySizeCounts: Record<string, number>;
-  assortmentPlan: Array<{ departmentKey: string; category: string; subcategory: string; productCount: number }>;
+  assortmentPlan: Array<{ departmentKey: string; category: string; subcategory: string; productCount: number; outfitSlot: string }>;
   maxProductsPerJob: number;
   largeJobThreshold: number;
   latestJob: CatalogJobView | null;
@@ -63,7 +63,7 @@ export interface CatalogOverviewView {
 export interface CatalogImageView {
   id: number;
   publicId: string;
-  role: "FRONT" | "BACK" | "ON_MODEL";
+  role: "FRONT" | "BACK" | "ON_MODEL" | "COMPLETE_LOOK";
   status: "QUEUED" | "GENERATING" | "READY" | "FAILED";
   url: string | null;
   errorMessage: string | null;
@@ -134,7 +134,7 @@ export interface CatalogDetailView {
     categories: string[];
     categorySizeCounts: Record<string, number>;
     subcategories: Record<string, string[]>;
-    assortmentPlan: Array<{ departmentKey: string; category: string; subcategory: string; productCount: number }>;
+    assortmentPlan: Array<{ departmentKey: string; category: string; subcategory: string; productCount: number; outfitSlot: string }>;
   };
   counts: {
     products: number;

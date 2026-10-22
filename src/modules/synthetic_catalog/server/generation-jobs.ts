@@ -193,8 +193,8 @@ async function persistGeneratedProduct(input: {
       if (new Set(variantIds).size !== variantIds.length) throw new Error(`Catalog sizes create colliding variant IDs for style ${styleExternalId}`);
       const style = await tx.syntheticStyle.upsert({
         where: { externalId: styleExternalId },
-        update: { productId: product.id, colorName: color.name, colorCode: color.code, visualSpec: asInputJson(spec.design), status: "READY" },
-        create: { productId: product.id, externalId: styleExternalId, colorName: color.name, colorCode: color.code, visualSpec: asInputJson(spec.design), status: "READY" },
+        update: { productId: product.id, colorName: color.name, colorCode: color.code, colorHex: color.hex, visualSpec: asInputJson(spec.design), status: "READY" },
+        create: { productId: product.id, externalId: styleExternalId, colorName: color.name, colorCode: color.code, colorHex: color.hex, visualSpec: asInputJson(spec.design), status: "READY" },
       });
       for (let index = 0; index < inventory.length; index += 1) {
       const item = inventory[index]!;

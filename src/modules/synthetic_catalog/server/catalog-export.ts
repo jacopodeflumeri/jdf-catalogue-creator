@@ -78,9 +78,9 @@ async function loadCatalogExportSource(reference: string): Promise<CatalogExport
           stock: variant.stock,
           availability: variant.availability,
         })),
-        images: style.images.map((image) => ({
+        images: style.images.filter((image) => image.role !== "COMPLETE_LOOK").map((image) => ({
           publicId: image.publicId,
-          role: image.role,
+          role: image.role as "FRONT" | "BACK" | "ON_MODEL",
           status: image.status,
           storageKey: image.storageKey,
           mimeType: image.mimeType,

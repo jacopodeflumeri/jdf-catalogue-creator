@@ -66,11 +66,17 @@ the configured values without mutation controls. Taxonomy writes are validated,
 transactional, and audited.
 
 Settings also includes the editable Catalogue mix table. Each canonical row is
-`{ departmentKey, category, subcategory, productCount }`; row tuples are unique
+`{ departmentKey, category, subcategory, productCount, outfitSlot }`; row tuples are unique
 case-insensitively and product counts are positive integers. Adding a category
 or subcategory in a mix row updates the catalog-wide taxonomy in the same
-transaction. Removing a row affects future jobs only. Categories absent from
-the mix remain visible as taxonomy that needs an explicit row, and are never
+transaction. Removing a row affects future jobs only. The outfit slot is
+planning metadata and never changes product quotas. Supported slots are `TOP`,
+`BOTTOM`, `ONE_PIECE`, `OUTERWEAR`, `FOOTWEAR`, `BAG`, and `ACCESSORY`. Built-in
+rows have explicit mappings; legacy known rows normalize through exact
+category/subcategory keys, and new custom rows must choose a slot. The one-time
+schema migration assigns `ACCESSORY` to unknown historical rows so existing
+catalogues remain readable; editors can correct those rows in Settings.
+Categories absent from the mix remain visible as taxonomy that needs an explicit row, and are never
 assigned to departments by a generated cross-product.
 
 The detail client polls persisted state every three seconds only while a job is
@@ -170,6 +176,14 @@ It does not cross-join departments and categories or replace custom taxonomy.
 Legacy custom categories without a safe department assignment remain visible in
 Settings until an editor adds an explicit mix row; production does not depend on
 running the development seed for this upgrade.
+
+Complete the Look recommendations use persisted style colour hex values and
+catalogue mix slots. `src/modules/synthetic_catalog/domain/outfit-planner.ts`
+applies department and season constraints, compact slot recipes, colour harmony,
+and companion reuse balancing locally without another model call. The schema
+stores one `SyntheticCompleteLook` per anchor colour style and ordered
+`SyntheticCompleteLookItem` companion styles, including a scoring snapshot or a
+useful `SKIPPED` reason when no valid recipe exists.
 
 ## Identifier hierarchy
 
