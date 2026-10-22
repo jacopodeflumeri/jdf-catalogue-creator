@@ -51,6 +51,19 @@ describe("assortment planner", () => {
     expect(planAssortment(input)).toEqual(planned);
   });
 
+  it("uses weighted largest remainders for small ALL and CATEGORY jobs", () => {
+    const weightedConfig = {
+      ...config,
+      departments: [
+        { key: "WOMEN", label: "Women", code: "W", generationWeight: 0.05 },
+        { key: "MEN", label: "Men", code: "M", generationWeight: 0.05 },
+        { key: "KIDS", label: "Kids", code: "K", generationWeight: 0.9 },
+      ],
+    };
+    const planned = planAssortment({ sequences: [1], scope: { type: "CATEGORY", category: "coats" }, config: weightedConfig, seed: "one-product" });
+    expect(planned[0]!.department).toBe("KIDS");
+  });
+
   it("rejects empty and duplicate sequence requests", () => {
     expect(() =>
       planAssortment({ sequences: [], departmentMode: "AUTO", config, seed: "empty" }),

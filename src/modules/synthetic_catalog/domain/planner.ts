@@ -33,10 +33,14 @@ function allocateDepartments(
   }
   const departments = config.departments;
   const totalWeight = departments.reduce((sum, department) => sum + department.generationWeight, 0);
-  const allocations = departments.map((department) => Math.floor(count * department.generationWeight / totalWeight));
+  const exactAllocations = departments.map((department) => count * department.generationWeight / totalWeight);
+  const allocations = exactAllocations.map(Math.floor);
   let remainder = count - allocations.reduce((sum, value) => sum + value, 0);
-  for (let i = 0; remainder > 0; i = (i + 1) % departments.length) {
-    allocations[i] = allocations[i]! + 1;
+  const remainderOrder = seededShuffle(seed, departments.map((_, index) => index))
+    .sort((left, right) => (exactAllocations[right]! % 1) - (exactAllocations[left]! % 1));
+  for (let index = 0; remainder > 0; index += 1) {
+    const departmentIndex = remainderOrder[index]!;
+    allocations[departmentIndex] = allocations[departmentIndex]! + 1;
     remainder -= 1;
   }
   return seededShuffle(seed, departments.flatMap((department, index) =>
