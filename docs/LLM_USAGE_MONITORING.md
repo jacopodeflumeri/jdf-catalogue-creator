@@ -63,6 +63,9 @@ price reference.
   time so historical totals remain stable.
 - **2026-10-22 — Fail open for monitoring only.** Generation is the business operation;
   monitoring persistence must not turn a successful paid call into a failed job.
+- **2026-10-22 — Lazy persistence dependency.** The LLM client loads the Prisma-backed
+  recorder only after a successful response, so importing the reusable LLM module does
+  not initialize a database connection in browser-like tests or non-calling consumers.
 - **2026-10-22 — Dedicated navigation.** This monitoring view is a primary operational
   workflow, and the product owner explicitly requested a left-sidebar item rather than a
   Settings card.

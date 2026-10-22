@@ -13,7 +13,6 @@
 import OpenAI from "openai";
 import logger from "@/lib/utils/logger";
 import type { LLMMetadata, LLMCompletionParams } from "./types";
-import { recordLLMUsage } from "./usage-recorder";
 
 // ---------------------------------------------------------------------------
 // Known Mapp Products (for typo detection)
@@ -159,6 +158,7 @@ export async function llmCompletion(params: LLMCompletionParams) {
   // LiteLLM spend logs. The catalog uses non-streaming calls, which can also be
   // persisted locally for the admin cost dashboard.
   if (!completionParams.stream && "usage" in response) {
+    const { recordLLMUsage } = await import("./usage-recorder");
     await recordLLMUsage({
       requestId: "_request_id" in response ? String(response._request_id || "") : null,
       feature,
