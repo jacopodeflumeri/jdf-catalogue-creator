@@ -3,7 +3,6 @@ import Badge from "@/components/ui/Badge";
 const LABELS: Record<string, string> = {
   QUEUED: "Queued",
   RUNNING: "Running",
-  GENERATING: "Generating",
   COMPLETED: "Complete",
   READY: "Ready",
   COMPLETED_WITH_ERRORS: "Needs attention",
@@ -11,6 +10,10 @@ const LABELS: Record<string, string> = {
   CANCELLED: "Cancelled",
   DRAFT: "Draft",
   MISSING: "Missing",
+  PLANNED: "Planned",
+  SKIPPED: "Skipped",
+  STALE: "Stale",
+  GENERATING: "Generating",
 };
 
 export default function CatalogStatusBadge({ status }: { status: string }) {

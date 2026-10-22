@@ -3,6 +3,7 @@ import { buildBillingParams, getLLMClient } from "./client";
 import type { LLMImageParams, LLMImageResult, LLMImageSource } from "./types";
 
 const IMAGE_TIMEOUT_MS = 240_000;
+export const MAX_IMAGE_EDIT_REFERENCES = 8;
 
 function mimeTypeForFormat(format: LLMImageParams["outputFormat"]): string {
   return `image/${format === "jpeg" ? "jpeg" : format ?? "webp"}`;
@@ -85,7 +86,7 @@ export async function llmGenerateImage(params: LLMImageParams): Promise<LLMImage
 /** Edit one reference image through the proxy, preserving the same attribution. */
 export async function llmEditImage(
   params: LLMImageParams,
-  source: LLMImageSource,
+  source: LLMImageSource | readonly LLMImageSource[],
 ): Promise<LLMImageResult> {
   const {
     feature,
@@ -97,8 +98,15 @@ export async function llmEditImage(
     quality = "medium",
     outputFormat = "webp",
   } = params;
-  const extension = source.mimeType === "image/jpeg" ? "jpg" : source.mimeType.split("/")[1] || "webp";
-  const image = await toFile(source.data, `reference.${extension}`, { type: source.mimeType });
+  const sources = Array.isArray(source) ? source : [source];
+  if (sources.length === 0 || sources.length > MAX_IMAGE_EDIT_REFERENCES) {
+    throw new Error(`Image edits require between 1 and ${MAX_IMAGE_EDIT_REFERENCES} references`);
+  }
+  const files = await Promise.all(sources.map(async (item, index) => {
+    const extension = item.mimeType === "image/jpeg" ? "jpg" : item.mimeType.split("/")[1] || "webp";
+    return toFile(item.data, `reference-${String(index + 1).padStart(2, "0")}.${extension}`, { type: item.mimeType });
+  }));
+  const image = files.length === 1 ? files[0] : files;
   const billing = buildBillingParams({ feature, accountId, brandId });
   const response = await getLLMClient().images.edit(
     {

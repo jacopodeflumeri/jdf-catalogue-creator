@@ -8,6 +8,7 @@ export interface ImageReference {
   data: Buffer;
   mimeType: string;
   assetId: number;
+  description?: string;
 }
 
 export interface CatalogImageGenerationInput {
@@ -15,6 +16,7 @@ export interface CatalogImageGenerationInput {
   role: CatalogImageRoleValue;
   prompt: string;
   reference?: ImageReference;
+  references?: ImageReference[];
   regeneration?: boolean;
 }
 

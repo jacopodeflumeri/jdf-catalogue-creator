@@ -74,7 +74,7 @@ export function buildGeneratedImageStorageKey(
   if (!safeStyleId) {
     throw new Error("Style ID is not safe for generated asset storage");
   }
-  const filename = role === "ON_MODEL" ? "model" : role.toLowerCase();
+  const filename = role === "ON_MODEL" ? "model" : role === "COMPLETE_LOOK" ? "complete-look" : role.toLowerCase();
   return `public/catalogs/${catalogSlug}/${styleExternalId}/${filename}.webp`;
 }
 

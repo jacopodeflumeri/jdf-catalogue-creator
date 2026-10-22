@@ -61,12 +61,15 @@ export function planOutfits(styles: OutfitStyle[], reuseCounts: ReadonlyMap<numb
   const results: PlannedOutfit[] = [];
   for (const anchor of orderedAnchors) {
     const candidates = styles.filter((candidate) => candidate.id !== anchor.id && candidate.productId !== anchor.productId && candidate.department === anchor.department && compatibleSeason(anchor.season, candidate.season));
-    const ranked = (slot: OutfitSlot, selected: Set<number>, selectedStyles: OutfitStyle[] = []) => candidates.filter((item) => item.outfitSlot === slot && !selected.has(item.productId)).sort((a, b) => {
-      const accentPenalty = (style: OutfitStyle) => !hueSaturation(style.colorHex).neutral && selectedStyles.some((item) => !hueSaturation(item.colorHex).neutral) ? 5 : 0;
+    const ranked = (slot: OutfitSlot, selected: Set<number>, selectedStyles: OutfitStyle[] = []) => {
+      const alreadyHasAccent = [anchor, ...selectedStyles].some((item) => !hueSaturation(item.colorHex).neutral);
+      return candidates.filter((item) => item.outfitSlot === slot && !selected.has(item.productId) && (hueSaturation(item.colorHex).neutral || !alreadyHasAccent)).sort((a, b) => {
+      const accentPenalty = (style: OutfitStyle) => !hueSaturation(style.colorHex).neutral && alreadyHasAccent ? 5 : 0;
       const scoreA = scoreColorPair(anchor.colorHex, a.colorHex) - (reuse.get(a.id) ?? 0) * 0.8 - accentPenalty(a);
       const scoreB = scoreColorPair(anchor.colorHex, b.colorHex) - (reuse.get(b.id) ?? 0) * 0.8 - accentPenalty(b);
       return scoreB - scoreA || deterministicTie(anchor.id, a.id) - deterministicTie(anchor.id, b.id) || a.id - b.id;
     });
+    };
     let selected: OutfitStyle[] | undefined;
     for (const recipe of recipes(anchor.outfitSlot)) {
       if (anchor.outfitSlot === "ONE_PIECE") {
@@ -87,7 +90,7 @@ export function planOutfits(styles: OutfitStyle[], reuseCounts: ReadonlyMap<numb
           const optional: OutfitStyle[] = [];
           for (const slot of OPTIONAL_SLOTS) {
             if (required.length + optional.length >= 3) break;
-          const candidate = ranked(slot, new Set([...usedProducts, ...optional.map((item) => item.productId)]), [...required, ...optional])[0];
+            const candidate = ranked(slot, new Set([...usedProducts, ...optional.map((item) => item.productId)]), [...required, ...optional])[0];
             if (candidate) optional.push(candidate);
           }
           selected = [...required, ...optional];

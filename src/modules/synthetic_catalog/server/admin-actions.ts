@@ -28,6 +28,7 @@ import {
 import { getCatalogExportSummary } from "./catalog-export";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
 import { createCoreImagesJob, getCoreImagesPreflight } from "./core-image-jobs";
+import { createCompleteLookJob, getCompleteLookPreflight } from "./complete-look-jobs";
 import type { CatalogExportSummary } from "../export/demoware-csv";
 
 function adminId(session: Awaited<ReturnType<typeof requireAdmin>>): number | undefined {
@@ -114,6 +115,25 @@ export async function getCoreImagesPreflightAction(input: { catalogId: number; s
   } catch (error) {
     return { ok: false as const, message: error instanceof Error ? error.message : "Could not calculate core image targets" };
   }
+}
+
+export async function getCompleteLookPreflightAction(input: { catalogId: number; sourceJobId?: number }) {
+  await requireAdmin({});
+  try { return { ok: true as const, ...await getCompleteLookPreflight(input) }; }
+  catch (error) { return { ok: false as const, message: error instanceof Error ? error.message : "Could not calculate Complete the Look eligibility" }; }
+}
+
+export async function createCompleteLookJobAction(input: { catalogId: number; sourceJobId?: number }) {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const catalogId = positiveIdSchema.parse(input.catalogId);
+    const sourceJobId = input.sourceJobId == null ? undefined : positiveIdSchema.parse(input.sourceJobId);
+    const job = await createCompleteLookJob({ catalogId, sourceJobId, createdByMappTeamId: adminId(session) });
+    const catalog = await prisma.syntheticCatalog.findUniqueOrThrow({ where: { id: catalogId } });
+    await writeAuditLog({ ...sessionAuditActor(session), action: "complete_look_generation_requested", entityType: "catalog_generation_job", entityId: job.id, message: `Requested Complete the Look generation for ${catalog.name}`, data: { catalogId, sourceJobId: sourceJobId ?? null, imageTasks: job.tasks.length } });
+    revalidateCatalog(catalog.slug);
+    return { ok: true, jobId: job.id };
+  } catch (error) { return errorResult(error); }
 }
 
 export async function retryCatalogGenerationJobAction(jobId: number): Promise<CatalogActionResult> {
@@ -285,8 +305,12 @@ export async function saveCatalogMixAction(input: unknown): Promise<CatalogActio
         subcategories,
         assortmentPlan: values.rows,
       });
+      const outfitSlotChanges = updatedConfig.assortmentPlan.flatMap((row) => {
+        const prior = config.assortmentPlan.find((item) => item.departmentKey === row.departmentKey && item.category === row.category && item.subcategory === row.subcategory);
+        return prior && prior.outfitSlot !== row.outfitSlot ? [{ category: row.category, subcategory: row.subcategory, from: prior.outfitSlot, to: row.outfitSlot }] : [];
+      });
       await tx.syntheticCatalog.update({ where: { id: catalog.id }, data: { config: JSON.parse(JSON.stringify(updatedConfig)) as Prisma.InputJsonValue } });
-      return { catalog, previousRowCount: config.assortmentPlan.length, nextRowCount: updatedConfig.assortmentPlan.length };
+      return { catalog, previousRowCount: config.assortmentPlan.length, nextRowCount: updatedConfig.assortmentPlan.length, outfitSlotChanges };
     });
     await writeAuditLog({
       ...sessionAuditActor(session),
@@ -294,7 +318,7 @@ export async function saveCatalogMixAction(input: unknown): Promise<CatalogActio
       entityType: "synthetic_catalog",
       entityId: result.catalog.id,
       message: `Updated the catalogue mix for ${result.catalog.name}`,
-      data: { catalogId: result.catalog.id, previousRowCount: result.previousRowCount, nextRowCount: result.nextRowCount },
+      data: { catalogId: result.catalog.id, previousRowCount: result.previousRowCount, nextRowCount: result.nextRowCount, outfitSlotChanges: result.outfitSlotChanges },
     });
     revalidateCatalog(result.catalog.slug);
     return { ok: true };
@@ -312,6 +336,8 @@ async function setCatalogProductArchived(input: unknown, archived: boolean): Pro
       const product = await tx.syntheticProduct.findUniqueOrThrow({ where: { id: productId }, include: { catalog: true } });
       if (archived && !product.archivedAt) {
         const now = new Date();
+        const styles = await tx.syntheticStyle.findMany({ where: { productId: product.id }, select: { id: true } });
+        const styleIds = styles.map((style) => style.id);
         await tx.syntheticProduct.update({
           where: { id: product.id },
           data: { archivedAt: now, archivedByMappTeamId: adminId(session) ?? null },
@@ -320,6 +346,16 @@ async function setCatalogProductArchived(input: unknown, archived: boolean): Pro
           where: { productId: product.id, status: "QUEUED" },
           data: { status: "CANCELLED", finishedAt: now, lockedAt: null, lockedBy: null },
         });
+        if (styleIds.length) {
+          const affectedLooks = await tx.syntheticCompleteLook.findMany({
+            where: { OR: [{ anchorStyleId: { in: styleIds } }, { items: { some: { companionStyleId: { in: styleIds } } } }] },
+            select: { id: true, imageAssetId: true },
+          });
+          const lookIds = affectedLooks.map((look) => look.id);
+          const lookAssetIds = affectedLooks.flatMap((look) => look.imageAssetId == null ? [] : [look.imageAssetId]);
+          if (lookIds.length) await tx.syntheticCompleteLook.updateMany({ where: { id: { in: lookIds } }, data: { status: "STALE", errorMessage: "An anchor or companion product was archived." } });
+          if (lookAssetIds.length) await tx.catalogGenerationTask.updateMany({ where: { imageAssetId: { in: lookAssetIds }, status: "QUEUED" }, data: { status: "CANCELLED", finishedAt: now, lockedAt: null, lockedBy: null } });
+        }
         return { product, changed: true };
       }
       if (!archived && product.archivedAt) {

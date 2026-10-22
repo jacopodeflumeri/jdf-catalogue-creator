@@ -126,6 +126,7 @@ async function refreshProductImageState(styleId: number): Promise<void> {
       where: {
         styleId,
         taskType: "GENERATE_IMAGE",
+        imageAsset: { role: { in: [...REQUIRED_CORE_IMAGE_ROLES] } },
         status: { in: ["QUEUED", "RUNNING"] },
       },
     });
@@ -211,6 +212,10 @@ async function settleFailedTask(
         status: result.cancelled || result.retry ? "QUEUED" : "FAILED",
         errorMessage: result.cancelled || result.retry ? null : errorMessage(error),
       },
+    });
+    await prisma.syntheticCompleteLook.updateMany({
+      where: { imageAssetId: task.imageAssetId, status: { not: "STALE" } },
+      data: result.cancelled || result.retry ? { status: "QUEUED", errorMessage: null } : { status: "FAILED", errorMessage: errorMessage(error) },
     });
   }
 }
@@ -363,6 +368,10 @@ export class CatalogGenerationWorker {
             status: outcome.retry || outcome.cancelled ? "QUEUED" : "FAILED",
             ...(!outcome.retry && !outcome.cancelled && { errorMessage: "Worker lease expired before task completion" }),
           },
+        });
+        await prisma.syntheticCompleteLook.updateMany({
+          where: { imageAssetId: task.imageAssetId, status: { not: "STALE" } },
+          data: outcome.retry || outcome.cancelled ? { status: "QUEUED", errorMessage: null } : { status: "FAILED", errorMessage: "Worker lease expired before task completion" },
         });
       }
     }

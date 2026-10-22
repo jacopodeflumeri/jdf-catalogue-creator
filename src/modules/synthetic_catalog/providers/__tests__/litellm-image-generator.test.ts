@@ -82,4 +82,23 @@ describe("LiteLLMImageGenerator", () => {
     expect(isReferenceImageUnsupportedError(new Error("image edits are not supported"))).toBe(true);
     expect(isReferenceImageUnsupportedError({ status: 400, message: "invalid image" })).toBe(false);
   });
+
+  it("passes ordered references and never falls back to prompt-only Complete the Look generation", async () => {
+    const unsupported = Object.assign(new Error("image editing is not supported"), { code: "unsupported_operation" });
+    const edit = jest.fn().mockRejectedValue(unsupported);
+    const generate = jest.fn().mockResolvedValue(result);
+    const generator = new LiteLLMImageGenerator({ edit, generate });
+    await expect(generator.generateImage({
+      model: "openai/gpt-image-2", role: "COMPLETE_LOOK", prompt: "look",
+      references: [
+        { data: Buffer.from("anchor"), mimeType: "image/webp", assetId: 1 },
+        { data: Buffer.from("companion"), mimeType: "image/webp", assetId: 2 },
+      ],
+    })).rejects.toBe(unsupported);
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ feature: "synthetic-catalog-image-complete-look" }), [
+      { data: Buffer.from("anchor"), mimeType: "image/webp" },
+      { data: Buffer.from("companion"), mimeType: "image/webp" },
+    ]);
+    expect(generate).not.toHaveBeenCalled();
+  });
 });

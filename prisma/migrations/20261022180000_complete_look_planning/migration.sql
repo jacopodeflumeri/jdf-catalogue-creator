@@ -42,9 +42,9 @@ ALTER TABLE "synthetic_complete_look_item" ADD CONSTRAINT "synthetic_complete_lo
 
 UPDATE "synthetic_style" style
 SET "color_hex" = COALESCE((
-  SELECT color->>'hex'
-  FROM jsonb_array_elements(catalog.config_json->'colors') color
-  WHERE color->>'code' = style.color_code
+  SELECT palette_item.value->>'hex'
+  FROM jsonb_array_elements(catalog.config_json->'colors') AS palette_item(value)
+  WHERE palette_item.value->>'code' = style.color_code
   LIMIT 1
 ), '#808080')
 FROM "synthetic_product" product
@@ -59,13 +59,13 @@ SET "config_json" = jsonb_set(
   catalog.config_json,
   '{assortmentPlan}',
   COALESCE((
-    SELECT jsonb_agg(row || jsonb_build_object('outfitSlot', CASE
-      WHEN lower(row->>'category') IN ('dresses', 'eveningwear') THEN 'ONE_PIECE'
-      WHEN lower(row->>'category') IN ('shirts', 'knitwear', 'tops', 'training tops', 'sports bras') THEN 'TOP'
-      WHEN lower(row->>'category') IN ('trousers', 'denim', 'leggings', 'shorts') THEN 'BOTTOM'
-      WHEN lower(row->>'category') IN ('coats', 'jackets', 'outerwear') THEN 'OUTERWEAR'
-      WHEN lower(row->>'category') IN ('leather goods', 'bags', 'handbags') THEN 'BAG'
+    SELECT jsonb_agg(mix_row.value || jsonb_build_object('outfitSlot', CASE
+      WHEN lower(mix_row.value->>'category') IN ('dresses', 'eveningwear', 'evening dresses') THEN 'ONE_PIECE'
+      WHEN lower(mix_row.value->>'category') IN ('shirts', 'knitwear', 'tops', 'training tops', 'sports bras') THEN 'TOP'
+      WHEN lower(mix_row.value->>'category') IN ('trousers', 'denim', 'leggings', 'shorts') THEN 'BOTTOM'
+      WHEN lower(mix_row.value->>'category') IN ('coats', 'jackets', 'outerwear') THEN 'OUTERWEAR'
+      WHEN lower(mix_row.value->>'category') IN ('bags', 'handbags') THEN 'BAG'
       ELSE 'ACCESSORY' END))
-    FROM jsonb_array_elements(catalog.config_json->'assortmentPlan') row
+    FROM jsonb_array_elements(catalog.config_json->'assortmentPlan') AS mix_row(value)
   ), '[]'::jsonb), false)
 WHERE catalog.config_json ? 'assortmentPlan';

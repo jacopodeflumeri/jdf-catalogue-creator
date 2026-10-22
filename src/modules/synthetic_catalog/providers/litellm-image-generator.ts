@@ -13,7 +13,7 @@ import {
 import { isRetryableProductGenerationError } from "./litellm-product-generator";
 
 type GenerateCall = (params: LLMImageParams) => Promise<LLMImageResult>;
-type EditCall = (params: LLMImageParams, source: LLMImageSource) => Promise<LLMImageResult>;
+type EditCall = (params: LLMImageParams, source: LLMImageSource | readonly LLMImageSource[]) => Promise<LLMImageResult>;
 type Sleep = (milliseconds: number) => Promise<void>;
 
 export interface LiteLLMImageGeneratorOptions {
@@ -80,19 +80,20 @@ export class LiteLLMImageGenerator implements CatalogImageGenerator {
       outputFormat: "webp",
     };
 
-    if (input.reference && this.referencesEnabled) {
+    const references = input.references ?? (input.reference ? [input.reference] : []);
+    if (references.length > 0 && this.referencesEnabled) {
       try {
+        const sources = references.map(({ data, mimeType }) => ({ data, mimeType }));
         const result = await this.callWithRetry(() =>
-          this.edit(params, {
-            data: input.reference!.data,
-            mimeType: input.reference!.mimeType,
-          }),
+          this.edit(params, sources.length === 1 ? sources[0]! : sources),
         );
         return { ...result, usedReference: true };
       } catch (error) {
-        if (!isReferenceImageUnsupportedError(error)) throw error;
+        if (!isReferenceImageUnsupportedError(error) || input.role === "COMPLETE_LOOK") throw error;
       }
     }
+
+    if (input.role === "COMPLETE_LOOK") throw new Error("Complete the Look requires supported multi-reference image editing");
 
     const result = await this.callWithRetry(() => this.generate(params));
     return { ...result, usedReference: false };

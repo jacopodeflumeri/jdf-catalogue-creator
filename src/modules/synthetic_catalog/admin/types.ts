@@ -21,6 +21,9 @@ export interface CatalogJobView {
   failedProducts: number;
   completedImages: number;
   failedImages: number;
+  skippedImages: number;
+  informationReadyProducts: number;
+  informationReadyStyles: number;
   totalTasks: number;
   completedTasks: number;
   failedTasks: number;
@@ -101,6 +104,14 @@ export interface CatalogProductView {
       availability: string;
     }>;
     images: CatalogImageView[];
+    completeLook: {
+      id: number;
+      status: string;
+      reason: string | null;
+      imageAssetId: number | null;
+      imagePublicId: string | null;
+      companions: Array<{ externalId: string; name: string; styleExternalId: string; colorName: string; outfitSlot: string }>;
+    } | null;
   }>;
 }
 
@@ -142,6 +153,9 @@ export interface CatalogDetailView {
     variants: number;
     readyImages: number;
     failedImages: number;
+    pendingCoreImages: number;
+    readyCoreImages: number;
+    failedCoreImages: number;
   };
   products: CatalogProductView[];
   jobs: CatalogJobView[];

@@ -40,6 +40,7 @@ async function loadCatalogExportSource(reference: string): Promise<CatalogExport
             include: {
               variants: { orderBy: { externalId: "asc" } },
               images: { orderBy: { role: "asc" } },
+              completeLook: { include: { imageAsset: true, items: { orderBy: { sortOrder: "asc" }, include: { companionStyle: { include: { product: { select: { externalId: true, archivedAt: true } } } } } } } },
             },
           },
         },
@@ -78,15 +79,20 @@ async function loadCatalogExportSource(reference: string): Promise<CatalogExport
           stock: variant.stock,
           availability: variant.availability,
         })),
-        images: style.images.filter((image) => image.role !== "COMPLETE_LOOK").map((image) => ({
+        images: style.images.map((image) => ({
           publicId: image.publicId,
-          role: image.role as "FRONT" | "BACK" | "ON_MODEL",
+          role: image.role,
           status: image.status,
           storageKey: image.storageKey,
           mimeType: image.mimeType,
           width: image.width,
           height: image.height,
         })),
+        completeLook: style.completeLook ? {
+          status: style.completeLook.status,
+          imageAsset: style.completeLook.imageAsset ? { publicId: style.completeLook.imageAsset.publicId, status: style.completeLook.imageAsset.status, storageKey: style.completeLook.imageAsset.storageKey } : null,
+          items: style.completeLook.items.map((item) => ({ productExternalId: item.companionStyle.product.externalId, archived: item.companionStyle.product.archivedAt != null })),
+        } : null,
       })),
     })),
   };

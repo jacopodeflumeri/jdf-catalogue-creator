@@ -32,4 +32,29 @@ describe("deterministic Complete the Look planner", () => {
     expect(dress.items).toHaveLength(1);
     expect(scoreColorPair("#D02050", "#222222")).toBeGreaterThan(0);
   });
+
+  it("uses the outerwear recipe of top plus bottom and balances companion reuse", () => {
+    const catalog = [
+      style(1, 1, "OUTERWEAR"),
+      style(2, 2, "TOP"),
+      style(3, 3, "BOTTOM"),
+      style(4, 4, "BOTTOM"),
+    ];
+    const plan = planOutfits(catalog, new Map([[3, 20]])).find((item) => item.anchor.id === 1)!;
+    expect(plan.status).toBe("PLANNED");
+    expect(plan.items.map((item) => item.outfitSlot)).toEqual(expect.arrayContaining(["TOP", "BOTTOM"]));
+    expect(plan.items.find((item) => item.outfitSlot === "BOTTOM")?.style.id).toBe(4);
+  });
+
+  it("allows at most one saturated colour in an outfit", () => {
+    const catalog = [
+      style(1, 1, "TOP", "WOMEN", "Core", "#D02050"),
+      style(2, 2, "BOTTOM", "WOMEN", "Core", "#2080D0"),
+      style(3, 3, "BOTTOM", "WOMEN", "Core", "#222222"),
+    ];
+    const plan = planOutfits(catalog).find((item) => item.anchor.id === 1)!;
+    expect(plan.status).toBe("PLANNED");
+    expect(plan.items.map((item) => item.style.id)).toContain(3);
+    expect(plan.items.map((item) => item.style.id)).not.toContain(2);
+  });
 });

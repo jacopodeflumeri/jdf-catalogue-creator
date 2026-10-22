@@ -52,4 +52,10 @@ describe("getProductImageStatus", () => {
     expect(getProductImageStatus({ styles: [ready, { ...ready, id: 2, images: ready.images.map((image) => ({ ...image, status: "QUEUED" as const })) }] })).toBe("GENERATING");
     expect(getProductImageStatus({ styles: [ready, { ...ready, id: 2, images: ready.images.map((image) => ({ ...image, status: "FAILED" as const })) }] })).toBe("FAILED");
   });
+
+  it("ignores failures on optional image roles when calculating core-image readiness", () => {
+    const ready = productWithImages(["READY", "READY", "READY"]).styles[0]!;
+    const optional = { id: 4, publicId: "optional", role: "COMPLETE_LOOK" as const, status: "FAILED" as const, url: null, errorMessage: "Optional image failed" };
+    expect(getProductImageStatus({ styles: [{ ...ready, images: [...ready.images, optional] }] })).toBe("READY");
+  });
 });

@@ -28,8 +28,9 @@ thumbnail uses the first available FRONT image. Image status is computed from
 the three required core roles, independently of product/style information
 readiness; a core-image failure in any color is shown as `FAILED`.
 Selecting a row opens `/admin/catalogs/{slug}/products/{externalId}`, where all
-color styles, their IDs, size/SKU inventory, and three generated images are
-shown. Editors can regenerate an individual style image. Numeric catalog and
+color styles, their IDs, size/SKU inventory, and three required core images are
+shown, followed by an optional Complete the Look image and ordered companion
+products when available. Editors can regenerate an individual style image. Numeric catalog and
 product IDs are also accepted so audit-log links remain stable.
 
 All reads use `requireAdmin({})`. Viewer-level users see the same operational
@@ -58,6 +59,28 @@ failed `FRONT`, `BACK`, and `ON_MODEL` roles; READY assets are preserved.
 Catalogue-level transaction locking and active-task checks make repeated
 submissions idempotent. A preflight confirmation shows target products, colour
 styles, and image calls before queueing.
+Step 3 is also manual and offers a source information batch or all eligible
+active catalogue products. Before queueing, every active style in the full
+catalogue must have READY FRONT and BACK images, even for a batch target;
+ON_MODEL is optional. The preflight lists missing/failed roles and affected PDPs,
+then summarizes eligible and skipped styles, skip reasons, and image calls.
+Complete the Look jobs share the worker's lock, cancellation, retries and lease
+recovery. They store one look per colour style and preserve the persisted
+pairing across image retries. Companion products must be active, same-catalogue,
+same-department, season-compatible, from different products, and have READY
+FRONT images. Recipes use the explicit mix slots; neutrals pair broadly,
+harmonious colours score higher, competing saturated accents are penalized, and
+reuse counts reduce a style's score when it has already been selected often.
+Anchors use ON_MODEL first when READY, then FRONT, followed by companion FRONT
+images in the saved outfit order. The image edit passes those files through
+LiteLLM with feature `synthetic-catalog-image-complete-look`; unsupported
+multi-reference edits fail visibly and remain retryable.
+
+Archiving an anchor hides its look. Archiving any companion marks affected looks
+STALE and cancels queued image work. Restoring the product leaves those looks
+stale until an editor runs Step 3 again. FAILED looks can be regenerated without
+changing their saved pairing. Complete the Look does not change core-image
+readiness or block ordinary Catalogue CSV readiness.
 Size-row estimates use the exact planned mix rows, category-specific size rule,
 and next product sequence used when the job is queued.
 Editors can add departments, categories with their first subcategory, and
@@ -100,14 +123,20 @@ UTF-8 `text/csv`, RFC 4180 quoting and CRLF rows, disables caching, and uses a
 stable filename derived from the catalog slug.
 
 The adapter reads persisted catalog records and emits one row per variant in a
-fixed 23-column order. Every style of a parent product gets its own size rows,
+fixed 25-column order. The original 23 fields keep their order; Complete the
+Look fields are appended. Every style of a parent product gets its own size rows,
 style ID, color, and image URLs. IDs and SKUs are never regenerated during
 export. Front, back, and on-model assets map to
 `image_url_1`, `image_url_2`, and `image_url_3` respectively, and the same three
 stable opaque URLs repeat across every size row in a style. URL values use
 `APP_URL`; deployed environments must set it to the HTTPS hostname Demoware can
 reach. Text beginning with `=`, `+`, `-`, or `@` is prefixed with an apostrophe
-to prevent spreadsheet formula execution when an operator opens the file.
+to prevent spreadsheet formula execution when an operator opens the file. The
+final columns are `complete_look_image_url` and `companion_products`; the URL is
+the stable asset endpoint only for a READY non-stale look, and companion product
+IDs are semicolon-separated in persisted outfit order. For example:
+`PRE-W-000010;PRE-W-000011`. Without a usable look, both cells are blank and
+this optional data does not affect core export readiness.
 
 Department validation uses the catalog's configured department keys and exports
 the configured label, preserving the existing `Women` and `Men` values. Only

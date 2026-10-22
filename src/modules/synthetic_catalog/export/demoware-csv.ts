@@ -26,11 +26,13 @@ export const DEMOWARE_CSV_COLUMNS = [
   "image_url_2",
   "image_url_3",
   "product_url",
+  "complete_look_image_url",
+  "companion_products",
 ] as const;
 
 export const MIN_EXPORT_IMAGE_DIMENSION = 512;
 
-type ExportImageRole = "FRONT" | "BACK" | "ON_MODEL";
+type ExportImageRole = "FRONT" | "BACK" | "ON_MODEL" | "COMPLETE_LOOK";
 
 export interface CatalogExportImageSource {
   publicId: string;
@@ -56,6 +58,11 @@ export interface CatalogExportStyleSource {
   status: string;
   variants: CatalogExportVariantSource[];
   images: CatalogExportImageSource[];
+  completeLook?: {
+    status: string;
+    imageAsset: { publicId: string; status: string; storageKey: string | null } | null;
+    items: Array<{ productExternalId: string; archived: boolean }>;
+  } | null;
 }
 
 export interface CatalogExportProductSource {
@@ -164,8 +171,9 @@ function productIssues(
     if (style.status !== "READY") add("style_not_ready", `Style ${style.externalId} is not ready`);
     if (style.variants.length === 0) add("variants", `Style ${style.externalId} has no variants`);
 
-    const imagesByRole = new Map(style.images.map((image) => [image.role, image]));
-    if (style.images.length !== REQUIRED_IMAGE_ROLES.length || imagesByRole.size !== REQUIRED_IMAGE_ROLES.length) {
+    const coreImages = style.images.filter((image) => (REQUIRED_IMAGE_ROLES as readonly string[]).includes(image.role));
+    const imagesByRole = new Map(coreImages.map((image) => [image.role, image]));
+    if (coreImages.length !== REQUIRED_IMAGE_ROLES.length || imagesByRole.size !== REQUIRED_IMAGE_ROLES.length) {
       add("image_roles", `Style ${style.externalId} must have exactly front, back, and on-model images`);
     }
     for (const role of REQUIRED_IMAGE_ROLES) {
@@ -237,6 +245,10 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
       const imageUrls = REQUIRED_IMAGE_ROLES.map((role) =>
         absoluteUrl(`/api/catalog-assets/${images.get(role)!.publicId}`, appUrl),
       );
+      const look = style.completeLook;
+      const lookUsable = look?.status === "READY" && look.imageAsset?.status === "READY" && Boolean(look.imageAsset.storageKey) && look.items.every((item) => !item.archived);
+      const completeLookUrl = lookUsable ? absoluteUrl(`/api/catalog-assets/${look!.imageAsset!.publicId}`, appUrl) : "";
+      const companionProducts = lookUsable ? look!.items.map((item) => item.productExternalId).filter((id) => id !== product.externalId).join(";") : "";
       for (const variant of style.variants) {
         rows.push(
           createCsvRow([
@@ -261,6 +273,8 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
             variant.availability === "IN_STOCK" ? "in_stock" : "out_of_stock",
             ...imageUrls,
             absoluteUrl(product.productUrl ?? `/catalogs/${source.slug}/products/${product.externalId}`, appUrl),
+            completeLookUrl,
+            companionProducts,
           ]),
         );
       }

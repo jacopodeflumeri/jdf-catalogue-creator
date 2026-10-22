@@ -96,6 +96,43 @@ describe("Demoware CSV export", () => {
     expect(result.csv.endsWith("\r\n")).toBe(true);
   });
 
+  it("appends a stable Complete the Look URL and ordered semicolon-separated product IDs", () => {
+    const style = product().styles[0]!;
+    const result = buildDemowareCsv(source([product({ styles: [{ ...style, completeLook: {
+      status: "READY",
+      imageAsset: { publicId: "00000000-0000-4000-8000-000000000004", status: "READY", storageKey: "public/catalogs/look.webp" },
+      items: [{ productExternalId: "PRE-W-000010", archived: false }, { productExternalId: "PRE-W-000011", archived: false }],
+    } }] })]), "https://catalogs.example.test");
+    const rows = result.csv.trimEnd().split("\r\n");
+    const first = rows[1]!.split(",");
+    const index = (column: (typeof DEMOWARE_CSV_COLUMNS)[number]) => DEMOWARE_CSV_COLUMNS.indexOf(column);
+    expect(DEMOWARE_CSV_COLUMNS.slice(-2)).toEqual(["complete_look_image_url", "companion_products"]);
+    expect(first[index("complete_look_image_url")]).toBe("https://catalogs.example.test/api/catalog-assets/00000000-0000-4000-8000-000000000004");
+    expect(first[index("companion_products")]).toBe("PRE-W-000010;PRE-W-000011");
+    expect(rows[2]!.split(",").slice(-2)).toEqual(first.slice(-2));
+  });
+
+  it("keeps core export readiness when a fourth optional COMPLETE_LOOK asset exists", () => {
+    const style = product().styles[0]!;
+    const result = buildDemowareCsv(source([product({ styles: [{ ...style, images: [...style.images, { publicId: "00000000-0000-4000-8000-000000000004", role: "COMPLETE_LOOK", status: "READY", storageKey: "look.webp", mimeType: "image/webp", width: 1024, height: 1536 }] }] })]), "https://catalogs.example.test");
+    expect(result.summary.readyForImport).toBe(true);
+    expect(result.summary.issues).toEqual([]);
+    expect(result.summary.imagesReferenced).toBe(3);
+  });
+
+  it("leaves both optional values blank for stale looks and archived companions", () => {
+    const style = product().styles[0]!;
+    const stale = { status: "STALE", imageAsset: { publicId: "00000000-0000-4000-8000-000000000004", status: "READY", storageKey: "look.webp" }, items: [{ productExternalId: "PRE-W-000010", archived: false }] };
+    const archived = { ...stale, status: "READY", items: [{ productExternalId: "PRE-W-000010", archived: true }] };
+    for (const completeLook of [stale, archived]) {
+      const result = buildDemowareCsv(source([product({ styles: [{ ...style, completeLook }] })]), "https://catalogs.example.test");
+      const first = result.csv.trimEnd().split("\r\n")[1]!.split(",");
+      expect(first.at(-2)).toBe("");
+      expect(first.at(-1)).toBe("");
+      expect(result.summary.readyForImport).toBe(true);
+    }
+  });
+
   it("exports every color style with its own size rows and configured custom department label", () => {
     const item = product({
       externalId: "PRE-K-000001",

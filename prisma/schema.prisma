@@ -612,6 +612,7 @@ model CatalogGenerationJob {
   failedProducts      Int                   @default(0) @map("failed_products")
   completedImages     Int                   @default(0) @map("completed_images")
   failedImages        Int                   @default(0) @map("failed_images")
+  skippedImages       Int                   @default(0) @map("skipped_images")
   errorMessage        String?               @map("error_message")
   startedAt           DateTime?             @map("started_at")
   finishedAt          DateTime?             @map("finished_at")

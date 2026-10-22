@@ -108,4 +108,18 @@ describe("LiteLLM image helpers", () => {
       }),
     );
   });
+
+  it("sends ordered multi-reference files with multipart spend metadata", async () => {
+    edit.mockResolvedValue({ data: [{ b64_json: Buffer.from("edited-many").toString("base64") }], output_format: "webp" });
+    await llmEditImage({ model: "openai/gpt-image-2", prompt: "complete look", feature: "synthetic-catalog-image-complete-look" }, [
+      { data: Buffer.from("anchor-on-model"), mimeType: "image/webp" },
+      { data: Buffer.from("anchor-front"), mimeType: "image/png" },
+      { data: Buffer.from("companion"), mimeType: "image/jpeg" },
+    ]);
+    const body = edit.mock.calls[0]![0] as { image: File[] };
+    expect(body.image).toHaveLength(3);
+    expect(body.image.map((file) => file.name)).toEqual(["reference-01.webp", "reference-02.png", "reference-03.jpg"]);
+    expect(edit.mock.calls[0]![1]).toMatchObject({ headers: { "x-litellm-spend-logs-metadata": expect.stringContaining("synthetic-catalog-image-complete-look") } });
+    expect(recordLLMUsage).toHaveBeenCalledWith(expect.objectContaining({ feature: "synthetic-catalog-image-complete-look", operation: "IMAGE_EDIT" }));
+  });
 });

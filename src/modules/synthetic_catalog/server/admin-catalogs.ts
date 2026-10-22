@@ -18,6 +18,7 @@ const productInclude = {
     include: {
       variants: { orderBy: { id: "asc" } },
       images: { orderBy: { role: "asc" } },
+      completeLook: { include: { imageAsset: true, items: { orderBy: { sortOrder: "asc" }, include: { companionStyle: { include: { product: { select: { externalId: true, name: true } } } } } } } },
     },
   },
 } satisfies Prisma.SyntheticProductInclude;
@@ -66,6 +67,20 @@ function productView(product: ProductWithRelations, config: ReturnType<typeof pa
             url: image.status === "READY" ? `/api/catalog-assets/${image.publicId}` : null,
             errorMessage: image.errorMessage,
           })),
+          completeLook: style.completeLook ? {
+            id: style.completeLook.id,
+            status: style.completeLook.status,
+            reason: style.completeLook.errorMessage ?? style.completeLook.selectionReason,
+            imageAssetId: style.completeLook.imageAsset?.id ?? null,
+            imagePublicId: style.completeLook.imageAsset?.status === "READY" ? style.completeLook.imageAsset.publicId : null,
+            companions: style.completeLook.items.map((item) => ({
+              externalId: item.companionStyle.product.externalId,
+              name: item.companionStyle.product.name,
+              styleExternalId: item.companionStyle.externalId,
+              colorName: item.companionStyle.colorName,
+              outfitSlot: item.outfitSlot,
+            })),
+          } : null,
         })),
   };
 }
@@ -85,6 +100,7 @@ function jobView(job: {
   failedProducts: number;
   completedImages: number;
   failedImages: number;
+  skippedImages: number;
   errorMessage: string | null;
   createdAt: Date;
   startedAt: Date | null;
@@ -101,6 +117,7 @@ function jobView(job: {
     style: { externalId: string } | null;
     imageAsset: { role: string } | null;
   }>;
+  products: Array<{ status: string; styles: Array<{ status: string }> }>;
 }): CatalogJobView {
   return {
     id: job.id,
@@ -117,6 +134,9 @@ function jobView(job: {
     failedProducts: job.failedProducts,
     completedImages: job.completedImages,
     failedImages: job.failedImages,
+    skippedImages: job.skippedImages,
+    informationReadyProducts: job.products.filter((product) => product.status === "READY").length,
+    informationReadyStyles: job.products.reduce((total, product) => total + product.styles.filter((style) => style.status === "READY").length, 0),
     totalTasks: job.tasks.length,
     completedTasks: job.tasks.filter((task) => task.status === "COMPLETED").length,
     failedTasks: job.tasks.filter((task) => task.status === "FAILED").length,
@@ -142,6 +162,7 @@ function jobView(job: {
 }
 
 const jobInclude = {
+  products: { where: { archivedAt: null }, select: { status: true, styles: { select: { status: true } } } },
   tasks: {
     select: {
       id: true,
@@ -170,7 +191,7 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
           styles: {
             select: {
               variants: { select: { id: true } },
-              images: { select: { status: true } },
+              images: { select: { role: true, status: true } },
             },
           },
         },
@@ -182,7 +203,7 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
   return catalogs.map((catalog) => {
     const config = parseCatalogProfileConfig(catalog.config);
     const styles = catalog.products.flatMap((product) => product.styles);
-    const images = styles.flatMap((style) => style.images);
+    const images = styles.flatMap((style) => style.images).filter((image) => image.role !== "COMPLETE_LOOK");
     return {
       id: catalog.id,
       nextProductSequence: catalog.nextProductSequence,
@@ -222,12 +243,13 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
   if (!catalog) return null;
 
   const config = parseCatalogProfileConfig(catalog.config);
-  const [productCount, styleCount, variantCount, readyImages, failedImages] = await Promise.all([
+  const [productCount, styleCount, variantCount, readyImages, failedImages, pendingCoreImages] = await Promise.all([
     prisma.syntheticProduct.count({ where: { catalogId: catalog.id, archivedAt: null } }),
     prisma.syntheticStyle.count({ where: { product: { catalogId: catalog.id, archivedAt: null } } }),
     prisma.syntheticVariant.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } } } }),
-    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, status: "READY" } }),
-    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, status: "FAILED" } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: ["FRONT", "BACK", "ON_MODEL"] }, status: "READY" } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: ["FRONT", "BACK", "ON_MODEL"] }, status: "FAILED" } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: ["FRONT", "BACK", "ON_MODEL"] }, status: { in: ["QUEUED", "GENERATING"] } } }),
   ]);
 
   return {
@@ -250,7 +272,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
       ...generationLimits,
     },
-    counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages },
+    counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages, readyCoreImages: readyImages, failedCoreImages: failedImages, pendingCoreImages },
     products: catalog.products.map((product) => productView(product, config)),
     jobs: catalog.jobs.map(jobView),
   };
@@ -293,6 +315,10 @@ export async function enqueueImageRegeneration(imageAssetId: number, createdByMa
       include: { style: { include: { product: { include: { catalog: true } } } } },
     });
     if (asset.style.product.archivedAt) throw new Error("Restore this product before regenerating its images");
+    if (asset.role === "COMPLETE_LOOK") {
+      const look = await tx.syntheticCompleteLook.findUnique({ where: { imageAssetId: asset.id } });
+      if (!look || look.status === "STALE" || look.status === "SKIPPED") throw new Error("This Complete the Look must be replanned before its image can be regenerated");
+    }
     const duplicate = await tx.catalogGenerationTask.findFirst({
       where: { imageAssetId, status: { in: ["QUEUED", "RUNNING"] } },
       select: { id: true },
@@ -325,6 +351,7 @@ export async function enqueueImageRegeneration(imageAssetId: number, createdByMa
       where: { id: asset.id },
       data: { status: "QUEUED", errorMessage: null },
     });
+    if (asset.role === "COMPLETE_LOOK") await tx.syntheticCompleteLook.updateMany({ where: { imageAssetId: asset.id }, data: { status: "QUEUED", errorMessage: null } });
     return job;
   });
 }
