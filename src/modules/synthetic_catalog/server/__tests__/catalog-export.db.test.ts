@@ -9,6 +9,7 @@ import {
 } from "@test/utils/db";
 import { CATALOG_PROFILES } from "../../config/profiles";
 import { createCatalogCsvExport } from "../catalog-export";
+import { getCatalogDetail, getCatalogOverview } from "../admin-catalogs";
 
 function json(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -33,7 +34,7 @@ describe("catalog export persistence", () => {
         defaultImageModel: profile.defaultImageModel,
       },
     });
-    await prisma.syntheticProduct.create({
+    const product = await prisma.syntheticProduct.create({
       data: {
         catalogId: catalog.id,
         sequence: 1,
@@ -85,5 +86,17 @@ describe("catalog export persistence", () => {
     expect(result?.csv.match(/00000000-0000-4000-8000-000000000001/g)).toHaveLength(2);
     expect(result?.csv.match(/00000000-0000-4000-8000-000000000002/g)).toHaveLength(2);
     expect(result?.csv.match(/00000000-0000-4000-8000-000000000003/g)).toHaveLength(2);
+
+    await prisma.syntheticProduct.update({ where: { id: product.id }, data: { archivedAt: new Date(), archivedByMappTeamId: null } });
+    const activeDetail = await getCatalogDetail(profile.slug);
+    const overview = await getCatalogOverview();
+    const archivedExport = await createCatalogCsvExport(profile.slug, "https://catalogs.example.test");
+    expect(activeDetail?.counts).toEqual({ products: 0, styles: 0, variants: 0, readyImages: 0, failedImages: 0 });
+    expect(activeDetail?.products).toHaveLength(1);
+    expect(activeDetail?.products[0]?.archivedAt).toBeTruthy();
+    expect(overview.find((item) => item.id === catalog.id)).toEqual(expect.objectContaining({ productCount: 0, styleCount: 0, variantCount: 0, readyImageCount: 0, failedImageCount: 0 }));
+    expect(archivedExport?.summary).toEqual(expect.objectContaining({ productsExported: 0, stylesExported: 0, variantsExported: 0, imagesReferenced: 0 }));
+    expect(await prisma.syntheticStyle.count({ where: { productId: product.id } })).toBe(1);
+    expect(await prisma.syntheticVariant.count({ where: { style: { productId: product.id } } })).toBe(2);
   });
 });

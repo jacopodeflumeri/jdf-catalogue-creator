@@ -5,9 +5,9 @@ import {
 
 describe("catalog admin input", () => {
   it("validates generation scopes and accepts only 2 or 3 color variants", () => {
-    expect(addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 25, scope: { type: "ALL" } }))
-      .toEqual({ catalogId: 1, requestedProducts: 25, scope: { type: "ALL" }, colorVariantCount: 2 });
-    expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 101, scope: { type: "ALL" } }))
+    expect(addProductsInputSchema.parse({ catalogId: 1, scope: { type: "ALL" } }))
+      .toEqual({ catalogId: 1, scope: { type: "ALL" }, colorVariantCount: 2 });
+    expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 25, scope: { type: "ALL" } }))
       .toThrow();
     expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 2, scope: { type: "DEPARTMENT" } }))
       .toThrow();

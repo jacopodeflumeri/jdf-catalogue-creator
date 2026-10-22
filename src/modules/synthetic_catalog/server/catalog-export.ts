@@ -32,6 +32,7 @@ async function loadCatalogExportSource(reference: string): Promise<CatalogExport
     where: numericId == null ? { slug: reference } : { id: numericId },
     include: {
       products: {
+        where: { archivedAt: null },
         orderBy: { sequence: "asc" },
         include: {
           styles: {

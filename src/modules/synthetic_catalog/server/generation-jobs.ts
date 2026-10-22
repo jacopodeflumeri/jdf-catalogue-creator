@@ -64,7 +64,7 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   if (scope.type === "DEPARTMENT" && !config.assortmentPlan.some((row) => row.departmentKey.toLocaleLowerCase() === scope.departmentKey.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this department");
   if (scope.type === "CATEGORY" && !config.assortmentPlan.some((row) => row.category.toLocaleLowerCase() === scope.category.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this category");
   const existingProducts = await prisma.syntheticProduct.count({
-    where: { catalogId: catalog.id },
+    where: { catalogId: catalog.id, archivedAt: null },
   });
 
   // Reservation deliberately happens before job creation. If a later write

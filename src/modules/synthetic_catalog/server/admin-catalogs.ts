@@ -29,6 +29,7 @@ type ProductWithRelations = Prisma.SyntheticProductGetPayload<{
 function productView(product: ProductWithRelations, config: ReturnType<typeof parseCatalogProfileConfig>): CatalogProductView {
   return {
     id: product.id,
+    archivedAt: product.archivedAt?.toISOString() ?? null,
     externalId: product.externalId,
     name: product.name,
     description: product.description,
@@ -164,6 +165,7 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
     orderBy: { id: "asc" },
     include: {
       products: {
+        where: { archivedAt: null },
         select: {
           styles: {
             select: {
@@ -221,11 +223,11 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
 
   const config = parseCatalogProfileConfig(catalog.config);
   const [productCount, styleCount, variantCount, readyImages, failedImages] = await Promise.all([
-    prisma.syntheticProduct.count({ where: { catalogId: catalog.id } }),
-    prisma.syntheticStyle.count({ where: { product: { catalogId: catalog.id } } }),
-    prisma.syntheticVariant.count({ where: { style: { product: { catalogId: catalog.id } } } }),
-    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id } }, status: "READY" } }),
-    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id } }, status: "FAILED" } }),
+    prisma.syntheticProduct.count({ where: { catalogId: catalog.id, archivedAt: null } }),
+    prisma.syntheticStyle.count({ where: { product: { catalogId: catalog.id, archivedAt: null } } }),
+    prisma.syntheticVariant.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } } } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, status: "READY" } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, status: "FAILED" } }),
   ]);
 
   return {
@@ -290,6 +292,7 @@ export async function enqueueImageRegeneration(imageAssetId: number, createdByMa
       where: { id: imageAssetId },
       include: { style: { include: { product: { include: { catalog: true } } } } },
     });
+    if (asset.style.product.archivedAt) throw new Error("Restore this product before regenerating its images");
     const duplicate = await tx.catalogGenerationTask.findFirst({
       where: { imageAssetId, status: { in: ["QUEUED", "RUNNING"] } },
       select: { id: true },

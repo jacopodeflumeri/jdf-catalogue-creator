@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Fragment } from "react";
 import { useCallback, useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -182,17 +183,23 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
     </Card>
     <Card title="Catalogue mix" description="Each row defines an allowed department, category, and subcategory combination and its exact All Catalogue quota. Edits only affect future jobs.">
       <div className="space-y-3">
-        {canEdit ? mixRows.map((row, index) => <div key={`${index}:${row.departmentKey}:${row.category}`} className="grid gap-3 rounded-xl border border-white/70 bg-white/25 p-4 md:grid-cols-[1fr_1fr_1fr_8rem_auto] md:items-end">
-          <FormSelect label="Department" value={row.departmentKey} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, departmentKey: event.target.value } : item))} options={detail.catalog.departments.map((item) => ({ value: item.key, label: item.label }))} />
-          <FormInput label="Category" value={row.category} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, category: event.target.value } : item))} />
-          <FormInput label="Subcategory" value={row.subcategory} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, subcategory: event.target.value } : item))} />
-          <FormInput label="Products" type="number" min="1" step="1" value={String(row.productCount)} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, productCount: Number(event.target.value) } : item))} />
-          {canEdit && <Button type="button" variant="danger" size="sm" disabled={mixBusy} onClick={async () => {
-            const confirmed = await confirm({ title: "Remove catalogue mix row?", message: "This only changes future generation. Existing products remain unchanged.", confirmText: "Remove row", variant: "danger" });
-            if (confirmed) setMixRows((items) => items.filter((_, itemIndex) => itemIndex !== index));
-          }}>Remove</Button>}
-          {mixRowError(index) && <p className="text-sm text-danger md:col-span-5" role="alert">{mixRowError(index)}</p>}
-        </div>) : <ul className="space-y-2 text-sm">{mixRows.map((row, index) => <li key={`${index}:${row.departmentKey}:${row.category}`}>{detail.catalog.departments.find((item) => item.key === row.departmentKey)?.label ?? row.departmentKey} · {row.category} · {row.subcategory}: {row.productCount}</li>)}</ul>}
+        <div className="ds-table-shell overflow-hidden"><div className="overflow-x-auto"><table className="w-full">
+          <thead className="ds-table-head"><tr>{["Department", "Category", "Subcategory", "Products", ...(canEdit ? ["Actions"] : [])].map((heading) => <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#1a1a1a]/55">{heading}</th>)}</tr></thead>
+          <tbody>{mixRows.map((row, index) => <Fragment key={`${index}:${row.departmentKey}:${row.category}`}>
+            <tr className="ds-table-row">
+              <td className="min-w-48 px-3 py-2"><FormSelect label="Department" value={row.departmentKey} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, departmentKey: event.target.value } : item))} options={detail.catalog.departments.map((item) => ({ value: item.key, label: item.label }))} /></td>
+              <td className="min-w-48 px-3 py-2"><FormInput label="Category" value={row.category} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, category: event.target.value } : item))} /></td>
+              <td className="min-w-48 px-3 py-2"><FormInput label="Subcategory" value={row.subcategory} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, subcategory: event.target.value } : item))} /></td>
+              <td className="w-32 px-3 py-2"><FormInput label="Products" type="number" min="1" step="1" value={String(row.productCount)} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, productCount: Number(event.target.value) } : item))} /></td>
+              {canEdit && <td className="px-3 py-2 text-right"><Button type="button" variant="danger" size="sm" disabled={mixBusy} onClick={async () => {
+                const confirmed = await confirm({ title: "Remove catalogue mix row?", message: "This only changes future generation. Existing products remain unchanged.", confirmText: "Remove row", variant: "danger" });
+                if (confirmed) setMixRows((items) => items.filter((_, itemIndex) => itemIndex !== index));
+              }}>Remove</Button></td>}
+            </tr>
+            {mixRowError(index) && <tr><td colSpan={canEdit ? 5 : 4} className="px-4 py-2 text-sm text-danger" role="alert">{mixRowError(index)}</td></tr>}
+          </Fragment>)}</tbody>
+        </table></div></div>
+        {!canEdit && mixRows.length === 0 && <p className="text-sm text-[#1a1a1a]/55">No catalogue mix rows are configured.</p>}
         {mixRows.length === 0 && <NoticeBox variant="error">At least one catalogue mix row is required.</NoticeBox>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-semibold">All Catalogue total: {mixRows.reduce((total, row) => total + (Number.isSafeInteger(row.productCount) && row.productCount > 0 ? row.productCount : 0), 0)} products</p>
@@ -280,6 +287,7 @@ export default function CatalogDetailClient({
           products={detail.products}
           canEdit={canEdit}
           onAddProducts={() => setShowAdd(true)}
+          onArchiveChanged={refresh}
         />
       ),
     },

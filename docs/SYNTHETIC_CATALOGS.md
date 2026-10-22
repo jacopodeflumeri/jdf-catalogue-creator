@@ -492,6 +492,17 @@ silently authorizing more LiteLLM calls. Large jobs require a second explicit UI
 confirmation and the enforced values are returned with each catalog view so the
 browser and server cannot drift.
 
+### 2026-10-22 — Product archiving is reversible
+
+Products can be archived and restored by editors. Archiving records the actor
+and timestamp, cancels that product's queued tasks, and leaves completed data
+intact. Running work may finish, but it does not clear the archive marker.
+Restoring only clears the archive marker; it does not requeue cancelled tasks.
+Overview counts, active product counts, and Catalogue CSV validation/export
+exclude archived products. The Products tab defaults to Active and offers an
+Archived filter for restore. The table omits Season and Stock to keep product
+identity, style count, price, and aggregate image state visible at desktop width.
+
 ## Operations and sample approval runbook
 
 1. Confirm the web and worker containers are healthy and that the catalog worker
@@ -543,6 +554,9 @@ delete stored assets as a recovery mechanism.
   the 500-product hard ceiling is a spend-safety boundary.
 - Do not start full four-catalog generation until one sample from every profile
   has passed human image review and Demoware staging validation.
+- Archived products are soft-hidden. Their styles, variants, images, tasks, and
+  usage history remain stored; active overview counts and CSV validation/export
+  omit them. Restore does not restart cancelled queued product work.
 - Do not add free-form per-job model controls; validate and store catalog
   defaults as LiteLLM `provider/model` names.
 - When authenticated admin actions are added, their consequential generation,

@@ -71,6 +71,7 @@ export interface CatalogImageView {
 
 export interface CatalogProductView {
   id: number;
+  archivedAt: string | null;
   externalId: string;
   name: string;
   description: string;

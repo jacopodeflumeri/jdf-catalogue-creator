@@ -275,3 +275,56 @@ export async function saveCatalogMixAction(input: unknown): Promise<CatalogActio
     return errorResult(error);
   }
 }
+
+async function setCatalogProductArchived(input: unknown, archived: boolean): Promise<CatalogActionResult> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const productId = positiveIdSchema.parse(input);
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM synthetic_product WHERE id = ${productId} FOR UPDATE`;
+      const product = await tx.syntheticProduct.findUniqueOrThrow({ where: { id: productId }, include: { catalog: true } });
+      if (archived && !product.archivedAt) {
+        const now = new Date();
+        await tx.syntheticProduct.update({
+          where: { id: product.id },
+          data: { archivedAt: now, archivedByMappTeamId: adminId(session) ?? null },
+        });
+        await tx.catalogGenerationTask.updateMany({
+          where: { productId: product.id, status: "QUEUED" },
+          data: { status: "CANCELLED", finishedAt: now, lockedAt: null, lockedBy: null },
+        });
+        return { product, changed: true };
+      }
+      if (!archived && product.archivedAt) {
+        await tx.syntheticProduct.update({
+          where: { id: product.id },
+          data: { archivedAt: null, archivedByMappTeamId: null },
+        });
+        return { product, changed: true };
+      }
+      return { product, changed: false };
+    });
+    if (result.changed) {
+      await writeAuditLog({
+        ...sessionAuditActor(session),
+        action: archived ? "catalog_product_archived" : "catalog_product_restored",
+        entityType: "synthetic_product",
+        entityId: result.product.id,
+        message: `${archived ? "Archived" : "Restored"} catalogue product ${result.product.id} in ${result.product.catalog.name}`,
+        data: { catalogId: result.product.catalogId, productId: result.product.id },
+      });
+    }
+    revalidateCatalog(result.product.catalog.slug);
+    return { ok: true };
+  } catch (error) {
+    return errorResult(error);
+  }
+}
+
+export async function archiveCatalogProductAction(input: unknown): Promise<CatalogActionResult> {
+  return setCatalogProductArchived(input, true);
+}
+
+export async function restoreCatalogProductAction(input: unknown): Promise<CatalogActionResult> {
+  return setCatalogProductArchived(input, false);
+}

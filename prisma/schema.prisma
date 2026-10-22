@@ -57,11 +57,12 @@ model MappTeam {
   accessNotes  String?   @map("access_notes") // Admin notes about access decision
 
   // Relationships
-  authorizedByMember    MappTeam?              @relation("MappTeamAuthorizer", fields: [authorizedBy], references: [id], onDelete: SetNull)
-  authorizedMembers     MappTeam[]             @relation("MappTeamAuthorizer")
-  activities            AccountActivity[]      @relation("ActivityMappUser")
-  auditLogs             AuditLog[]
-  catalogGenerationJobs CatalogGenerationJob[]
+  authorizedByMember        MappTeam?              @relation("MappTeamAuthorizer", fields: [authorizedBy], references: [id], onDelete: SetNull)
+  authorizedMembers         MappTeam[]             @relation("MappTeamAuthorizer")
+  activities                AccountActivity[]      @relation("ActivityMappUser")
+  auditLogs                 AuditLog[]
+  catalogGenerationJobs     CatalogGenerationJob[]
+  archivedSyntheticProducts SyntheticProduct[]     @relation("SyntheticProductArchiver")
 
   @@index([email])
   @@index([accessStatus])
@@ -428,35 +429,40 @@ model SyntheticCatalog {
 }
 
 model SyntheticProduct {
-  id              Int                 @id @default(autoincrement())
-  catalogId       Int                 @map("catalog_id")
-  generationJobId Int?                @map("generation_job_id")
-  sequence        Int
-  externalId      String              @unique @map("external_id")
-  name            String
-  description     String
-  department      String
-  category        String
-  subcategory     String
-  material        String
-  season          String
-  basePrice       Decimal             @map("base_price") @db.Decimal(12, 2)
-  salePrice       Decimal?            @map("sale_price") @db.Decimal(12, 2)
-  currency        String              @default("EUR")
-  productUrl      String?             @map("product_url")
-  status          CatalogEntityStatus @default(DRAFT)
-  createdAt       DateTime            @default(now()) @map("created_at")
-  updatedAt       DateTime            @updatedAt @map("updated_at")
+  id                   Int                 @id @default(autoincrement())
+  catalogId            Int                 @map("catalog_id")
+  generationJobId      Int?                @map("generation_job_id")
+  sequence             Int
+  externalId           String              @unique @map("external_id")
+  name                 String
+  description          String
+  department           String
+  category             String
+  subcategory          String
+  material             String
+  season               String
+  basePrice            Decimal             @map("base_price") @db.Decimal(12, 2)
+  salePrice            Decimal?            @map("sale_price") @db.Decimal(12, 2)
+  currency             String              @default("EUR")
+  productUrl           String?             @map("product_url")
+  status               CatalogEntityStatus @default(DRAFT)
+  archivedAt           DateTime?           @map("archived_at")
+  archivedByMappTeamId Int?                @map("archived_by_mapp_team_id")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
 
   catalog       SyntheticCatalog        @relation(fields: [catalogId], references: [id], onDelete: Cascade)
   generationJob CatalogGenerationJob?   @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
   styles        SyntheticStyle[]
   tasks         CatalogGenerationTask[]
+  archivedBy    MappTeam?               @relation("SyntheticProductArchiver", fields: [archivedByMappTeamId], references: [id], onDelete: SetNull)
 
   @@unique([catalogId, sequence])
   @@index([catalogId, department])
   @@index([generationJobId])
   @@index([status])
+  @@index([catalogId, archivedAt])
+  @@index([archivedByMappTeamId])
   @@map("synthetic_product")
 }
 

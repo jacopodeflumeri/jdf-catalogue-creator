@@ -43,6 +43,10 @@ export const AUDIT_ENTITY_TYPES = [
     href: (id) => (id != null ? `/admin/catalogs/${id}` : "/admin/catalogs"),
   },
   {
+    key: "synthetic_product",
+    label: "Synthetic Product",
+  },
+  {
     key: "catalog_generation_job",
     label: "Catalog Generation Job",
   },
