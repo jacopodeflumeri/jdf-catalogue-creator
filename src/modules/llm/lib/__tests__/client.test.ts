@@ -12,11 +12,18 @@
  * 6. Unknown product warning
  */
 
+const mockCreate = jest.fn();
+const mockRecordLLMUsage = jest.fn();
+
 jest.mock("openai", () => {
   return jest.fn().mockImplementation(() => ({
-    chat: { completions: { create: jest.fn() } },
+    chat: { completions: { create: mockCreate } },
   }));
 });
+
+jest.mock("../usage-recorder", () => ({
+  recordLLMUsage: (...args: unknown[]) => mockRecordLLMUsage(...args),
+}));
 
 jest.mock("@/lib/utils/logger", () => ({
   __esModule: true,
@@ -29,7 +36,7 @@ jest.mock("@/lib/utils/logger", () => ({
   },
 }));
 
-import { buildBillingParams, _resetProductWarning } from "../client";
+import { buildBillingParams, llmCompletion, _resetProductWarning } from "../client";
 import { MODELS } from "../models";
 import logger from "@/lib/utils/logger";
 
@@ -281,5 +288,30 @@ describe("buildBillingParams validation", () => {
     buildBillingParams({ feature: "b" });
     buildBillingParams({ feature: "c" });
     expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("llmCompletion usage monitoring", () => {
+  it("records non-streaming response usage with the same billing feature", async () => {
+    mockCreate.mockResolvedValueOnce({
+      id: "completion-1",
+      choices: [{ message: { content: "ok" } }],
+      usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 },
+      _request_id: "request-1",
+    });
+
+    await llmCompletion({
+      model: "openai/gpt-5.4-mini",
+      feature: "synthetic-catalog-product-generation",
+      messages: [{ role: "user", content: "Generate" }],
+    });
+
+    expect(mockRecordLLMUsage).toHaveBeenCalledWith({
+      requestId: "request-1",
+      feature: "synthetic-catalog-product-generation",
+      model: "openai/gpt-5.4-mini",
+      operation: "CHAT_COMPLETION",
+      usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 },
+    });
   });
 });

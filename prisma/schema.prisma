@@ -366,6 +366,44 @@ enum CatalogTaskStatus {
   FAILED
 }
 
+enum LlmUsageOperation {
+  CHAT_COMPLETION
+  IMAGE_GENERATION
+  IMAGE_EDIT
+}
+
+enum LlmCostBasis {
+  TOKEN_USAGE
+  CATALOG_ESTIMATE
+  UNPRICED
+}
+
+model LlmUsage {
+  id                Int               @id @default(autoincrement())
+  requestId         String?           @map("request_id")
+  feature           String
+  model             String
+  operation         LlmUsageOperation
+  inputTokens       Int?              @map("input_tokens")
+  cachedInputTokens Int?              @map("cached_input_tokens")
+  outputTokens      Int?              @map("output_tokens")
+  textInputTokens   Int?              @map("text_input_tokens")
+  imageInputTokens  Int?              @map("image_input_tokens")
+  textOutputTokens  Int?              @map("text_output_tokens")
+  imageOutputTokens Int?              @map("image_output_tokens")
+  estimatedCostUsd  Decimal?          @map("estimated_cost_usd") @db.Decimal(18, 8)
+  costBasis         LlmCostBasis      @map("cost_basis")
+  pricingSnapshot   Json?             @map("pricing_snapshot")
+  usageSnapshot     Json?             @map("usage_snapshot")
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([model, createdAt])
+  @@index([feature, createdAt])
+  @@index([operation, createdAt])
+  @@map("llm_usage")
+}
+
 model SyntheticCatalog {
   id                  Int      @id @default(autoincrement())
   slug                String   @unique

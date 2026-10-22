@@ -1,6 +1,7 @@
 import { toFile } from "openai";
 import { buildBillingParams, getLLMClient } from "./client";
 import type { LLMImageParams, LLMImageResult, LLMImageSource } from "./types";
+import { recordLLMUsage } from "./usage-recorder";
 
 const IMAGE_TIMEOUT_MS = 240_000;
 
@@ -69,6 +70,15 @@ export async function llmGenerateImage(params: LLMImageParams): Promise<LLMImage
     } as any,
     { timeout: IMAGE_TIMEOUT_MS, maxRetries: 0 },
   );
+  await recordLLMUsage({
+    requestId: "_request_id" in response ? String(response._request_id || "") : null,
+    feature,
+    model,
+    operation: "IMAGE_GENERATION",
+    usage: response.usage,
+    size,
+    quality,
+  });
   return normalizeImageResponse(response, outputFormat);
 }
 
@@ -116,6 +126,15 @@ export async function llmEditImage(
       },
     },
   );
+  await recordLLMUsage({
+    requestId: "_request_id" in response ? String(response._request_id || "") : null,
+    feature,
+    model,
+    operation: "IMAGE_EDIT",
+    usage: response.usage,
+    size,
+    quality,
+  });
   return normalizeImageResponse(response, outputFormat);
 }
 

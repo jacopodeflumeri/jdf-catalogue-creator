@@ -13,6 +13,7 @@
 import OpenAI from "openai";
 import logger from "@/lib/utils/logger";
 import type { LLMMetadata, LLMCompletionParams } from "./types";
+import { recordLLMUsage } from "./usage-recorder";
 
 // ---------------------------------------------------------------------------
 // Known Mapp Products (for typo detection)
@@ -149,8 +150,23 @@ export async function llmCompletion(params: LLMCompletionParams) {
   const billing = buildBillingParams({ feature, accountId, brandId });
   const client = getLLMClient();
 
-  return client.chat.completions.create({
+  const response = await client.chat.completions.create({
     ...completionParams,
     ...billing,
   } as any);
+
+  // Streaming usage is emitted on the final chunk and remains authoritative in
+  // LiteLLM spend logs. The catalog uses non-streaming calls, which can also be
+  // persisted locally for the admin cost dashboard.
+  if (!completionParams.stream && "usage" in response) {
+    await recordLLMUsage({
+      requestId: "_request_id" in response ? String(response._request_id || "") : null,
+      feature,
+      model: completionParams.model,
+      operation: "CHAT_COMPLETION",
+      usage: response.usage,
+    });
+  }
+
+  return response;
 }

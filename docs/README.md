@@ -17,4 +17,6 @@ in it. See "Documenting your work" in [`AGENTS.md`](../AGENTS.md).
 
 <!-- One line per doc: link to the doc, then what it covers. -->
 
+- [LiteLLM Usage Monitoring](LLM_USAGE_MONITORING.md) — local cost estimates, pricing snapshots, limitations, and dashboard architecture.
+
 - [Synthetic Catalogs](SYNTHETIC_CATALOGS.md) — profiles, identifiers, jobs, LiteLLM text/image generation, persistent media, and implementation decisions.
