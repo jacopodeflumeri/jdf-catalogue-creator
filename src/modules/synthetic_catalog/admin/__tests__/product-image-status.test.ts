@@ -3,13 +3,14 @@ import type { CatalogProductView } from "../types";
 
 function productWithImages(
   statuses: Array<"QUEUED" | "GENERATING" | "READY" | "FAILED">,
-): Pick<CatalogProductView, "style"> {
+): Pick<CatalogProductView, "styles"> {
   return {
-    style: {
+    styles: statuses.length === 0 ? [] : [{
       id: 1,
       externalId: "STYLE-1",
       colorName: "Black",
-      colorCode: "#000000",
+      colorCode: "BLACK",
+      colorHex: "#000000",
       status: "READY",
       variants: [],
       images: statuses.map((status, index) => ({
@@ -20,7 +21,7 @@ function productWithImages(
         url: status === "READY" ? `https://example.com/${index}.webp` : null,
         errorMessage: status === "FAILED" ? "Failed" : null,
       })),
-    },
+    }],
   };
 }
 
@@ -43,6 +44,12 @@ describe("getProductImageStatus", () => {
   });
 
   it("reports missing when there is no style", () => {
-    expect(getProductImageStatus({ style: null })).toBe("MISSING");
+    expect(getProductImageStatus({ styles: [] })).toBe("MISSING");
+  });
+
+  it("requires readiness across every style and shows sibling failures", () => {
+    const ready = productWithImages(["READY", "READY", "READY"]).styles[0]!;
+    expect(getProductImageStatus({ styles: [ready, { ...ready, id: 2, images: ready.images.map((image) => ({ ...image, status: "QUEUED" as const })) }] })).toBe("GENERATING");
+    expect(getProductImageStatus({ styles: [ready, { ...ready, id: 2, images: ready.images.map((image) => ({ ...image, status: "FAILED" as const })) }] })).toBe("FAILED");
   });
 });

@@ -23,11 +23,13 @@ Activewear using their stable profile slugs.
 the full persisted product list in a table, job history, retry controls, and
 generation settings. The product table can be filtered by department, category,
 subcategory, and aggregate image status (`READY`, `FAILED`, `GENERATING`, or
-`MISSING`). Selecting a row opens
-`/admin/catalogs/{slug}/products/{externalId}`, where the full product copy,
-attributes, style, size/SKU inventory, and generated images are shown. Editors
-can regenerate individual images from this product detail page. Numeric catalog
-and product IDs are also accepted so audit-log links remain stable.
+`MISSING`). It reports color-style count and stock across every style; the
+thumbnail uses the first available FRONT image. `READY` requires every expected
+image of every style to be ready; a failure in any color is shown as `FAILED`.
+Selecting a row opens `/admin/catalogs/{slug}/products/{externalId}`, where all
+color styles, their IDs, size/SKU inventory, and three generated images are
+shown. Editors can regenerate an individual style image. Numeric catalog and
+product IDs are also accepted so audit-log links remain stable.
 
 All reads use `requireAdmin({})`. Viewer-level users see the same operational
 state but no mutation controls. Adding products, manually retrying failures,
@@ -66,15 +68,18 @@ UTF-8 `text/csv`, RFC 4180 quoting and CRLF rows, disables caching, and uses a
 stable filename derived from the catalog slug.
 
 The adapter reads persisted catalog records and emits one row per variant in a
-fixed 23-column order. IDs and SKUs are
-never regenerated during export. Front, back, and on-model assets map to
+fixed 23-column order. Every style of a parent product gets its own size rows,
+style ID, color, and image URLs. IDs and SKUs are never regenerated during
+export. Front, back, and on-model assets map to
 `image_url_1`, `image_url_2`, and `image_url_3` respectively, and the same three
 stable opaque URLs repeat across every size row in a style. URL values use
 `APP_URL`; deployed environments must set it to the HTTPS hostname Demoware can
 reach. Text beginning with `=`, `+`, `-`, or `@` is prefixed with an apostrophe
 to prevent spreadsheet formula execution when an operator opens the file.
 
-Only products whose product and styles are `READY` pass export validation. The
+Department validation uses the catalog's configured department keys and exports
+the configured label, preserving the existing `Women` and `Men` values. Only
+products whose product and every style are `READY` pass export validation. The
 validator also checks required values, identifier uniqueness and parentage,
 profile taxonomy and category-specific sizes, positive prices, sale-price
 ordering, EUR currency, non-negative stock and matching availability, plus
@@ -173,7 +178,10 @@ distinct palette colors. Each style gets its own normal size assortment,
 color-seeded inventory, and three image tasks. For `P` products and `C` colors,
 the expected attributed LiteLLM calls are `P + (P × C × 3)`. Failed work can be
 resumed without rebuilding completed styles or images, and persisted image task
-context protects queued work from later catalog settings edits.
+context protects queued work from later catalog settings edits. For example,
+10 products with 3 colors create 10 products, 30 styles, 90 image assets/tasks,
+and 100 attributed calls (10 text and 90 image calls). Catalog owners should
+account for the image-call growth when choosing batch size and palette count.
 
 The Phase 2 application service remains a narrow product-generation test seam.
 The production workflow is owned by the Phase 5 worker described below.

@@ -38,4 +38,10 @@ export const catalogSettingsInputSchema = z.object({
   visualDirection: z.string().trim().min(10).max(500),
 });
 
+export const catalogTaxonomyInputSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("DEPARTMENT"), catalogId: z.number().int().positive(), label: z.string().trim().min(1).max(80), code: z.string().trim().min(1).max(6), generationWeight: z.number().positive() }),
+  z.object({ type: z.literal("CATEGORY"), catalogId: z.number().int().positive(), category: z.string().trim().min(1).max(120), subcategory: z.string().trim().min(1).max(120) }),
+  z.object({ type: z.literal("SUBCATEGORY"), catalogId: z.number().int().positive(), category: z.string().trim().min(1).max(120), subcategory: z.string().trim().min(1).max(120) }),
+]);
+
 export const positiveIdSchema = z.number().int().positive();

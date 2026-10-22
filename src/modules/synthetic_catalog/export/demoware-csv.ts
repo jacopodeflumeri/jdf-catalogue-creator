@@ -142,7 +142,8 @@ function productIssues(
     add("required_field", "One or more required product fields are blank");
   }
   if ((duplicates.products.get(product.externalId) ?? 0) > 1) add("duplicate_product_id", "Product ID is not unique");
-  if (!(["WOMEN", "MEN"] as string[]).includes(product.department)) add("department", "Department must be Women or Men");
+  const department = catalog.config.departments.find((item) => item.key === product.department);
+  if (!department) add("department", "Department is not in the catalog configuration");
   if (!catalog.config.categories.includes(product.category)) add("category", "Category is not in the catalog profile");
   if (!catalog.config.subcategories[product.category]?.includes(product.subcategory)) {
     add("subcategory", "Subcategory does not belong to the product category");
@@ -228,6 +229,7 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
   let stylesExported = 0;
   let imagesReferenced = 0;
   for (const product of exportable) {
+    const department = source.config.departments.find((item) => item.key === product.department);
     for (const style of product.styles) {
       stylesExported += 1;
       imagesReferenced += REQUIRED_IMAGE_ROLES.length;
@@ -245,7 +247,7 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
             source.brandName,
             product.name,
             product.description,
-            product.department === "WOMEN" ? "Women" : "Men",
+            department?.label ?? product.department,
             product.category,
             product.subcategory,
             product.basePrice,

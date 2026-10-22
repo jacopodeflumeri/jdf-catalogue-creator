@@ -41,14 +41,14 @@ function product(overrides: Partial<CatalogExportProductSource> = {}): CatalogEx
   };
 }
 
-function source(products = [product()]): CatalogExportSource {
+function source(products = [product()], config = CATALOG_PROFILES[0].config): CatalogExportSource {
   const profile = CATALOG_PROFILES[0];
   return {
     id: 1,
     slug: profile.slug,
     name: profile.name,
     brandName: profile.brandName,
-    config: profile.config,
+    config,
     products,
   };
 }
@@ -94,6 +94,22 @@ describe("Demoware CSV export", () => {
     expect(result.csv).toContain('"Alpine, ""Shell"""');
     expect(result.csv).toContain(",220.00,,EUR,");
     expect(result.csv.endsWith("\r\n")).toBe(true);
+  });
+
+  it("exports every color style with its own size rows and configured custom department label", () => {
+    const item = product({
+      externalId: "PRE-K-000001",
+      department: "KIDS",
+      styles: [
+        { ...product().styles[0]!, externalId: "PRE-K-000001-NAVY", variants: product().styles[0]!.variants.map((variant) => ({ ...variant, externalId: variant.externalId.replace("PRE-W-000001", "PRE-K-000001"), sku: variant.sku.replace("PRE-W-000001", "PRE-K-000001") })) },
+        { ...product().styles[0]!, externalId: "PRE-K-000001-OAT", colorName: "Oat", variants: product().styles[0]!.variants.map((variant) => ({ ...variant, externalId: variant.externalId.replace("PRE-W-000001-NAVY", "PRE-K-000001-OAT"), sku: variant.sku.replace("PRE-W-000001-NAVY", "PRE-K-000001-OAT") })), images: product().styles[0]!.images.map((image, index) => ({ ...image, publicId: `00000000-0000-4000-8000-00000000000${index + 4}` })) },
+      ],
+    });
+    const config = { ...CATALOG_PROFILES[0].config, departments: [...CATALOG_PROFILES[0].config.departments, { key: "KIDS", label: "Kids", code: "K", generationWeight: 0.2 }] };
+    const result = buildDemowareCsv(source([item], config), "https://catalogs.example.test");
+    expect(result.summary).toEqual(expect.objectContaining({ stylesExported: 2, variantsExported: 4, imagesReferenced: 6 }));
+    expect(result.csv).toContain("PRE-K-000001-OAT");
+    expect(result.csv).toContain(",Kids,");
   });
 
   it("excludes incomplete and invalid products with actionable reasons", () => {

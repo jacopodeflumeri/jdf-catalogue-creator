@@ -104,8 +104,7 @@ export default function ProductDetailClient({
   const [busyImageId, setBusyImageId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { catalog, product } = detail;
-  const style = product.style;
-  const hasActiveImage = style?.images.some((image) => ACTIVE_IMAGE_STATUSES.has(image.status)) ?? false;
+  const hasActiveImage = product.styles.some((style) => style.images.some((image) => ACTIVE_IMAGE_STATUSES.has(image.status)));
 
   const refresh = useCallback(async () => {
     const next = await getCatalogProductDetailAction(catalog.slug, product.externalId);
@@ -127,7 +126,7 @@ export default function ProductDetailClient({
     setBusyImageId(null);
   }
 
-  const variants = style?.variants ?? [];
+  const variants = product.styles.flatMap((style) => style.variants);
   const totalStock = variants.reduce((total, variant) => total + variant.stock, 0);
   const displayPrice = product.salePrice ?? product.basePrice;
   const imageStatus = getProductImageStatus(product);
@@ -166,24 +165,6 @@ export default function ProductDetailClient({
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-        <Card title="Generated imagery" description="Front, back, and on-model assets used in the catalogue feed.">
-          <div className="grid gap-5 sm:grid-cols-3">
-            {IMAGE_ROLES.map((role) => {
-              const image = style?.images.find((candidate) => candidate.role === role);
-              return (
-                <ImageTile
-                  key={role}
-                  role={role}
-                  image={image}
-                  canEdit={canEdit}
-                  busy={busyImageId === image?.id}
-                  onRegenerate={() => image && void regenerate(image.id)}
-                />
-              );
-            })}
-          </div>
-        </Card>
-
         <Card title="Product attributes" description={product.description}>
           <dl className="grid grid-cols-2 gap-x-5 gap-y-6">
             <DetailItem label="Department" value={product.department.toLowerCase()} />
@@ -194,32 +175,20 @@ export default function ProductDetailClient({
             <DetailItem label="Brand" value={catalog.brandName} />
             <DetailItem label="Base price" value={formatMoney(product.basePrice, product.currency)} />
             <DetailItem label="Current price" value={formatMoney(displayPrice, product.currency)} />
-            {style && (
-              <>
-                <DetailItem
-                  label="Colour"
-                  value={
-                    <span className="inline-flex items-center gap-2">
-                      <span
-                        className="h-3.5 w-3.5 rounded-full border border-black/10"
-                        style={{ backgroundColor: style.colorCode }}
-                      />
-                      {style.colorName}
-                    </span>
-                  }
-                />
-                <DetailItem label="Style ID" value={style.externalId} />
-              </>
-            )}
           </dl>
         </Card>
       </div>
 
-      <Card
-        title="Variants and inventory"
-        description="Size-level identifiers, availability, and stock for this style."
-        noPaddingContent
-      >
+      {product.styles.map((style) => <div key={style.id} className="space-y-6">
+      <Card title={`${style.colorName} · ${style.externalId}`} description={style.status.toLowerCase()} headerActions={<span className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: style.colorHex }} aria-label={`${style.colorName} swatch`} />}>
+        <div className="grid gap-5 sm:grid-cols-3">
+          {IMAGE_ROLES.map((role) => {
+            const image = style.images.find((candidate) => candidate.role === role);
+            return <ImageTile key={`${style.id}-${role}`} role={role} image={image} canEdit={canEdit} busy={busyImageId === image?.id} onRegenerate={() => image && void regenerate(image.id)} />;
+          })}
+        </div>
+      </Card>
+      <Card title="Variants and inventory" description={`Size-level identifiers, availability, and stock for ${style.colorName}.`} noPaddingContent>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="ds-table-head">
@@ -241,7 +210,7 @@ export default function ProductDetailClient({
               </tr>
             </thead>
             <tbody>
-              {variants.map((variant) => (
+              {style.variants.map((variant) => (
                 <tr key={variant.id} className="ds-table-row">
                   <td className="px-8 py-4 text-sm font-semibold">{variant.size}</td>
                   <td className="px-8 py-4 text-sm">{variant.sku}</td>
@@ -252,7 +221,7 @@ export default function ProductDetailClient({
                   <td className="px-8 py-4 text-sm">{variant.stock}</td>
                 </tr>
               ))}
-              {variants.length === 0 && (
+              {style.variants.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-8 py-10 text-center text-sm text-[#1a1a1a]/55">
                     No variants are available for this product.
@@ -263,6 +232,7 @@ export default function ProductDetailClient({
           </table>
         </div>
       </Card>
+      </div>)}
     </div>
   );
 }

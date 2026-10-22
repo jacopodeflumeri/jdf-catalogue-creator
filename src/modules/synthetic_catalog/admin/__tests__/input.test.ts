@@ -4,12 +4,14 @@ import {
 } from "../input";
 
 describe("catalog admin input", () => {
-  it("bounds product batches and department modes", () => {
-    expect(addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 25, departmentMode: "AUTO" }))
-      .toEqual({ catalogId: 1, requestedProducts: 25, departmentMode: "AUTO" });
-    expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 101, departmentMode: "AUTO" }))
+  it("validates generation scopes and accepts only 2 or 3 color variants", () => {
+    expect(addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 25, scope: { type: "ALL" } }))
+      .toEqual({ catalogId: 1, requestedProducts: 25, scope: { type: "ALL" }, colorVariantCount: 2 });
+    expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 101, scope: { type: "ALL" } }))
       .toThrow();
-    expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 2, departmentMode: "KIDS" }))
+    expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 2, scope: { type: "DEPARTMENT" } }))
+      .toThrow();
+    expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts: 2, scope: { type: "ALL" }, colorVariantCount: 1 }))
       .toThrow();
   });
 

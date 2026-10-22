@@ -128,8 +128,8 @@ export default function ProductTable({
             <tbody>
               {filtered.map((product) => {
                 const href = `/admin/catalogs/${encodeURIComponent(catalogSlug)}/products/${encodeURIComponent(product.externalId)}`;
-                const front = product.style?.images.find((image) => image.role === "FRONT");
-                const stock = product.style?.variants.reduce((sum, variant) => sum + variant.stock, 0) ?? 0;
+                const front = product.styles.flatMap((style) => style.images).find((image) => image.role === "FRONT" && image.url);
+                const stock = product.styles.flatMap((style) => style.variants).reduce((sum, variant) => sum + variant.stock, 0);
                 const displayPrice = product.salePrice ?? product.basePrice;
                 return (
                   <tr key={product.id} className="ds-table-row cursor-pointer focus-visible:outline-none focus-visible:bg-white/55" role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") router.push(href); }}>
@@ -149,7 +149,7 @@ export default function ProductTable({
                     <td className="px-5 py-4 text-sm capitalize">{product.subcategory}</td>
                     <td className="px-5 py-4 text-sm capitalize">{product.material}</td>
                     <td className="px-5 py-4 text-sm whitespace-nowrap">{product.season}</td>
-                    <td className="px-5 py-4 text-sm whitespace-nowrap">{product.style ? `${product.style.colorName} / ${product.style.variants.length} sizes` : "-"}</td>
+                    <td className="px-5 py-4 text-sm whitespace-nowrap">{product.styles.length} color styles</td>
                     <td className="px-5 py-4 text-sm font-semibold whitespace-nowrap">{formatMoney(displayPrice, product.currency)}</td>
                     <td className="px-5 py-4 text-sm">{stock}</td>
                     <td className="px-5 py-4 text-sm whitespace-nowrap"><CatalogStatusBadge status={getProductImageStatus(product)} /></td>
