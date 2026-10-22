@@ -50,6 +50,14 @@ an operator-selected parent-product count and distribute it across matching
 mix rows by their configured counts. Its review shows
 parent products, styles, zero image assets, size rows, and attributed text-model
 calls. Core imagery is a separate manual step.
+The visible workflow now exposes a Step 2 action after a completed information
+batch, plus an explicit all-active-products-missing-core-images action for
+historical catalogue records. Both create separate `CORE_IMAGES` jobs linked to
+their source information job when one is selected. They enqueue only missing or
+failed `FRONT`, `BACK`, and `ON_MODEL` roles; READY assets are preserved.
+Catalogue-level transaction locking and active-task checks make repeated
+submissions idempotent. A preflight confirmation shows target products, colour
+styles, and image calls before queueing.
 Size-row estimates use the exact planned mix rows, category-specific size rule,
 and next product sequence used when the job is queued.
 Editors can add departments, categories with their first subcategory, and

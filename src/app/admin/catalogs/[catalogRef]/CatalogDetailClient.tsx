@@ -22,8 +22,10 @@ import { CATALOG_IMAGE_MODEL_OPTIONS } from "@/modules/synthetic_catalog/config/
 import {
   getCatalogDetailAction,
   getCatalogExportSummaryAction,
+  getCoreImagesPreflightAction,
   addCatalogTaxonomyAction,
   cancelCatalogGenerationJobAction,
+  createCoreImagesJobAction,
   retryCatalogGenerationJobAction,
   saveCatalogMixAction,
   updateCatalogSettingsAction,
@@ -43,7 +45,7 @@ function formatDate(value: string | null): string {
 
 function JobProgress({ job }: { job: CatalogJobView }) {
   const expectedProducts = job.requestedProducts;
-  const expectedImages = job.jobType === "REGENERATE_IMAGE" ? 1 : expectedProducts * job.colorVariantCount * 3;
+  const expectedImages = job.jobType === "REGENERATE_IMAGE" ? 1 : job.jobType === "CATALOG_INFO" ? 0 : job.jobType === "CORE_IMAGES" ? job.totalTasks : expectedProducts * job.colorVariantCount * 3;
   const settledProducts = job.completedProducts + job.failedProducts;
   const settledImages = job.completedImages + job.failedImages;
   const total = expectedProducts + expectedImages;
@@ -59,7 +61,7 @@ function JobProgress({ job }: { job: CatalogJobView }) {
         <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percent}%` }} />
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs text-[#1a1a1a]/60">
-        <span>Products: {job.completedProducts}/{expectedProducts}</span>
+        <span>{job.jobType === "CATALOG_INFO" ? "Information-ready products" : "Products"}: {job.completedProducts}/{expectedProducts}</span>
         <span>Images: {job.completedImages}/{expectedImages}</span>
       </div>
     </div>
@@ -229,6 +231,7 @@ export default function CatalogDetailClient({
   const [exportSummary, setExportSummary] = useState(initialExportSummary);
   const [showAdd, setShowAdd] = useState(false);
   const [busyJobId, setBusyJobId] = useState<number | null>(null);
+  const [coreBusy, setCoreBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const hasActiveJob = detail.jobs.some((job) => ACTIVE_STATUSES.has(job.status));
@@ -254,6 +257,36 @@ export default function CatalogDetailClient({
     const result = await retryCatalogGenerationJobAction(jobId);
     setBusyJobId(null);
     if (!result.ok) setError(result.message ?? "Could not retry generation job");
+    await refresh();
+  }
+
+  async function startCoreImages(sourceJobId?: number, allMissing = false) {
+    setCoreBusy(true);
+    setError(null);
+    const preflight = await getCoreImagesPreflightAction({ catalogId: detail.catalog.id, sourceJobId, allMissing });
+    if (!preflight.ok) {
+      setCoreBusy(false);
+      setError(preflight.message);
+      return;
+    }
+    if (preflight.expectedImages === 0) {
+      setCoreBusy(false);
+      setSuccess("Every target style already has its required core images.");
+      return;
+    }
+    const accepted = await confirm({
+      title: "Generate core images?",
+      message: `This targets ${preflight.products} products and ${preflight.styles} colour styles, with ${preflight.expectedImages} image calls. Each style gets FRONT, BACK, and ON_MODEL images.`,
+      confirmText: "Queue core images",
+    });
+    if (!accepted) {
+      setCoreBusy(false);
+      return;
+    }
+    const result = await createCoreImagesJobAction({ catalogId: detail.catalog.id, sourceJobId, allMissing });
+    setCoreBusy(false);
+    if (!result.ok) setError(result.message ?? "Could not queue core image generation");
+    else setSuccess("Core image generation queued. Each colour style receives FRONT, BACK, and ON_MODEL images.");
     await refresh();
   }
 
@@ -394,13 +427,14 @@ export default function CatalogDetailClient({
       content: <div className="mt-6"><SettingsPanel detail={detail} canEdit={canEdit} onSaved={refresh} /></div>,
     },
   ];
+  const latestInfoJob = detail.jobs.find((job) => job.jobType === "CATALOG_INFO" && (job.status === "COMPLETED" || job.status === "COMPLETED_WITH_ERRORS"));
 
   return (
     <div className="px-8 py-6 space-y-8">
       <PageHeader
         title={detail.catalog.name}
         description={`${detail.catalog.brandName} · ${detail.catalog.externalPrefix} · ${detail.catalog.segment}`}
-        actions={<><Button variant="secondary" onClick={() => router.push("/admin/catalogs")}><Icon type="arrow-left" size="sm" /> All catalogs</Button>{canEdit && <Button onClick={() => setShowAdd(true)}><Icon type="plus" size="sm" /> Add products</Button>}</>}
+        actions={<><Button variant="secondary" onClick={() => router.push("/admin/catalogs")}><Icon type="arrow-left" size="sm" /> All catalogs</Button>{canEdit && <Button onClick={() => setShowAdd(true)}><Icon type="plus" size="sm" /> Generate catalogue information</Button>}</>}
       />
       {error && <NoticeBox variant="error">{error}</NoticeBox>}
       {success && <NoticeBox variant="success">{success}</NoticeBox>}
@@ -413,6 +447,13 @@ export default function CatalogDetailClient({
           ["Failed images", detail.counts.failedImages],
         ].map(([label, value]) => <Card key={label} className="text-center"><p className="text-3xl font-bold text-[#1a1a1a]">{value}</p><p className="text-xs font-medium text-[#1a1a1a]/55">{label}</p></Card>)}
       </div>
+      <Card title="Manual catalogue workflow" description="Run each stage when you are ready. Catalogue information creates no images.">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-white/70 bg-white/30 p-4"><p className="text-xs font-semibold uppercase text-[#1a1a1a]/55">Step 1</p><p className="mt-1 font-semibold">Catalogue information</p><p className="mt-2 text-sm text-[#1a1a1a]/65">Generate products, colour styles, and size/inventory rows.</p>{canEdit && <Button className="mt-3" size="sm" onClick={() => setShowAdd(true)}><Icon type="plus" size="sm" /> Generate information</Button>}</div>
+          <div className="rounded-xl border border-white/70 bg-white/30 p-4"><p className="text-xs font-semibold uppercase text-[#1a1a1a]/55">Step 2</p><p className="mt-1 font-semibold">Core images</p><p className="mt-2 text-sm text-[#1a1a1a]/65">Three images per colour style: FRONT, BACK, and ON_MODEL.</p>{canEdit && <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" loading={coreBusy} disabled={!latestInfoJob} onClick={() => latestInfoJob && void startCoreImages(latestInfoJob.id)}>{latestInfoJob ? "Generate batch core images" : "Waiting for Step 1"}</Button><Button variant="secondary" size="sm" loading={coreBusy} onClick={() => void startCoreImages(undefined, true)}>All products missing core images</Button></div>}</div>
+          <div className="rounded-xl border border-white/70 bg-white/30 p-4"><p className="text-xs font-semibold uppercase text-[#1a1a1a]/55">Step 3</p><p className="mt-1 font-semibold">Complete the Look</p><p className="mt-2 text-sm text-[#1a1a1a]/65">Optional outfit images and companion-product recommendations.</p><p className="mt-3 text-xs text-[#1a1a1a]/55">Available after core imagery is ready across the catalogue.</p></div>
+        </div>
+      </Card>
       {activeJobs.map((job) => <Card key={job.id} title="Generation in progress" description={`Job ${job.publicId}`} headerActions={<CatalogStatusBadge status={job.status} />}><JobProgress job={job} /></Card>)}
       <Tabs tabs={tabs} defaultTab="products" />
       <AddProductsModal key={showAdd ? detail.catalog.id : "closed"} catalog={showAdd ? detail.catalog : null} onClose={() => setShowAdd(false)} onCreated={async () => { setShowAdd(false); await refresh(); }} />

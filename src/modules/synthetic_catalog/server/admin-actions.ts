@@ -27,6 +27,7 @@ import {
 } from "./admin-catalogs";
 import { getCatalogExportSummary } from "./catalog-export";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
+import { createCoreImagesJob, getCoreImagesPreflight } from "./core-image-jobs";
 import type { CatalogExportSummary } from "../export/demoware-csv";
 
 function adminId(session: Awaited<ReturnType<typeof requireAdmin>>): number | undefined {
@@ -86,6 +87,32 @@ export async function createCatalogGenerationJobAction(input: unknown): Promise<
     return { ok: true, jobId: job.id };
   } catch (error) {
     return errorResult(error);
+  }
+}
+
+export async function createCoreImagesJobAction(input: { catalogId: number; sourceJobId?: number; allMissing?: boolean }): Promise<CatalogActionResult> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const catalogId = positiveIdSchema.parse(input.catalogId);
+    const sourceJobId = input.sourceJobId == null ? undefined : positiveIdSchema.parse(input.sourceJobId);
+    const job = await createCoreImagesJob({ catalogId, sourceJobId, allMissing: input.allMissing === true, createdByMappTeamId: adminId(session) });
+    const catalog = await prisma.syntheticCatalog.findUniqueOrThrow({ where: { id: catalogId } });
+    await writeAuditLog({
+      ...sessionAuditActor(session), action: "core_images_requested", entityType: "catalog_generation_job", entityId: job.id,
+      message: `Requested core images for ${catalog.name}`,
+      data: { catalogId, sourceJobId: sourceJobId ?? null, allMissing: input.allMissing === true, imageTasks: job.tasks.length },
+    });
+    revalidateCatalog(catalog.slug);
+    return { ok: true, jobId: job.id };
+  } catch (error) { return errorResult(error); }
+}
+
+export async function getCoreImagesPreflightAction(input: { catalogId: number; sourceJobId?: number; allMissing?: boolean }) {
+  await requireAdmin({});
+  try {
+    return { ok: true as const, ...await getCoreImagesPreflight(input) };
+  } catch (error) {
+    return { ok: false as const, message: error instanceof Error ? error.message : "Could not calculate core image targets" };
   }
 }
 
