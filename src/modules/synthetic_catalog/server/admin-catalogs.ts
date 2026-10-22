@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
 import { parseCatalogProfileConfig } from "../config/profiles";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
+import { sizesForCategory } from "../domain/rules";
 import type {
   CatalogDetailView,
   CatalogJobView,
@@ -24,8 +25,7 @@ type ProductWithRelations = Prisma.SyntheticProductGetPayload<{
   include: typeof productInclude;
 }>;
 
-function productView(product: ProductWithRelations): CatalogProductView {
-  const style = product.styles[0];
+function productView(product: ProductWithRelations, config: ReturnType<typeof parseCatalogProfileConfig>): CatalogProductView {
   return {
     id: product.id,
     externalId: product.externalId,
@@ -40,12 +40,12 @@ function productView(product: ProductWithRelations): CatalogProductView {
     salePrice: product.salePrice?.toFixed(2) ?? null,
     currency: product.currency,
     status: product.status,
-    style: style
-      ? {
+    styles: product.styles.map((style) => ({
           id: style.id,
           externalId: style.externalId,
           colorName: style.colorName,
           colorCode: style.colorCode,
+          colorHex: config.colors.find((color) => color.code === style.colorCode)?.hex ?? "#CCCCCC",
           status: style.status,
           variants: style.variants.map((variant) => ({
             id: variant.id,
@@ -63,8 +63,7 @@ function productView(product: ProductWithRelations): CatalogProductView {
             url: image.status === "READY" ? `/api/catalog-assets/${image.publicId}` : null,
             errorMessage: image.errorMessage,
           })),
-        }
-      : null,
+        })),
   };
 }
 
@@ -76,6 +75,9 @@ function jobView(job: {
   stage: string;
   requestedProducts: number;
   departmentMode: string;
+  scopeType: string;
+  scopeValue: string | null;
+  colorVariantCount: number;
   completedProducts: number;
   failedProducts: number;
   completedImages: number;
@@ -105,6 +107,9 @@ function jobView(job: {
     stage: job.stage,
     requestedProducts: job.requestedProducts,
     departmentMode: job.departmentMode,
+    scopeType: job.scopeType,
+    scopeValue: job.scopeValue,
+    colorVariantCount: job.colorVariantCount,
     completedProducts: job.completedProducts,
     failedProducts: job.failedProducts,
     completedImages: job.completedImages,
@@ -186,6 +191,9 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
       readyImageCount: images.filter((image) => image.status === "READY").length,
       failedImageCount: images.filter((image) => image.status === "FAILED").length,
       estimatedSizesPerProduct: config.sizes.length,
+      departments: config.departments.map(({ key, label }) => ({ key, label })),
+      categories: [...config.categories],
+      categorySizeCounts: Object.fromEntries(config.categories.map((category) => [category, sizesForCategory(config, category).length])),
       ...generationLimits,
       latestJob: catalog.jobs[0] ? jobView(catalog.jobs[0]) : null,
     };
@@ -228,10 +236,14 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       defaultImageModel: catalog.defaultImageModel,
       visualDirection: config.visualDirection,
       estimatedSizesPerProduct: config.sizes.length,
+      departments: config.departments.map((department) => ({ ...department })),
+      categories: [...config.categories],
+      categorySizeCounts: Object.fromEntries(config.categories.map((category) => [category, sizesForCategory(config, category).length])),
+      subcategories: Object.fromEntries(Object.entries(config.subcategories).map(([key, value]) => [key, [...value]])),
       ...generationLimits,
     },
     counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages },
-    products: catalog.products.map(productView),
+    products: catalog.products.map((product) => productView(product, config)),
     jobs: catalog.jobs.map(jobView),
   };
 }
@@ -259,7 +271,8 @@ export async function getCatalogProductDetail(
   });
   if (!product) return null;
 
-  return { catalog, product: productView(product) };
+  const current = await prisma.syntheticCatalog.findUniqueOrThrow({ where: { id: catalog.id }, select: { config: true } });
+  return { catalog, product: productView(product, parseCatalogProfileConfig(current.config)) };
 }
 
 export async function enqueueImageRegeneration(imageAssetId: number, createdByMappTeamId?: number) {

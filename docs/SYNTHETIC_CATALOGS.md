@@ -37,6 +37,14 @@ and write audit records. A batch at or above the configured large-job threshold
 confirmation showing the expected LiteLLM call count. The request enqueues work
 only; browser navigation and polling never perform model or S3 work.
 
+The generation wizard selects all-catalogue, department, or category scope,
+then parent product count and two or three color variants. Its review shows
+parent products, styles, image assets, size rows, and attributed LiteLLM calls.
+Editors can add departments, categories with their first subcategory, and
+subcategories from catalog Settings. Taxonomy controls are add-only; viewers see
+the configured values without mutation controls. Taxonomy writes are validated,
+transactional, and audited.
+
 The detail client polls persisted state every three seconds only while a job is
 queued or running. Product batches use `CATALOG_MAX_PRODUCTS_PER_JOB` (default
 100, hard safety ceiling 500), enforced independently in the form, server action,

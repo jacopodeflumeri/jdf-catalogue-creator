@@ -14,6 +14,9 @@ export interface CatalogJobView {
   stage: string;
   requestedProducts: number;
   departmentMode: string;
+  scopeType: string;
+  scopeValue: string | null;
+  colorVariantCount: number;
   completedProducts: number;
   failedProducts: number;
   completedImages: number;
@@ -47,6 +50,9 @@ export interface CatalogOverviewView {
   readyImageCount: number;
   failedImageCount: number;
   estimatedSizesPerProduct: number;
+  departments: Array<{ key: string; label: string }>;
+  categories: string[];
+  categorySizeCounts: Record<string, number>;
   maxProductsPerJob: number;
   largeJobThreshold: number;
   latestJob: CatalogJobView | null;
@@ -75,11 +81,12 @@ export interface CatalogProductView {
   salePrice: string | null;
   currency: string;
   status: string;
-  style: {
+  styles: Array<{
     id: number;
     externalId: string;
     colorName: string;
     colorCode: string;
+    colorHex: string;
     status: string;
     variants: Array<{
       id: number;
@@ -90,7 +97,7 @@ export interface CatalogProductView {
       availability: string;
     }>;
     images: CatalogImageView[];
-  } | null;
+  }>;
 }
 
 export interface CatalogProductDetailView {
@@ -118,6 +125,10 @@ export interface CatalogDetailView {
     estimatedSizesPerProduct: number;
     maxProductsPerJob: number;
     largeJobThreshold: number;
+    departments: Array<{ key: string; label: string; code: string; generationWeight: number }>;
+    categories: string[];
+    categorySizeCounts: Record<string, number>;
+    subcategories: Record<string, string[]>;
   };
   counts: {
     products: number;

@@ -20,6 +20,7 @@ import { CATALOG_IMAGE_MODEL_OPTIONS } from "@/modules/synthetic_catalog/config/
 import {
   getCatalogDetailAction,
   getCatalogExportSummaryAction,
+  addCatalogTaxonomyAction,
   retryCatalogGenerationJobAction,
   updateCatalogSettingsAction,
 } from "@/modules/synthetic_catalog/server/admin-actions";
@@ -38,7 +39,7 @@ function formatDate(value: string | null): string {
 
 function JobProgress({ job }: { job: CatalogJobView }) {
   const expectedProducts = job.requestedProducts;
-  const expectedImages = job.jobType === "REGENERATE_IMAGE" ? 1 : expectedProducts * 3;
+  const expectedImages = job.jobType === "REGENERATE_IMAGE" ? 1 : expectedProducts * job.colorVariantCount * 3;
   const settledProducts = job.completedProducts + job.failedProducts;
   const settledImages = job.completedImages + job.failedImages;
   const total = expectedProducts + expectedImages;
@@ -68,6 +69,13 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
   const [visualDirection, setVisualDirection] = useState(detail.catalog.visualDirection);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [departmentLabel, setDepartmentLabel] = useState("");
+  const [departmentCode, setDepartmentCode] = useState("");
+  const [departmentWeight, setDepartmentWeight] = useState("0.1");
+  const [newCategory, setNewCategory] = useState("");
+  const [newCategorySubcategory, setNewCategorySubcategory] = useState("");
+  const [existingCategory, setExistingCategory] = useState(detail.catalog.categories[0] ?? "");
+  const [newSubcategory, setNewSubcategory] = useState("");
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -89,8 +97,21 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
     await onSaved();
   }
 
+  async function addTaxonomy(input: Record<string, unknown>) {
+    setBusy(true);
+    setMessage(null);
+    const result = await addCatalogTaxonomyAction(input);
+    setBusy(false);
+    if (!result.ok) {
+      setMessage({ kind: "error", text: result.message ?? "Could not update catalog taxonomy" });
+      return;
+    }
+    setMessage({ kind: "success", text: "Taxonomy item added" });
+    await onSaved();
+  }
+
   return (
-    <Card title="Generation settings" description="Defaults apply to newly queued jobs; existing jobs retain their stored models.">
+    <div className="space-y-6"><Card title="Generation settings" description="Defaults apply to newly queued jobs; existing jobs retain their stored models.">
       <form className="space-y-5" onSubmit={submit}>
         <FormInput id="catalog-brand" label="Brand name" value={brandName} onChange={(event) => setBrandName(event.target.value)} disabled={!canEdit} />
         <div className="grid gap-5 md:grid-cols-2">
@@ -102,6 +123,31 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
         {canEdit && <div className="flex justify-end"><Button type="submit" loading={busy}><Icon type="save" size="sm" /> Save settings</Button></div>}
       </form>
     </Card>
+    <Card title="Catalog taxonomy" description="Add-only settings. Existing product identifiers and queued jobs keep their saved values.">
+      {canEdit ? <div className="grid gap-6 xl:grid-cols-3">
+        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "DEPARTMENT", catalogId: detail.catalog.id, label: departmentLabel, code: departmentCode, generationWeight: Number(departmentWeight) }); }}>
+          <h4 className="font-semibold">Add department</h4>
+          <FormInput id="tax-department-label" label="Label" value={departmentLabel} disabled={!canEdit} onChange={(event) => setDepartmentLabel(event.target.value)} />
+          <FormInput id="tax-department-code" label="Product ID code" value={departmentCode} disabled={!canEdit} onChange={(event) => setDepartmentCode(event.target.value)} helpText="1–6 uppercase letters or digits." />
+          <FormInput id="tax-department-weight" label="Generation weight" type="number" min="0.01" step="0.01" value={departmentWeight} disabled={!canEdit} onChange={(event) => setDepartmentWeight(event.target.value)} />
+          {canEdit && <Button type="submit" loading={busy}>Add department</Button>}
+        </form>
+        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "CATEGORY", catalogId: detail.catalog.id, category: newCategory, subcategory: newCategorySubcategory }); }}>
+          <h4 className="font-semibold">Add category</h4>
+          <FormInput id="tax-category" label="Category" value={newCategory} disabled={!canEdit} onChange={(event) => setNewCategory(event.target.value)} />
+          <FormInput id="tax-first-subcategory" label="First subcategory" value={newCategorySubcategory} disabled={!canEdit} onChange={(event) => setNewCategorySubcategory(event.target.value)} />
+          {canEdit && <Button type="submit" loading={busy}>Add category</Button>}
+        </form>
+        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "SUBCATEGORY", catalogId: detail.catalog.id, category: existingCategory, subcategory: newSubcategory }); }}>
+          <h4 className="font-semibold">Add subcategory</h4>
+          <FormSelect id="tax-existing-category" label="Category" value={existingCategory} disabled={!canEdit} onChange={(event) => setExistingCategory(event.target.value)} options={detail.catalog.categories.map((value) => ({ value, label: value }))} />
+          <FormInput id="tax-subcategory" label="Subcategory" value={newSubcategory} disabled={!canEdit} onChange={(event) => setNewSubcategory(event.target.value)} />
+          {canEdit && <Button type="submit" loading={busy}>Add subcategory</Button>}
+        </form>
+      </div> : <p className="text-sm text-[#1a1a1a]/55">You have read-only access to catalog taxonomy.</p>}
+      {message && <div className="mt-4"><NoticeBox variant={message.kind}>{message.text}</NoticeBox></div>}
+      <div className="mt-6 grid gap-4 md:grid-cols-3"><div><p className="text-sm font-semibold">Departments</p><ul className="mt-2 list-disc pl-5 text-sm">{detail.catalog.departments.map((item) => <li key={item.key}>{item.label} · {item.code} · weight {item.generationWeight}</li>)}</ul></div><div><p className="text-sm font-semibold">Categories</p><ul className="mt-2 list-disc pl-5 text-sm">{detail.catalog.categories.map((item) => <li key={item}>{item}</li>)}</ul></div><div><p className="text-sm font-semibold">Subcategories</p><ul className="mt-2 list-disc pl-5 text-sm">{Object.entries(detail.catalog.subcategories).map(([key, values]) => <li key={key}>{key}: {values.join(", ")}</li>)}</ul></div></div>
+    </Card></div>
   );
 }
 
@@ -194,7 +240,7 @@ export default function CatalogDetailClient({
             </NoticeBox>
           )}
           <div className="mt-4 flex items-center justify-between gap-4">
-            <p className="text-xs text-[#1a1a1a]/55">Department: {job.departmentMode.toLowerCase()} · Job {job.publicId}</p>
+            <p className="text-xs text-[#1a1a1a]/55">Scope: {job.scopeType === "LEGACY" ? job.departmentMode.toLowerCase() : job.scopeType === "ALL" ? "all catalogue" : `${job.scopeType.toLowerCase()}: ${job.scopeValue ?? ""}`} · {job.colorVariantCount} color(s) per product · Job {job.publicId}</p>
             {canEdit && (job.status === "FAILED" || job.status === "COMPLETED_WITH_ERRORS") && <Button variant="secondary" size="sm" loading={busyJobId === job.id} onClick={() => void retry(job.id)}><Icon type="refresh" size="sm" /> Retry failures</Button>}
           </div>
         </Card>

@@ -7,6 +7,7 @@ import { requireAdmin } from "@/modules/auth/server";
 import { sessionAuditActor, writeAuditLog } from "@/modules/audit";
 import {
   catalogSettingsInputSchema,
+  catalogTaxonomyInputSchema,
   parseAddProductsInput,
   positiveIdSchema,
 } from "../admin/input";
@@ -16,6 +17,7 @@ import type {
   CatalogProductDetailView,
 } from "../admin/types";
 import { parseCatalogProfileConfig } from "../config/profiles";
+import { addCatalogCategory, addCatalogDepartment, addCatalogSubcategory } from "../config/taxonomy";
 import { createGenerationJob, resumeGenerationJob } from "./generation-jobs";
 import {
   enqueueImageRegeneration,
@@ -76,7 +78,7 @@ export async function createCatalogGenerationJobAction(input: unknown): Promise<
       entityType: "catalog_generation_job",
       entityId: job.id,
       message: `Requested ${values.requestedProducts} products for ${catalog.name}`,
-      data: { catalogId: catalog.id, departmentMode: values.departmentMode },
+      data: { catalogId: catalog.id, scope: values.scope, colorVariantCount: values.colorVariantCount },
     });
     revalidateCatalog(catalog.slug);
     return { ok: true, jobId: job.id };
@@ -162,6 +164,38 @@ export async function updateCatalogSettingsAction(input: unknown): Promise<Catal
       },
     });
     revalidateCatalog(existing.slug);
+    return { ok: true };
+  } catch (error) {
+    return errorResult(error);
+  }
+}
+
+export async function addCatalogTaxonomyAction(input: unknown): Promise<CatalogActionResult> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const values = catalogTaxonomyInputSchema.parse(input);
+    const catalog = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${values.catalogId} FOR UPDATE`;
+      const existing = await tx.syntheticCatalog.findUniqueOrThrow({ where: { id: values.catalogId } });
+      const config = parseCatalogProfileConfig(existing.config);
+      const updated = values.type === "DEPARTMENT"
+        ? addCatalogDepartment(config, values)
+        : values.type === "CATEGORY"
+          ? addCatalogCategory(config, values.category, values.subcategory)
+          : addCatalogSubcategory(config, values.category, values.subcategory);
+      await tx.syntheticCatalog.update({ where: { id: existing.id }, data: { config: JSON.parse(JSON.stringify(updated)) as Prisma.InputJsonValue } });
+      return { existing, updated };
+    });
+    const summary = values.type === "DEPARTMENT" ? `Added department ${values.label.trim()}` : values.type === "CATEGORY" ? `Added category ${values.category.trim()}` : `Added subcategory to ${values.category.trim()}`;
+    await writeAuditLog({
+      ...sessionAuditActor(session),
+      action: "taxonomy_added",
+      entityType: "synthetic_catalog",
+      entityId: catalog.existing.id,
+      message: `${summary} in ${catalog.existing.name}`,
+      data: { catalogId: catalog.existing.id, taxonomyType: values.type },
+    });
+    revalidateCatalog(catalog.existing.slug);
     return { ok: true };
   } catch (error) {
     return errorResult(error);
