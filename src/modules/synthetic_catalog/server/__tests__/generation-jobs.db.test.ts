@@ -125,8 +125,19 @@ describe("catalog generation jobs", () => {
     const catalog = await createTestCatalog();
     const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, colorVariantCount: 3, seed: "three-colors" });
     const changedConfig = { ...CATALOG_PROFILES[0].config, colors: [CATALOG_PROFILES[0].config.colors[0]!] };
-    await prisma.syntheticCatalog.update({ where: { id: catalog.id }, data: { config: json(changedConfig) } });
-    await runGenerationJob(job.id, new MockProductGenerator());
+    await prisma.syntheticCatalog.update({
+      where: { id: catalog.id },
+      data: { config: json(changedConfig), brandName: "Changed Brand", segment: "changed-segment" },
+    });
+    const baseProvider = new MockProductGenerator();
+    const receivedContext: Array<{ brandName: string; segment: string }> = [];
+    const trackingProvider: ProductGenerator = {
+      async generateProduct(input) {
+        receivedContext.push({ brandName: input.catalog.brandName, segment: input.catalog.segment });
+        return baseProvider.generateProduct(input);
+      },
+    };
+    await runGenerationJob(job.id, trackingProvider);
     const product = await prisma.syntheticProduct.findFirstOrThrow({
       where: { catalogId: catalog.id },
       include: { styles: { include: { variants: true, images: true, tasks: true } } },
@@ -139,7 +150,12 @@ describe("catalog generation jobs", () => {
       expect(new Set(style.variants.map((variant) => variant.externalId)).size).toBe(style.variants.length);
       expect(style.images).toHaveLength(3);
       expect(style.tasks).toHaveLength(3);
+      expect(style.tasks.every((task) => {
+        const payload = task.payload as { catalogSnapshot?: { brandName?: string; segment?: string } };
+        return payload.catalogSnapshot?.brandName === catalog.brandName && payload.catalogSnapshot.segment === catalog.segment;
+      })).toBe(true);
     }
+    expect(receivedContext).toEqual([{ brandName: catalog.brandName, segment: catalog.segment }]);
     expect(await prisma.catalogGenerationTask.count({ where: { jobId: job.id, taskType: "GENERATE_PRODUCT" } })).toBe(1);
   });
 

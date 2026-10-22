@@ -99,6 +99,8 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
             plan: { ...item, departmentCode: config.departments.find((department) => department.key === item.department)!.code },
             colorVariantCount,
             configSnapshot: snapshotGenerationSettings(config),
+            brandName: catalog.brandName,
+            segment: catalog.segment,
           }),
         })),
       },
@@ -114,6 +116,8 @@ async function persistGeneratedProduct(input: {
   spec: GeneratedProductSpec;
   colorVariantCount: 1 | 2 | 3;
   configSnapshot: ReturnType<typeof snapshotGenerationSettings>;
+  brandName: string;
+  segment: string;
 }) {
   const job = await prisma.catalogGenerationJob.findUniqueOrThrow({
     where: { id: input.jobId },
@@ -193,7 +197,7 @@ async function persistGeneratedProduct(input: {
         update: {},
         create: { styleId: style.id, role, status: "QUEUED" },
       });
-      const frozenCatalog = { brandName: job.catalog.brandName, segment: job.catalog.segment, visualDirection: config.visualDirection };
+      const frozenCatalog = { brandName: input.brandName, segment: input.segment, visualDirection: config.visualDirection };
       await tx.catalogGenerationTask.upsert({
         where: {
           jobId_dedupeKey: {
@@ -350,6 +354,8 @@ export async function processProductGenerationTask(
   const config = "configSnapshot" in payload
     ? parseCatalogProfileConfig(payload.configSnapshot)
     : parseCatalogProfileConfig(task.job.catalog.config);
+  const brandName = typeof payload.brandName === "string" ? payload.brandName : task.job.catalog.brandName;
+  const segment = typeof payload.segment === "string" ? payload.segment : task.job.catalog.segment;
   const colorVariantCount: 1 | 2 | 3 = payload.colorVariantCount === 2 || payload.colorVariantCount === 3
     ? payload.colorVariantCount
     : 1;
@@ -357,13 +363,13 @@ export async function processProductGenerationTask(
     model: task.job.textModel,
     catalog: {
       slug: task.job.catalog.slug,
-      segment: task.job.catalog.segment,
-      brandName: task.job.catalog.brandName,
+      segment,
+      brandName,
       config,
     },
     plan,
   });
-  return persistGeneratedProduct({ jobId: task.jobId, taskId: task.id, plan, spec, colorVariantCount, configSnapshot: snapshotGenerationSettings(config) });
+  return persistGeneratedProduct({ jobId: task.jobId, taskId: task.id, plan, spec, colorVariantCount, configSnapshot: snapshotGenerationSettings(config), brandName, segment });
 }
 
 export async function runGenerationJob(

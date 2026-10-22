@@ -176,9 +176,11 @@ processes only unfinished tasks. Provider failures become `FAILED` tasks and a
 retry boundary: it requeues failed tasks and resets their bounded attempt budget.
 Automatic worker retries remain bounded by `maxAttempts`.
 
-New requests carry a frozen scope, color count, and taxonomy/palette snapshot in
-their persisted product tasks. Each parent product uses one text generation
-call; the generated primary color is followed by deterministic, seed-selected
+New requests carry a frozen scope, color count, taxonomy/palette, brand, and
+segment snapshot in their persisted product tasks. Product text and all image
+tasks use that queued context even if catalog settings change later. Legacy
+tasks without the brand and segment fields fall back to the current catalog.
+Each parent product uses one text generation call; the generated primary color is followed by deterministic, seed-selected
 distinct palette colors. Each style gets its own normal size assortment,
 color-seeded inventory, and three image tasks. For `P` products and `C` colors,
 the expected attributed LiteLLM calls are `P + (P × C × 3)`. Failed work can be
