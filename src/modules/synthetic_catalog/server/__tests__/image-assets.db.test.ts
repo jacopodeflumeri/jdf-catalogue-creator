@@ -82,6 +82,7 @@ describe("synthetic image asset persistence", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 1,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
       seed: "image-assets",
     });
     await runGenerationJob(job.id, new MockProductGenerator());

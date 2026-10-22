@@ -95,7 +95,7 @@ describe("catalog generation worker", () => {
 
   it("cancels queued work and keeps a cancelled job terminal", async () => {
     const catalog = await createTestCatalog();
-    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 2, seed: "cancel-queued" });
+    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 2, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" }, seed: "cancel-queued" });
     await prisma.catalogGenerationJob.update({ where: { id: job.id }, data: { status: "RUNNING" } });
     const cancelled = await cancelGenerationJob(job.id);
     expect(cancelled.previousStatus).toBe("RUNNING");
@@ -108,7 +108,7 @@ describe("catalog generation worker", () => {
 
   it("marks a product task cancelled when cancellation arrives during provider generation", async () => {
     const catalog = await createTestCatalog();
-    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, seed: "cancel-in-flight" });
+    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" }, seed: "cancel-in-flight" });
     const base = new MockProductGenerator();
     let notifyStarted!: () => void;
     let finishGeneration!: () => void;
@@ -134,7 +134,7 @@ describe("catalog generation worker", () => {
 
   it("atomically gives concurrent workers different tasks", async () => {
     const catalog = await createTestCatalog();
-    await createGenerationJob({ catalogId: catalog.id, requestedProducts: 2, seed: "claims" });
+    await createGenerationJob({ catalogId: catalog.id, requestedProducts: 2, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" }, seed: "claims" });
 
     const [first, second] = await Promise.all([
       claimNextCatalogTask("worker-a"),
@@ -154,6 +154,7 @@ describe("catalog generation worker", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 5,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
       seed: "five-products",
     });
     const generatedProducts: number[] = [];
@@ -203,6 +204,7 @@ describe("catalog generation worker", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 2,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
       seed: "concurrent-progress",
     });
     const storage = new MemoryStorage();
@@ -230,6 +232,7 @@ describe("catalog generation worker", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 1,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
       seed: "transient-retry",
     });
     const base = new MockProductGenerator();
@@ -262,6 +265,7 @@ describe("catalog generation worker", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 1,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
       seed: "front-setup-failure",
     });
     const worker = createWorker("worker-front-failure", new MockProductGenerator(), []);
@@ -286,6 +290,7 @@ describe("catalog generation worker", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 1,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
       seed: "stale-lease",
     });
     const claimed = await claimNextCatalogTask("dead-worker");
@@ -311,7 +316,7 @@ describe("catalog generation worker", () => {
     const catalog = await createTestCatalog();
     const storage = new MemoryStorage();
     const initialCalls: string[] = [];
-    await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, seed: "regenerate" });
+    await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" }, seed: "regenerate" });
     await createWorker("worker-initial", new MockProductGenerator(), initialCalls, storage).runUntilIdle();
     const asset = await prisma.syntheticImageAsset.findFirstOrThrow({ where: { role: "FRONT" } });
     expect(asset.status).toBe("READY");

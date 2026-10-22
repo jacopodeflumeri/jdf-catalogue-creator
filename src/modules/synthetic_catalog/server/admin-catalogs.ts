@@ -197,6 +197,7 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
       departments: config.departments.map(({ key, label }) => ({ key, label })),
       categories: [...config.categories],
       categorySizeCounts: Object.fromEntries(config.categories.map((category) => [category, sizesForCategory(config, category).length])),
+      assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
       ...generationLimits,
       latestJob: catalog.jobs[0] ? jobView(catalog.jobs[0]) : null,
     };
@@ -244,6 +245,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       categories: [...config.categories],
       categorySizeCounts: Object.fromEntries(config.categories.map((category) => [category, sizesForCategory(config, category).length])),
       subcategories: Object.fromEntries(Object.entries(config.subcategories).map(([key, value]) => [key, [...value]])),
+      assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
       ...generationLimits,
     },
     counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages },

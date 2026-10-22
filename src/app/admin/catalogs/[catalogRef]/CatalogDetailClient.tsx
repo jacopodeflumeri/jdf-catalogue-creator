@@ -24,6 +24,7 @@ import {
   addCatalogTaxonomyAction,
   cancelCatalogGenerationJobAction,
   retryCatalogGenerationJobAction,
+  saveCatalogMixAction,
   updateCatalogSettingsAction,
 } from "@/modules/synthetic_catalog/server/admin-actions";
 import type { CatalogExportSummary } from "@/modules/synthetic_catalog/export/demoware-csv";
@@ -78,6 +79,35 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
   const [newCategorySubcategory, setNewCategorySubcategory] = useState("");
   const [existingCategory, setExistingCategory] = useState(detail.catalog.categories[0] ?? "");
   const [newSubcategory, setNewSubcategory] = useState("");
+  const [mixRows, setMixRows] = useState(detail.catalog.assortmentPlan);
+  const [mixBusy, setMixBusy] = useState(false);
+  const [mixMessage, setMixMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const { confirm } = useConfirm();
+
+  function mixRowError(index: number): string | null {
+    const row = mixRows[index];
+    if (!row) return null;
+    if (!detail.catalog.departments.some((department) => department.key === row.departmentKey)) return "Choose a configured department.";
+    if (!row.category.trim()) return "Category is required.";
+    if (!row.subcategory.trim()) return "Subcategory is required.";
+    if (!Number.isSafeInteger(row.productCount) || row.productCount < 1) return "Product count must be a positive integer.";
+    const tuple = [row.departmentKey, row.category, row.subcategory].map((value) => value.trim().toLocaleLowerCase()).join("\u0000");
+    if (mixRows.some((candidate, candidateIndex) => candidateIndex !== index && [candidate.departmentKey, candidate.category, candidate.subcategory].map((value) => value.trim().toLocaleLowerCase()).join("\u0000") === tuple)) return "This mix row already exists.";
+    return null;
+  }
+
+  async function saveMix() {
+    setMixBusy(true);
+    setMixMessage(null);
+    const result = await saveCatalogMixAction({ catalogId: detail.catalog.id, rows: mixRows });
+    setMixBusy(false);
+    if (!result.ok) {
+      setMixMessage({ kind: "error", text: result.message ?? "Could not save catalogue mix" });
+      return;
+    }
+    setMixMessage({ kind: "success", text: "Catalogue mix saved for future jobs" });
+    await onSaved();
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -149,7 +179,31 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
       </div> : <p className="text-sm text-[#1a1a1a]/55">You have read-only access to catalog taxonomy.</p>}
       {message && <div className="mt-4"><NoticeBox variant={message.kind}>{message.text}</NoticeBox></div>}
       <div className="mt-6 grid gap-4 md:grid-cols-3"><div><p className="text-sm font-semibold">Departments</p><ul className="mt-2 list-disc pl-5 text-sm">{detail.catalog.departments.map((item) => <li key={item.key}>{item.label} · {item.code} · weight {item.generationWeight}</li>)}</ul></div><div><p className="text-sm font-semibold">Categories</p><ul className="mt-2 list-disc pl-5 text-sm">{detail.catalog.categories.map((item) => <li key={item}>{item}</li>)}</ul></div><div><p className="text-sm font-semibold">Subcategories</p><ul className="mt-2 list-disc pl-5 text-sm">{Object.entries(detail.catalog.subcategories).map(([key, values]) => <li key={key}>{key}: {values.join(", ")}</li>)}</ul></div></div>
-    </Card></div>
+    </Card>
+    <Card title="Catalogue mix" description="Each row defines an allowed department, category, and subcategory combination and its exact All Catalogue quota. Edits only affect future jobs.">
+      <div className="space-y-3">
+        {canEdit ? mixRows.map((row, index) => <div key={`${index}:${row.departmentKey}:${row.category}`} className="grid gap-3 rounded-xl border border-white/70 bg-white/25 p-4 md:grid-cols-[1fr_1fr_1fr_8rem_auto] md:items-end">
+          <FormSelect label="Department" value={row.departmentKey} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, departmentKey: event.target.value } : item))} options={detail.catalog.departments.map((item) => ({ value: item.key, label: item.label }))} />
+          <FormInput label="Category" value={row.category} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, category: event.target.value } : item))} />
+          <FormInput label="Subcategory" value={row.subcategory} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, subcategory: event.target.value } : item))} />
+          <FormInput label="Products" type="number" min="1" step="1" value={String(row.productCount)} disabled={!canEdit || mixBusy} onChange={(event) => setMixRows((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, productCount: Number(event.target.value) } : item))} />
+          {canEdit && <Button type="button" variant="danger" size="sm" disabled={mixBusy} onClick={async () => {
+            const confirmed = await confirm({ title: "Remove catalogue mix row?", message: "This only changes future generation. Existing products remain unchanged.", confirmText: "Remove row", variant: "danger" });
+            if (confirmed) setMixRows((items) => items.filter((_, itemIndex) => itemIndex !== index));
+          }}>Remove</Button>}
+          {mixRowError(index) && <p className="text-sm text-danger md:col-span-5" role="alert">{mixRowError(index)}</p>}
+        </div>) : <ul className="space-y-2 text-sm">{mixRows.map((row, index) => <li key={`${index}:${row.departmentKey}:${row.category}`}>{detail.catalog.departments.find((item) => item.key === row.departmentKey)?.label ?? row.departmentKey} · {row.category} · {row.subcategory}: {row.productCount}</li>)}</ul>}
+        {mixRows.length === 0 && <NoticeBox variant="error">At least one catalogue mix row is required.</NoticeBox>}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-semibold">All Catalogue total: {mixRows.reduce((total, row) => total + (Number.isSafeInteger(row.productCount) && row.productCount > 0 ? row.productCount : 0), 0)} products</p>
+          {canEdit && <div className="flex gap-2"><Button type="button" variant="secondary" disabled={mixBusy || detail.catalog.departments.length === 0} onClick={() => setMixRows((items) => [...items, { departmentKey: detail.catalog.departments[0]?.key ?? "", category: "", subcategory: "", productCount: 1 }])}><Icon type="plus" size="sm" /> Add row</Button><Button type="button" loading={mixBusy} disabled={mixRows.length === 0 || mixRows.some((_, index) => mixRowError(index) != null)} onClick={() => void saveMix()}><Icon type="save" size="sm" /> Save catalogue mix</Button></div>}
+        </div>
+        {mixMessage && <NoticeBox variant={mixMessage.kind}>{mixMessage.text}</NoticeBox>}
+        {canEdit && mixRows.some((row) => !detail.catalog.categories.some((category) => category.toLocaleLowerCase() === row.category.trim().toLocaleLowerCase())) && <NoticeBox variant="info">Saving a row adds its category and subcategory to catalogue taxonomy.</NoticeBox>}
+        {detail.catalog.categories.some((category) => !mixRows.some((row) => row.category.toLocaleLowerCase() === category.toLocaleLowerCase())) && <NoticeBox variant="warning" title="Taxonomy needs a mix row">Some categories are not assigned to any department and subcategory combination. Add explicit rows before generating products in those categories.</NoticeBox>}
+      </div>
+    </Card>
+    </div>
   );
 }
 

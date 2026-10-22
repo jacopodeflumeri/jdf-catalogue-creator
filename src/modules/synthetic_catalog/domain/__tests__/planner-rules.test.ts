@@ -5,10 +5,10 @@ import { generateInventory, generatePrice, sizesForCategory } from "../rules";
 const config = CATALOG_PROFILES[0].config;
 
 describe("assortment planner", () => {
-  it("is deterministic and distributes every requested slot", () => {
+  it("honors every exact ALL catalogue-mix quota deterministically", () => {
     const input = {
-      sequences: [1, 2, 3, 4, 5],
-      departmentMode: "AUTO" as const,
+      sequences: Array.from({ length: config.assortmentPlan.reduce((sum, row) => sum + row.productCount, 0) }, (_, index) => index + 1),
+      scope: { type: "ALL" as const },
       config,
       seed: "premium:first-five",
     };
@@ -16,42 +16,41 @@ describe("assortment planner", () => {
     const second = planAssortment(input);
 
     expect(second).toEqual(first);
-    expect(first).toHaveLength(5);
-    expect(first.filter((item) => item.department === "WOMEN")).toHaveLength(3);
-    expect(new Set(first.map((item) => item.sequence)).size).toBe(5);
-    for (const item of first) {
-      expect(config.categories).toContain(item.category);
-      expect(config.subcategories[item.category]).toContain(item.subcategory);
+    expect(first).toHaveLength(20);
+    expect(new Set(first.map((item) => item.sequence)).size).toBe(20);
+    for (const row of config.assortmentPlan) {
+      expect(first.filter((item) => item.department === row.departmentKey && item.category === row.category && item.subcategory === row.subcategory)).toHaveLength(row.productCount);
     }
   });
 
-  it("honors an explicit department override", () => {
+  it("allocates department requests only across matching mix rows", () => {
     const plan = planAssortment({
       sequences: [10, 11, 12],
-      departmentMode: "MEN",
+      scope: { type: "DEPARTMENT", departmentKey: "MEN" },
       config,
       seed: "men-only",
     });
     expect(plan.every((item) => item.department === "MEN")).toBe(true);
+    expect(plan.every((item) => item.category !== "dresses")).toBe(true);
   });
 
-  it("plans one selected department across a complete deterministic category spread", () => {
+  it("distributes smaller department requests by mix weights deterministically", () => {
     const input = { sequences: [10, 11, 12, 13, 14], scope: { type: "DEPARTMENT" as const, departmentKey: "MEN" }, config, seed: "scope-department" };
     const planned = planAssortment(input);
     expect(planned.every((item) => item.department === "MEN")).toBe(true);
     expect(planAssortment(input)).toEqual(planned);
-    expect(new Set(planned.map((item) => item.category)).size).toBeGreaterThan(1);
+    expect(planned.every((item) => config.assortmentPlan.some((row) => row.departmentKey === item.department && row.category === item.category && row.subcategory === item.subcategory))).toBe(true);
   });
 
   it("creates exactly the requested products in a selected category", () => {
     const input = { sequences: [20, 21, 22, 23], scope: { type: "CATEGORY" as const, category: "coats" }, config, seed: "scope-category" };
     const planned = planAssortment(input);
     expect(planned).toHaveLength(4);
-    expect(planned.every((item) => item.category === "coats")).toBe(true);
+    expect(planned.every((item) => item.category === "coats" && item.subcategory === "wool coats" && item.department === "WOMEN")).toBe(true);
     expect(planAssortment(input)).toEqual(planned);
   });
 
-  it("uses weighted largest remainders for small ALL and CATEGORY jobs", () => {
+  it("uses weighted largest remainders for small scoped jobs", () => {
     const weightedConfig = {
       ...config,
       departments: [
@@ -59,9 +58,19 @@ describe("assortment planner", () => {
         { key: "MEN", label: "Men", code: "M", generationWeight: 0.05 },
         { key: "KIDS", label: "Kids", code: "K", generationWeight: 0.9 },
       ],
+      assortmentPlan: [
+        { departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 1 },
+        { departmentKey: "MEN", category: "coats", subcategory: "wool coats", productCount: 1 },
+        { departmentKey: "KIDS", category: "coats", subcategory: "wool coats", productCount: 18 },
+      ],
     };
     const planned = planAssortment({ sequences: [1], scope: { type: "CATEGORY", category: "coats" }, config: weightedConfig, seed: "one-product" });
     expect(planned[0]!.department).toBe("KIDS");
+  });
+
+  it("rejects missing scope rows and noncanonical ALL counts", () => {
+    expect(() => planAssortment({ sequences: [1], scope: { type: "CATEGORY", category: "sports bras" }, config, seed: "missing" })).toThrow("No catalogue mix rows");
+    expect(() => planAssortment({ sequences: [1], scope: { type: "ALL" }, config, seed: "short-all" })).toThrow("requires exactly 20");
   });
 
   it("rejects empty and duplicate sequence requests", () => {

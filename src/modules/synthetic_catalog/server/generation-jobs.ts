@@ -24,7 +24,7 @@ import { assertCatalogJobActive, CatalogJobCancelledError } from "./job-cancella
 
 export interface CreateGenerationJobInput {
   catalogId: number;
-  requestedProducts: number;
+  requestedProducts?: number;
   departmentMode?: DepartmentMode;
   scope?: GenerationScope;
   colorVariantCount?: 1 | 2 | 3;
@@ -46,7 +46,6 @@ function validateRequestedProducts(count: number): void {
 }
 
 export async function createGenerationJob(input: CreateGenerationJobInput) {
-  validateRequestedProducts(input.requestedProducts);
   const departmentMode = input.departmentMode ?? "AUTO";
   const scope = input.scope ?? (departmentMode === "AUTO" ? { type: "ALL" as const } : { type: "DEPARTMENT" as const, departmentKey: departmentMode });
   const colorVariantCount = input.colorVariantCount ?? 1;
@@ -55,9 +54,15 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
     where: { id: input.catalogId },
   });
   const config = parseCatalogProfileConfig(catalog.config);
+  const requestedProducts = scope.type === "ALL"
+    ? config.assortmentPlan.reduce((sum, row) => sum + row.productCount, 0)
+    : input.requestedProducts;
+  if (requestedProducts == null) throw new Error("A product count is required for the selected scope");
+  validateRequestedProducts(requestedProducts);
+  if (scope.type === "ALL" && config.assortmentPlan.length === 0) throw new Error("Configure the catalogue mix before generating the all catalogue scope");
   if (colorVariantCount > config.colors.length) throw new Error("Catalog palette has fewer colors than requested variants");
-  if (scope.type === "DEPARTMENT" && !config.departments.some((department) => department.key === scope.departmentKey)) throw new Error("Selected department is not configured for this catalog");
-  if (scope.type === "CATEGORY" && !config.categories.includes(scope.category)) throw new Error("Selected category is not configured for this catalog");
+  if (scope.type === "DEPARTMENT" && !config.assortmentPlan.some((row) => row.departmentKey.toLocaleLowerCase() === scope.departmentKey.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this department");
+  if (scope.type === "CATEGORY" && !config.assortmentPlan.some((row) => row.category.toLocaleLowerCase() === scope.category.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this category");
   const existingProducts = await prisma.syntheticProduct.count({
     where: { catalogId: catalog.id },
   });
@@ -66,11 +71,11 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   // fails, the gap remains and those external IDs are never recycled.
   const reservation = await reserveProductSequenceRange(
     catalog.id,
-    input.requestedProducts,
+    requestedProducts,
   );
   const seed =
     input.seed ??
-    `${catalog.slug}:${reservation.first}:${input.requestedProducts}:${JSON.stringify(scope)}:${colorVariantCount}`;
+    `${catalog.slug}:${reservation.first}:${requestedProducts}:${JSON.stringify(scope)}:${colorVariantCount}`;
   const plan = planAssortment({
     sequences: reservation.sequences,
     scope,
@@ -84,7 +89,7 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
       createdByMappTeamId: input.createdByMappTeamId,
       jobType:
         existingProducts === 0 && reservation.first === 1 ? "INITIAL" : "ADD_PRODUCTS",
-      requestedProducts: input.requestedProducts,
+      requestedProducts,
       departmentMode,
       scopeType: scope.type,
       scopeValue: scope.type === "DEPARTMENT" ? scope.departmentKey : scope.type === "CATEGORY" ? scope.category : null,
@@ -97,7 +102,7 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
           taskType: "GENERATE_PRODUCT",
           dedupeKey: `product:${item.sequence}`,
           payload: asInputJson({
-            plan: { ...item, departmentCode: config.departments.find((department) => department.key === item.department)!.code },
+            plan: { ...item, departmentCode: config.departments.find((department) => department.key.toLocaleLowerCase() === item.department.toLocaleLowerCase())!.code },
             colorVariantCount,
             configSnapshot: snapshotGenerationSettings(config),
             brandName: catalog.brandName,

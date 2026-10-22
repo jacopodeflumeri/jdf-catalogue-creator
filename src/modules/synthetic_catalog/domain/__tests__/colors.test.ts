@@ -1,5 +1,6 @@
 import { CATALOG_PROFILES } from "../../config/profiles";
-import { estimateGenerationOutput, selectStyleColors } from "../colors";
+import { estimateAssortmentOutput, estimateGenerationOutput, selectStyleColors } from "../colors";
+import { planAssortment } from "../planner";
 
 const palette = CATALOG_PROFILES[0].config.colors;
 
@@ -35,5 +36,17 @@ describe("multi-color generation rules", () => {
       categorySizeCounts: { coats: 5 },
       fixedCategory: "coats",
     }).sizeRows).toBe(30);
+  });
+
+  it("estimates size rows using the category of every mix-planned product", () => {
+    const plan = planAssortment({
+      sequences: [1, 2],
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
+      config: CATALOG_PROFILES[0].config,
+      seed: "estimate-mix",
+    });
+    expect(estimateAssortmentOutput({ plan, colorVariantCount: 3, categorySizeCounts: { coats: 5, dresses: 5 } })).toEqual({
+      products: 2, styles: 6, images: 18, sizeRows: 30, tasks: 20, liteLlmCalls: 20,
+    });
   });
 });

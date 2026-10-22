@@ -40,14 +40,25 @@ confirmation showing the expected LiteLLM call count. The request enqueues work
 only; browser navigation and polling never perform model or S3 work.
 
 The generation wizard selects all-catalogue, department, or category scope,
-then parent product count and two or three color variants. Its review shows
+then two or three color variants. All Catalogue derives its base-product count
+from the catalogue mix and shows each configured quota; scoped requests retain
+an operator-selected parent-product count and distribute it across matching
+mix rows by their configured counts. Its review shows
 parent products, styles, image assets, size rows, and attributed LiteLLM calls.
-Size-row estimates use the category-specific size rule and the same deterministic
-category rotation and next product sequence used when the job is queued.
+Size-row estimates use the exact planned mix rows, category-specific size rule,
+and next product sequence used when the job is queued.
 Editors can add departments, categories with their first subcategory, and
 subcategories from catalog Settings. Taxonomy controls are add-only; viewers see
 the configured values without mutation controls. Taxonomy writes are validated,
 transactional, and audited.
+
+Settings also includes the editable Catalogue mix table. Each canonical row is
+`{ departmentKey, category, subcategory, productCount }`; row tuples are unique
+case-insensitively and product counts are positive integers. Adding a category
+or subcategory in a mix row updates the catalog-wide taxonomy in the same
+transaction. Removing a row affects future jobs only. Categories absent from
+the mix remain visible as taxonomy that needs an explicit row, and are never
+assigned to departments by a generated cross-product.
 
 The detail client polls persisted state every three seconds only while a job is
 queued or running. Product batches use `CATALOG_MAX_PRODUCTS_PER_JOB` (default
@@ -119,7 +130,8 @@ palette, materials, sizes, seasons, naming tone, visual direction, and default
 text/image models. Seeding creates taxonomy defaults for new catalogs. On
 existing catalogs it refreshes static profile settings while merging in the
 current normalized taxonomy, so departments, categories, and subcategories
-added through Settings survive a reseed. Keep the seed idempotent and update
+added through Settings survive a reseed. Existing mix rows are retained and
+profile defaults are added only for missing tuples. Keep the seed idempotent and update
 existing profiles by `slug`; never reset `nextProductSequence` during an update.
 
 Department configuration is now stored as `{ key, label, code, generationWeight }`
@@ -130,6 +142,21 @@ subcategory. Department codes are unique, uppercase alphanumeric values of up to
 six characters; taxonomy edits are additive. Product records and filters keep
 the stable department key; the admin table and product detail page display the
 configured department label.
+
+The catalogue mix, rather than independent department/category lists, controls
+generation combinations. ALL creates exactly the sum of row quotas. Department
+and category scopes filter to matching rows and distribute the requested count
+deterministically in proportion to each row's `productCount`. A scoped request
+with no matching rows is rejected before queueing. The complete mix is included
+in each queued task's frozen config snapshot, so later settings edits only affect
+new jobs.
+
+The `20261022150000_catalogue_mix_defaults` migration upgrades the four existing
+profile configs with explicit, reviewed rows when `assortmentPlan` is absent.
+It does not cross-join departments and categories or replace custom taxonomy.
+Legacy custom categories without a safe department assignment remain visible in
+Settings until an editor adds an explicit mix row; production does not depend on
+running the development seed for this upgrade.
 
 ## Identifier hierarchy
 

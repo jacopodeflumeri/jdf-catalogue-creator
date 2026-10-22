@@ -35,4 +35,18 @@ describe("catalog profile configuration", () => {
       { key: "MEN", label: "Men", code: "M", generationWeight: 0.42 },
     ]);
   });
+
+  it("accepts pre-mix configs and validates canonical mix rows", () => {
+    const legacy = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+    delete legacy.assortmentPlan;
+    expect(parseCatalogProfileConfig(legacy).assortmentPlan).toEqual([]);
+
+    const duplicate = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+    duplicate.assortmentPlan = [...CATALOG_PROFILES[0].config.assortmentPlan, CATALOG_PROFILES[0].config.assortmentPlan[0]];
+    expect(() => parseCatalogProfileConfig(duplicate)).toThrow("must be unique");
+
+    const invalidDepartment = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+    invalidDepartment.assortmentPlan = [{ departmentKey: "UNKNOWN", category: "coats", subcategory: "wool coats", productCount: 2 }];
+    expect(() => parseCatalogProfileConfig(invalidDepartment)).toThrow("not configured");
+  });
 });

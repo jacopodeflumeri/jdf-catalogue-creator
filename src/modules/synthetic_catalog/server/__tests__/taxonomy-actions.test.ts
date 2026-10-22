@@ -21,7 +21,7 @@ jest.mock("@/lib/prisma/client", () => ({
   },
 }));
 
-import { addCatalogTaxonomyAction } from "../admin-actions";
+import { addCatalogTaxonomyAction, saveCatalogMixAction } from "../admin-actions";
 
 describe("catalog taxonomy mutation action", () => {
   beforeEach(() => {
@@ -50,6 +50,29 @@ describe("catalog taxonomy mutation action", () => {
     mockRequireAdmin.mockRejectedValue(new Error("Editor access required"));
     await expect(addCatalogTaxonomyAction({ type: "CATEGORY", catalogId: 1, category: "Test", subcategory: "Initial" })).rejects.toThrow("Editor access required");
     expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockWriteAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("saves a validated mix and adds row taxonomy atomically with an audit event", async () => {
+    const row = { departmentKey: "WOMEN", category: "new apparel", subcategory: "longline tops", productCount: 7 };
+    const result = await saveCatalogMixAction({ catalogId: 1, rows: [...CATALOG_PROFILES[0].config.assortmentPlan, row] });
+    expect(result).toEqual({ ok: true });
+    expect(mockRequireAdmin).toHaveBeenCalledWith({ requireEditorAccess: true });
+    const saved = mockUpdate.mock.calls[0]![0] as { data: { config: { categories: string[]; subcategories: Record<string, string[]>; assortmentPlan: unknown[] } } };
+    expect(saved.data.config.categories).toContain("new apparel");
+    expect(saved.data.config.subcategories["new apparel"]).toEqual(["longline tops"]);
+    expect(saved.data.config.assortmentPlan).toContainEqual(row);
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "catalog_mix_updated", entityType: "synthetic_catalog" }));
+  });
+
+  it("rejects duplicate mix tuples and viewers cannot mutate them", async () => {
+    const row = CATALOG_PROFILES[0].config.assortmentPlan[0]!;
+    const duplicate = await saveCatalogMixAction({ catalogId: 1, rows: [row, { ...row, category: row.category.toUpperCase(), productCount: 2 }] });
+    expect(duplicate).toMatchObject({ ok: false });
+    expect(mockUpdate).not.toHaveBeenCalled();
+
+    mockRequireAdmin.mockRejectedValue(new Error("Editor access required"));
+    await expect(saveCatalogMixAction({ catalogId: 1, rows: [row] })).rejects.toThrow("Editor access required");
     expect(mockWriteAuditLog).not.toHaveBeenCalled();
   });
 });

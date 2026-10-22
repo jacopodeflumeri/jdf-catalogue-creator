@@ -36,5 +36,16 @@ export function mergeSeedCatalogConfig(
     );
   }
 
-  return { ...defaults, departments, categories, subcategories };
+  const mixRows = [...defaults.assortmentPlan];
+  for (const row of current.assortmentPlan) {
+    const index = mixRows.findIndex((item) =>
+      item.departmentKey.toLocaleLowerCase() === row.departmentKey.toLocaleLowerCase() &&
+      item.category.toLocaleLowerCase() === row.category.toLocaleLowerCase() &&
+      item.subcategory.toLocaleLowerCase() === row.subcategory.toLocaleLowerCase(),
+    );
+    if (index < 0) mixRows.push(row);
+    else mixRows[index] = row;
+  }
+
+  return { ...defaults, departments, categories, subcategories, assortmentPlan: mixRows };
 }

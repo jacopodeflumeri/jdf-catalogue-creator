@@ -14,6 +14,7 @@ export interface CatalogProfileConfig {
   departments: readonly { key: string; label: string; code: string; generationWeight: number }[];
   categories: readonly string[];
   subcategories: Readonly<Record<string, readonly string[]>>;
+  assortmentPlan: readonly { departmentKey: string; category: string; subcategory: string; productCount: number }[];
   materials: readonly string[];
   colors: readonly { name: string; code: string; hex: string }[];
   sizes: readonly string[];
@@ -55,6 +56,12 @@ export const CATALOG_PROFILES = [
         trousers: ["tailored trousers", "wide-leg trousers"],
         dresses: ["midi dresses", "shirt dresses"],
       },
+      assortmentPlan: [
+        { departmentKey: "WOMEN", category: "dresses", subcategory: "midi dresses", productCount: 5 },
+        { departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 5 },
+        { departmentKey: "MEN", category: "shirts", subcategory: "poplin shirts", productCount: 5 },
+        { departmentKey: "MEN", category: "trousers", subcategory: "tailored trousers", productCount: 5 },
+      ],
       materials: ["cashmere", "merino wool", "silk", "linen", "organic cotton"],
       colors: [
         { name: "Midnight Navy", code: "NAVY", hex: "#17223B" },
@@ -89,6 +96,12 @@ export const CATALOG_PROFILES = [
         outerwear: ["bomber jackets", "overshirts"],
         accessories: ["tote bags", "caps"],
       },
+      assortmentPlan: [
+        { departmentKey: "WOMEN", category: "dresses", subcategory: "mini dresses", productCount: 5 },
+        { departmentKey: "WOMEN", category: "denim", subcategory: "straight jeans", productCount: 5 },
+        { departmentKey: "MEN", category: "tops", subcategory: "t-shirts", productCount: 5 },
+        { departmentKey: "MEN", category: "outerwear", subcategory: "bomber jackets", productCount: 5 },
+      ],
       materials: ["cotton", "viscose", "polyester", "denim", "faux leather"],
       colors: [
         { name: "Jet Black", code: "BLACK", hex: "#111111" },
@@ -123,6 +136,12 @@ export const CATALOG_PROFILES = [
         outerwear: ["cashmere coats", "leather jackets"],
         "fine knitwear": ["cashmere pullovers", "silk-knit cardigans"],
       },
+      assortmentPlan: [
+        { departmentKey: "WOMEN", category: "eveningwear", subcategory: "column dresses", productCount: 5 },
+        { departmentKey: "WOMEN", category: "tailoring", subcategory: "single-breasted jackets", productCount: 5 },
+        { departmentKey: "MEN", category: "tailoring", subcategory: "tailored trousers", productCount: 5 },
+        { departmentKey: "MEN", category: "leather goods", subcategory: "small leather goods", productCount: 5 },
+      ],
       materials: ["silk satin", "double-face cashmere", "lambskin", "velvet", "fine wool"],
       colors: [
         { name: "Obsidian", code: "OBSID", hex: "#161518" },
@@ -157,6 +176,12 @@ export const CATALOG_PROFILES = [
         jackets: ["running jackets", "training layers"],
         "sports bras": ["medium-support bras", "high-support bras"],
       },
+      assortmentPlan: [
+        { departmentKey: "WOMEN", category: "sports bras", subcategory: "medium-support bras", productCount: 5 },
+        { departmentKey: "WOMEN", category: "leggings", subcategory: "full-length leggings", productCount: 5 },
+        { departmentKey: "MEN", category: "training tops", subcategory: "performance t-shirts", productCount: 5 },
+        { departmentKey: "MEN", category: "jackets", subcategory: "running jackets", productCount: 5 },
+      ],
       materials: ["recycled nylon", "performance jersey", "elastane blend", "mesh", "fleece"],
       colors: [
         { name: "Graphite", code: "GRAPH", hex: "#3C4146" },
@@ -187,6 +212,12 @@ const catalogProfileConfigSchema = z.object({
   departmentWeights: z.object({ women: z.number().min(0), men: z.number().min(0) }).optional(),
   categories: z.array(z.string().min(1)).min(1),
   subcategories: z.record(z.string(), z.array(z.string().min(1)).min(1)),
+  assortmentPlan: z.array(z.object({
+    departmentKey: z.string().trim().min(1).max(40),
+    category: z.string().trim().min(1).max(120),
+    subcategory: z.string().trim().min(1).max(120),
+    productCount: z.number().int().positive(),
+  })).min(1).optional(),
   materials: z.array(z.string().min(1)).min(1),
   colors: z
     .array(
@@ -208,6 +239,7 @@ export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig 
   const legacy = parsed.departmentWeights;
   const config = {
     ...parsed,
+    assortmentPlan: parsed.assortmentPlan ?? [],
     departments: parsed.departments ?? (legacy ? [
       { key: "WOMEN", label: "Women", code: "W", generationWeight: legacy.women },
       { key: "MEN", label: "Men", code: "M", generationWeight: legacy.men },
@@ -231,5 +263,23 @@ export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig 
       throw new Error(`Catalog category '${category}' has no subcategories`);
     }
   }
-  return config;
+  const normalizedAssortmentPlan: Array<{ departmentKey: string; category: string; subcategory: string; productCount: number }> = [];
+  const mixTuples = new Set<string>();
+  for (const row of config.assortmentPlan) {
+    const department = config.departments.find((item) => item.key.toLocaleLowerCase() === row.departmentKey.toLocaleLowerCase());
+    if (!department) {
+      throw new Error(`Catalog mix department '${row.departmentKey}' is not configured`);
+    }
+    const category = config.categories.find((item) => item.toLocaleLowerCase() === row.category.toLocaleLowerCase());
+    const subcategory = category && config.subcategories[category]?.find((item) => item.toLocaleLowerCase() === row.subcategory.toLocaleLowerCase());
+    if (!category || !subcategory) {
+      throw new Error(`Catalog mix row '${row.category} / ${row.subcategory}' is not in the catalog taxonomy`);
+    }
+    const normalizedRow = { ...row, departmentKey: department.key, category, subcategory };
+    const tuple = [normalizedRow.departmentKey, category, subcategory].map((value) => value.trim().toLocaleLowerCase()).join("\u0000");
+    if (mixTuples.has(tuple)) throw new Error("Catalog mix rows must be unique by department, category, and subcategory");
+    mixTuples.add(tuple);
+    normalizedAssortmentPlan.push(normalizedRow);
+  }
+  return { ...config, assortmentPlan: normalizedAssortmentPlan };
 }

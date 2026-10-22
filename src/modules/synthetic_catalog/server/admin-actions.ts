@@ -7,6 +7,7 @@ import { requireAdmin } from "@/modules/auth/server";
 import { sessionAuditActor, writeAuditLog } from "@/modules/audit";
 import {
   catalogSettingsInputSchema,
+  catalogMixInputSchema,
   catalogTaxonomyInputSchema,
   parseAddProductsInput,
   positiveIdSchema,
@@ -25,6 +26,7 @@ import {
   getCatalogProductDetail,
 } from "./admin-catalogs";
 import { getCatalogExportSummary } from "./catalog-export";
+import { getCatalogGenerationLimits } from "../config/generation-limits";
 import type { CatalogExportSummary } from "../export/demoware-csv";
 
 function adminId(session: Awaited<ReturnType<typeof requireAdmin>>): number | undefined {
@@ -77,7 +79,7 @@ export async function createCatalogGenerationJobAction(input: unknown): Promise<
       action: "generation_requested",
       entityType: "catalog_generation_job",
       entityId: job.id,
-      message: `Requested ${values.requestedProducts} products for ${catalog.name}`,
+      message: `Requested ${job.requestedProducts} products for ${catalog.name}`,
       data: { catalogId: catalog.id, scope: values.scope, colorVariantCount: values.colorVariantCount },
     });
     revalidateCatalog(catalog.slug);
@@ -217,6 +219,57 @@ export async function addCatalogTaxonomyAction(input: unknown): Promise<CatalogA
       data: { catalogId: catalog.existing.id, taxonomyType: values.type },
     });
     revalidateCatalog(catalog.existing.slug);
+    return { ok: true };
+  } catch (error) {
+    return errorResult(error);
+  }
+}
+
+export async function saveCatalogMixAction(input: unknown): Promise<CatalogActionResult> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const values = catalogMixInputSchema.parse(input);
+    const { maxProductsPerJob } = getCatalogGenerationLimits();
+    const totalProducts = values.rows.reduce((total, row) => total + row.productCount, 0);
+    if (!Number.isSafeInteger(totalProducts) || totalProducts > maxProductsPerJob) {
+      throw new Error(`Catalogue mix total must be between 1 and ${maxProductsPerJob} products`);
+    }
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${values.catalogId} FOR UPDATE`;
+      const catalog = await tx.syntheticCatalog.findUniqueOrThrow({ where: { id: values.catalogId } });
+      const config = parseCatalogProfileConfig(catalog.config);
+      const categories = [...config.categories];
+      const subcategories: Record<string, string[]> = Object.fromEntries(Object.entries(config.subcategories).map(([key, value]) => [key, [...value]]));
+      for (const row of values.rows) {
+        let category = categories.find((item) => item.toLocaleLowerCase() === row.category.toLocaleLowerCase());
+        if (!category) {
+          category = row.category;
+          categories.push(category);
+          subcategories[category] = [];
+        }
+        const existingSubcategories = subcategories[category] ?? [];
+        if (!existingSubcategories.some((item) => item.toLocaleLowerCase() === row.subcategory.toLocaleLowerCase())) {
+          subcategories[category] = [...existingSubcategories, row.subcategory];
+        }
+      }
+      const updatedConfig = parseCatalogProfileConfig({
+        ...config,
+        categories,
+        subcategories,
+        assortmentPlan: values.rows,
+      });
+      await tx.syntheticCatalog.update({ where: { id: catalog.id }, data: { config: JSON.parse(JSON.stringify(updatedConfig)) as Prisma.InputJsonValue } });
+      return { catalog, previousRowCount: config.assortmentPlan.length, nextRowCount: updatedConfig.assortmentPlan.length };
+    });
+    await writeAuditLog({
+      ...sessionAuditActor(session),
+      action: "catalog_mix_updated",
+      entityType: "synthetic_catalog",
+      entityId: result.catalog.id,
+      message: `Updated the catalogue mix for ${result.catalog.name}`,
+      data: { catalogId: result.catalog.id, previousRowCount: result.previousRowCount, nextRowCount: result.nextRowCount },
+    });
+    revalidateCatalog(result.catalog.slug);
     return { ok: true };
   } catch (error) {
     return errorResult(error);

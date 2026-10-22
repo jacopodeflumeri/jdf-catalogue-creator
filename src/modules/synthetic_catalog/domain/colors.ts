@@ -1,5 +1,6 @@
 import type { CatalogProfileConfig } from "../config/profiles";
 import { seededShuffle } from "./random";
+import type { PlannedProduct } from "./planner";
 
 export interface CatalogColor { name: string; code: string; hex: string }
 
@@ -42,6 +43,20 @@ export function estimateGenerationOutput(input: {
     tasks: input.products + styles * 3,
     liteLlmCalls: input.products + styles * 3,
   };
+}
+
+export function estimateAssortmentOutput(input: {
+  plan: readonly PlannedProduct[];
+  colorVariantCount: number;
+  categorySizeCounts: Readonly<Record<string, number>>;
+}) {
+  const products = input.plan.length;
+  const styles = products * input.colorVariantCount;
+  const images = styles * 3;
+  const sizeRows = input.plan.reduce((total, product) =>
+    total + input.colorVariantCount * (input.categorySizeCounts[product.category] ?? 0), 0,
+  );
+  return { products, styles, images, sizeRows, tasks: products + images, liteLlmCalls: products + images };
 }
 
 export function snapshotGenerationSettings(config: CatalogProfileConfig): CatalogProfileConfig {

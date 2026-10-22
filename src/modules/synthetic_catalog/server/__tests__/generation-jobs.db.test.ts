@@ -44,6 +44,28 @@ describe("catalog generation jobs", () => {
   beforeEach(() => truncateAllTables());
   afterAll(() => disconnectPrisma());
 
+  it("derives ALL product totals from the mix and freezes the queued mix snapshot", async () => {
+    const catalog = await createTestCatalog();
+    const job = await createGenerationJob({ catalogId: catalog.id, scope: { type: "ALL" }, colorVariantCount: 2, seed: "all-catalogue-mix" });
+    const expectedTotal = CATALOG_PROFILES[0]!.config.assortmentPlan.reduce((total, row) => total + row.productCount, 0);
+    expect(job.requestedProducts).toBe(expectedTotal);
+    expect(job.tasks).toHaveLength(expectedTotal);
+
+    const changedConfig = {
+      ...CATALOG_PROFILES[0]!.config,
+      assortmentPlan: CATALOG_PROFILES[0]!.config.assortmentPlan.map((row, index) => index === 0 ? { ...row, productCount: row.productCount + 9 } : row),
+    };
+    await prisma.syntheticCatalog.update({ where: { id: catalog.id }, data: { config: json(changedConfig) } });
+    const tasks = await prisma.catalogGenerationTask.findMany({ where: { jobId: job.id } });
+    const queuedPlans = tasks.map((task) => {
+      const payload = task.payload as { plan: { department: string; category: string; subcategory: string }; configSnapshot: { assortmentPlan: typeof changedConfig.assortmentPlan } };
+      return { row: payload.plan, mix: payload.configSnapshot.assortmentPlan };
+    });
+    expect(queuedPlans.every(({ mix }) => mix.reduce((total, row) => total + row.productCount, 0) === expectedTotal)).toBe(true);
+    expect(queuedPlans.map(({ row }) => row)).toEqual(expect.arrayContaining(CATALOG_PROFILES[0]!.config.assortmentPlan.map((row) => expect.objectContaining(row))));
+    expect(tasks).toHaveLength(expectedTotal);
+  });
+
   it("appends mocked products from concurrent reservations without ID collisions", async () => {
     const catalog = await createTestCatalog();
     const [firstJob, secondJob] = await Promise.all([
@@ -88,6 +110,7 @@ describe("catalog generation jobs", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 3,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
       textModel: "openai/gpt-4o-mini",
       seed: "resumable-job",
     });
@@ -123,7 +146,7 @@ describe("catalog generation jobs", () => {
 
   it("persists multiple distinct color styles with independent sizes and three image tasks each", async () => {
     const catalog = await createTestCatalog();
-    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, colorVariantCount: 3, seed: "three-colors" });
+    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" }, colorVariantCount: 3, seed: "three-colors" });
     const changedConfig = { ...CATALOG_PROFILES[0].config, colors: [CATALOG_PROFILES[0].config.colors[0]!] };
     await prisma.syntheticCatalog.update({
       where: { id: catalog.id },
@@ -164,6 +187,7 @@ describe("catalog generation jobs", () => {
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 2,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
       colorVariantCount: 2,
       seed: "retry-job",
     });

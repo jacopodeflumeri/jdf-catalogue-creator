@@ -15,6 +15,9 @@ describe("catalog seed taxonomy merge", () => {
       coats: [...profile.config.subcategories.coats!, "raincoats"],
       babywear: ["onesies"],
     };
+    existing.assortmentPlan = [...profile.config.assortmentPlan, {
+      departmentKey: "CHILDREN_BABY", category: "babywear", subcategory: "onesies", productCount: 4,
+    }];
 
     const reseeded = mergeSeedCatalogConfig(profile.config, existing);
 
@@ -22,6 +25,10 @@ describe("catalog seed taxonomy merge", () => {
     expect(reseeded.categories).toContain("babywear");
     expect(reseeded.subcategories.coats).toContain("raincoats");
     expect(reseeded.subcategories.babywear).toEqual(["onesies"]);
+    expect(reseeded.assortmentPlan).toContainEqual({
+      departmentKey: "CHILDREN_BABY", category: "babywear", subcategory: "onesies", productCount: 4,
+    });
     expect(reseeded.materials).toEqual(profile.config.materials);
+    expect(mergeSeedCatalogConfig(profile.config, reseeded)).toEqual(reseeded);
   });
 });
