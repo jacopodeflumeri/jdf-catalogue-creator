@@ -19,6 +19,7 @@ import {
 import { reserveProductSequenceRange } from "./sequence-reservation";
 import { CATALOG_IMAGE_ROLES } from "../providers/image-generator";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
+import { selectStyleColors, snapshotGenerationSettings } from "../domain/colors";
 
 export interface CreateGenerationJobInput {
   catalogId: number;
@@ -54,6 +55,8 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   });
   const config = parseCatalogProfileConfig(catalog.config);
   if (colorVariantCount > config.colors.length) throw new Error("Catalog palette has fewer colors than requested variants");
+  if (scope.type === "DEPARTMENT" && !config.departments.some((department) => department.key === scope.departmentKey)) throw new Error("Selected department is not configured for this catalog");
+  if (scope.type === "CATEGORY" && !config.categories.includes(scope.category)) throw new Error("Selected category is not configured for this catalog");
   const existingProducts = await prisma.syntheticProduct.count({
     where: { catalogId: catalog.id },
   });
@@ -92,7 +95,11 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
         create: plan.map((item) => ({
           taskType: "GENERATE_PRODUCT",
           dedupeKey: `product:${item.sequence}`,
-          payload: asInputJson(item),
+          payload: asInputJson({
+            plan: { ...item, departmentCode: config.departments.find((department) => department.key === item.department)!.code },
+            colorVariantCount,
+            configSnapshot: snapshotGenerationSettings(config),
+          }),
         })),
       },
     },
@@ -105,27 +112,26 @@ async function persistGeneratedProduct(input: {
   taskId: number;
   plan: PlannedProduct;
   spec: GeneratedProductSpec;
+  colorVariantCount: 1 | 2 | 3;
+  configSnapshot: ReturnType<typeof snapshotGenerationSettings>;
 }) {
   const job = await prisma.catalogGenerationJob.findUniqueOrThrow({
     where: { id: input.jobId },
     include: { catalog: true },
   });
-  const config = parseCatalogProfileConfig(job.catalog.config);
+  const config = input.configSnapshot;
   const spec = validateGeneratedProductSpec(input.spec, config);
-  const departmentCode = config.departments.find((department) => department.key === input.plan.department)?.code;
+  const departmentCode = (input.plan as PlannedProduct & { departmentCode?: string }).departmentCode ?? config.departments.find((department) => department.key === input.plan.department)?.code;
   if (!departmentCode) throw new Error(`Department '${input.plan.department}' is no longer configured`);
   const externalId = formatProductId({
     catalogPrefix: job.catalog.externalPrefix,
     department: departmentCode,
     sequence: input.plan.sequence,
   });
-  const styleExternalId = formatStyleId(externalId, spec.colorCode);
   const price = generatePrice(config, input.plan.seed);
-  const inventory = generateInventory(config, input.plan.category, input.plan.seed);
-  const variantIds = inventory.map((item) => formatVariantId(styleExternalId, item.size));
-  if (new Set(variantIds).size !== variantIds.length) {
-    throw new Error(`Catalog sizes create colliding variant IDs for style ${styleExternalId}`);
-  }
+  const selectedColors = input.colorVariantCount === 1
+    ? [config.colors.find((color) => color.code === spec.colorCode)!]
+    : selectStyleColors({ palette: config.colors, primaryColorCode: spec.colorCode, count: input.colorVariantCount, seed: input.plan.seed });
 
   return prisma.$transaction(async (tx) => {
     const product = await tx.syntheticProduct.upsert({
@@ -171,31 +177,23 @@ async function persistGeneratedProduct(input: {
       },
     });
 
-    const style = await tx.syntheticStyle.upsert({
-      where: { externalId: styleExternalId },
-      update: {
-        productId: product.id,
-        colorName: spec.colorName,
-        colorCode: spec.colorCode,
-        visualSpec: asInputJson(spec.design),
-        status: "GENERATING",
-      },
-      create: {
-        productId: product.id,
-        externalId: styleExternalId,
-        colorName: spec.colorName,
-        colorCode: spec.colorCode,
-        visualSpec: asInputJson(spec.design),
-        status: "GENERATING",
-      },
-    });
-
-    for (const role of CATALOG_IMAGE_ROLES) {
+    for (const color of selectedColors) {
+      const styleExternalId = formatStyleId(externalId, color.code);
+      const inventory = generateInventory(config, input.plan.category, `${input.plan.seed}:color:${color.code}`);
+      const variantIds = inventory.map((item) => formatVariantId(styleExternalId, item.size));
+      if (new Set(variantIds).size !== variantIds.length) throw new Error(`Catalog sizes create colliding variant IDs for style ${styleExternalId}`);
+      const style = await tx.syntheticStyle.upsert({
+        where: { externalId: styleExternalId },
+        update: { productId: product.id, colorName: color.name, colorCode: color.code, visualSpec: asInputJson(spec.design), status: "GENERATING" },
+        create: { productId: product.id, externalId: styleExternalId, colorName: color.name, colorCode: color.code, visualSpec: asInputJson(spec.design), status: "GENERATING" },
+      });
+      for (const role of CATALOG_IMAGE_ROLES) {
       const imageAsset = await tx.syntheticImageAsset.upsert({
         where: { styleId_role: { styleId: style.id, role } },
         update: {},
         create: { styleId: style.id, role, status: "QUEUED" },
       });
+      const frozenCatalog = { brandName: job.catalog.brandName, segment: job.catalog.segment, visualDirection: config.visualDirection };
       await tx.catalogGenerationTask.upsert({
         where: {
           jobId_dedupeKey: {
@@ -207,6 +205,7 @@ async function persistGeneratedProduct(input: {
           productId: product.id,
           styleId: style.id,
           imageAssetId: imageAsset.id,
+          payload: asInputJson({ catalogSnapshot: frozenCatalog }),
         },
         create: {
           jobId: job.id,
@@ -215,11 +214,11 @@ async function persistGeneratedProduct(input: {
           imageAssetId: imageAsset.id,
           taskType: "GENERATE_IMAGE",
           dedupeKey: `image:${style.externalId}:${role}`,
+          payload: asInputJson({ catalogSnapshot: frozenCatalog }),
         },
       });
-    }
-
-    for (let index = 0; index < inventory.length; index += 1) {
+      }
+      for (let index = 0; index < inventory.length; index += 1) {
       const item = inventory[index]!;
       const variantExternalId = variantIds[index]!;
       await tx.syntheticVariant.upsert({
@@ -240,6 +239,7 @@ async function persistGeneratedProduct(input: {
           availability: item.availability,
         },
       });
+    }
     }
 
     await tx.catalogGenerationTask.update({
@@ -339,8 +339,20 @@ export async function processProductGenerationTask(
   if (task.job.status === "CANCELLED") {
     throw new Error(`Generation job ${task.jobId} is cancelled`);
   }
-  const config = parseCatalogProfileConfig(task.job.catalog.config);
-  const plan = plannedProductSchema.parse(task.payload);
+  const payload = task.payload && typeof task.payload === "object" && !Array.isArray(task.payload)
+    ? task.payload as Record<string, unknown>
+    : {};
+  const rawPlan = "plan" in payload ? payload.plan : task.payload;
+  const plan = plannedProductSchema.parse(rawPlan) as PlannedProduct & { departmentCode?: string };
+  if (rawPlan && typeof rawPlan === "object" && !Array.isArray(rawPlan) && "departmentCode" in rawPlan && typeof rawPlan.departmentCode === "string") {
+    plan.departmentCode = rawPlan.departmentCode;
+  }
+  const config = "configSnapshot" in payload
+    ? parseCatalogProfileConfig(payload.configSnapshot)
+    : parseCatalogProfileConfig(task.job.catalog.config);
+  const colorVariantCount: 1 | 2 | 3 = payload.colorVariantCount === 2 || payload.colorVariantCount === 3
+    ? payload.colorVariantCount
+    : 1;
   const spec = await provider.generateProduct({
     model: task.job.textModel,
     catalog: {
@@ -351,7 +363,7 @@ export async function processProductGenerationTask(
     },
     plan,
   });
-  return persistGeneratedProduct({ jobId: task.jobId, taskId: task.id, plan, spec });
+  return persistGeneratedProduct({ jobId: task.jobId, taskId: task.id, plan, spec, colorVariantCount, configSnapshot: snapshotGenerationSettings(config) });
 }
 
 export async function runGenerationJob(

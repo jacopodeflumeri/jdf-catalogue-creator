@@ -121,11 +121,34 @@ describe("catalog generation jobs", () => {
     expect(new Set(receivedModels)).toEqual(new Set(["openai/gpt-4o-mini"]));
   });
 
+  it("persists multiple distinct color styles with independent sizes and three image tasks each", async () => {
+    const catalog = await createTestCatalog();
+    const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, colorVariantCount: 3, seed: "three-colors" });
+    const changedConfig = { ...CATALOG_PROFILES[0].config, colors: [CATALOG_PROFILES[0].config.colors[0]!] };
+    await prisma.syntheticCatalog.update({ where: { id: catalog.id }, data: { config: json(changedConfig) } });
+    await runGenerationJob(job.id, new MockProductGenerator());
+    const product = await prisma.syntheticProduct.findFirstOrThrow({
+      where: { catalogId: catalog.id },
+      include: { styles: { include: { variants: true, images: true, tasks: true } } },
+    });
+    expect(product.styles).toHaveLength(3);
+    expect(new Set(product.styles.map((style) => style.colorCode)).size).toBe(3);
+    expect(new Set(product.styles.map((style) => style.externalId)).size).toBe(3);
+    for (const style of product.styles) {
+      expect(style.variants.map((variant) => variant.size)).toEqual(CATALOG_PROFILES[0].config.sizes);
+      expect(new Set(style.variants.map((variant) => variant.externalId)).size).toBe(style.variants.length);
+      expect(style.images).toHaveLength(3);
+      expect(style.tasks).toHaveLength(3);
+    }
+    expect(await prisma.catalogGenerationTask.count({ where: { jobId: job.id, taskType: "GENERATE_PRODUCT" } })).toBe(1);
+  });
+
   it("can requeue a bounded provider failure and finish on retry", async () => {
     const catalog = await createTestCatalog();
     const job = await createGenerationJob({
       catalogId: catalog.id,
       requestedProducts: 2,
+      colorVariantCount: 2,
       seed: "retry-job",
     });
     const baseProvider = new MockProductGenerator();
@@ -158,5 +181,8 @@ describe("catalog generation jobs", () => {
     expect(completed.completedProducts).toBe(2);
     expect(completed.failedProducts).toBe(0);
     expect(await prisma.syntheticProduct.count({ where: { catalogId: catalog.id } })).toBe(2);
+    const generated = await prisma.syntheticProduct.findMany({ where: { catalogId: catalog.id }, include: { styles: true } });
+    expect(generated.every((product) => product.styles.length === 2)).toBe(true);
+    expect(new Set(generated.flatMap((product) => product.styles.map((style) => style.externalId))).size).toBe(4);
   });
 });

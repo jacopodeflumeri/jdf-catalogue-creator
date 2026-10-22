@@ -158,6 +158,15 @@ processes only unfinished tasks. Provider failures become `FAILED` tasks and a
 retry boundary: it requeues failed tasks and resets their bounded attempt budget.
 Automatic worker retries remain bounded by `maxAttempts`.
 
+New requests carry a frozen scope, color count, and taxonomy/palette snapshot in
+their persisted product tasks. Each parent product uses one text generation
+call; the generated primary color is followed by deterministic, seed-selected
+distinct palette colors. Each style gets its own normal size assortment,
+color-seeded inventory, and three image tasks. For `P` products and `C` colors,
+the expected attributed LiteLLM calls are `P + (P × C × 3)`. Failed work can be
+resumed without rebuilding completed styles or images, and persisted image task
+context protects queued work from later catalog settings edits.
+
 The Phase 2 application service remains a narrow product-generation test seam.
 The production workflow is owned by the Phase 5 worker described below.
 

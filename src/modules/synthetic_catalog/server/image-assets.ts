@@ -49,6 +49,7 @@ export async function generateStyleImage(input: {
   generator: CatalogImageGenerator;
   storage: GeneratedAssetStorage;
   regeneration?: boolean;
+  catalogSnapshot?: { brandName: string; segment: string; visualDirection: string };
 }) {
   await ensureStyleImageAssets(input.styleId);
   const asset = await prisma.syntheticImageAsset.findUniqueOrThrow({
@@ -61,14 +62,14 @@ export async function generateStyleImage(input: {
       },
     },
   });
-  const profile = parseCatalogProfileConfig(asset.style.product.catalog.config);
+  const profile = input.catalogSnapshot ? null : parseCatalogProfileConfig(asset.style.product.catalog.config);
   const reference = await getReference(input.styleId, input.role, input.storage);
   const prompt = buildCatalogImagePrompt({
     role: input.role,
     catalog: {
-      segment: asset.style.product.catalog.segment,
-      brandName: asset.style.product.catalog.brandName,
-      visualDirection: profile.visualDirection,
+      segment: input.catalogSnapshot?.segment ?? asset.style.product.catalog.segment,
+      brandName: input.catalogSnapshot?.brandName ?? asset.style.product.catalog.brandName,
+      visualDirection: input.catalogSnapshot?.visualDirection ?? profile!.visualDirection,
     },
     product: {
       name: asset.style.product.name,

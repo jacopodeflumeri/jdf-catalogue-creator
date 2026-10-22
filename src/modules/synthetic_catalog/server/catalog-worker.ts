@@ -258,6 +258,9 @@ export class CatalogGenerationWorker {
           !Array.isArray(task.payload) &&
           "regeneration" in task.payload &&
           task.payload.regeneration === true;
+        const catalogSnapshot = task.payload != null && typeof task.payload === "object" && !Array.isArray(task.payload) && "catalogSnapshot" in task.payload
+          ? task.payload.catalogSnapshot as { brandName: string; segment: string; visualDirection: string }
+          : undefined;
         if (asset.status !== "READY" || regeneration) {
           await generateStyleImage({
             styleId: task.styleId,
@@ -266,6 +269,7 @@ export class CatalogGenerationWorker {
             generator: this.dependencies.imageGenerator,
             storage: this.dependencies.storage,
             regeneration,
+            catalogSnapshot,
           });
         }
       } else {

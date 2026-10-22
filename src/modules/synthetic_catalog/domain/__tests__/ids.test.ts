@@ -23,6 +23,12 @@ describe("synthetic catalog identifiers", () => {
     expect(formatSku(styleId, "One Size")).toBe(variantId);
   });
 
+  it("supports configured custom department codes without changing legacy Women IDs", () => {
+    expect(formatProductId({ catalogPrefix: "PRE", department: "KID7", sequence: 7 })).toBe("PRE-KID7-000007");
+    expect(formatProductId({ catalogPrefix: "PRE", department: "W", sequence: 7 })).toBe("PRE-W-000007");
+    expect(() => formatProductId({ catalogPrefix: "PRE", department: "TOO_LONG", sequence: 7 })).toThrow("1 to 6");
+  });
+
   it("normalizes controlled catalog codes deterministically", () => {
     expect(normalizeCatalogCode("  blue / green  ", "Color")).toBe("BLUE_GREEN");
   });
