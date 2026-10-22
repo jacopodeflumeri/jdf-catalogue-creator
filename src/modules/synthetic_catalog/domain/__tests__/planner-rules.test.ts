@@ -35,6 +35,22 @@ describe("assortment planner", () => {
     expect(plan.every((item) => item.department === "MEN")).toBe(true);
   });
 
+  it("plans one selected department across a complete deterministic category spread", () => {
+    const input = { sequences: [10, 11, 12, 13, 14], scope: { type: "DEPARTMENT" as const, departmentKey: "MEN" }, config, seed: "scope-department" };
+    const planned = planAssortment(input);
+    expect(planned.every((item) => item.department === "MEN")).toBe(true);
+    expect(planAssortment(input)).toEqual(planned);
+    expect(new Set(planned.map((item) => item.category)).size).toBeGreaterThan(1);
+  });
+
+  it("creates exactly the requested products in a selected category", () => {
+    const input = { sequences: [20, 21, 22, 23], scope: { type: "CATEGORY" as const, category: "coats" }, config, seed: "scope-category" };
+    const planned = planAssortment(input);
+    expect(planned).toHaveLength(4);
+    expect(planned.every((item) => item.category === "coats")).toBe(true);
+    expect(planAssortment(input)).toEqual(planned);
+  });
+
   it("rejects empty and duplicate sequence requests", () => {
     expect(() =>
       planAssortment({ sequences: [], departmentMode: "AUTO", config, seed: "empty" }),

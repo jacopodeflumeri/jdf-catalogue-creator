@@ -1,4 +1,4 @@
-import { CATALOG_PROFILES } from "../profiles";
+import { CATALOG_PROFILES, parseCatalogProfileConfig } from "../profiles";
 
 describe("catalog profile configuration", () => {
   it("defines exactly the four required profiles", () => {
@@ -24,5 +24,15 @@ describe("catalog profile configuration", () => {
       expect(profile.defaultTextModel).toMatch(/^openai\//);
       expect(profile.defaultImageModel).toMatch(/^openai\//);
     }
+  });
+
+  it("normalizes legacy department weights while preserving Women and Men IDs", () => {
+    const legacy = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+    legacy.departmentWeights = { women: 0.58, men: 0.42 };
+    delete legacy.departments;
+    expect(parseCatalogProfileConfig(legacy).departments).toEqual([
+      { key: "WOMEN", label: "Women", code: "W", generationWeight: 0.58 },
+      { key: "MEN", label: "Men", code: "M", generationWeight: 0.42 },
+    ]);
   });
 });

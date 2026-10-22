@@ -11,7 +11,7 @@ export interface CatalogProfileConfig {
   priceRangeEur: { min: number; max: number };
   saleProbability: number;
   stockRange: { min: number; max: number };
-  departmentWeights: { women: number; men: number };
+  departments: readonly { key: string; label: string; code: string; generationWeight: number }[];
   categories: readonly string[];
   subcategories: Readonly<Record<string, readonly string[]>>;
   materials: readonly string[];
@@ -46,7 +46,7 @@ export const CATALOG_PROFILES = [
       priceRangeEur: { min: 90, max: 420 },
       saleProbability: 0.18,
       stockRange: { min: 0, max: 45 },
-      departmentWeights: { women: 0.58, men: 0.42 },
+      departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 0.58 }, { key: "MEN", label: "Men", code: "M", generationWeight: 0.42 }],
       categories: ["coats", "knitwear", "shirts", "trousers", "dresses"],
       subcategories: {
         coats: ["wool coats", "trench coats"],
@@ -80,7 +80,7 @@ export const CATALOG_PROFILES = [
       priceRangeEur: { min: 12, max: 85 },
       saleProbability: 0.42,
       stockRange: { min: 0, max: 180 },
-      departmentWeights: { women: 0.64, men: 0.36 },
+      departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 0.64 }, { key: "MEN", label: "Men", code: "M", generationWeight: 0.36 }],
       categories: ["tops", "denim", "dresses", "outerwear", "accessories"],
       subcategories: {
         tops: ["t-shirts", "cropped tops"],
@@ -114,7 +114,7 @@ export const CATALOG_PROFILES = [
       priceRangeEur: { min: 480, max: 4200 },
       saleProbability: 0.06,
       stockRange: { min: 0, max: 12 },
-      departmentWeights: { women: 0.55, men: 0.45 },
+      departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 0.55 }, { key: "MEN", label: "Men", code: "M", generationWeight: 0.45 }],
       categories: ["tailoring", "eveningwear", "leather goods", "outerwear", "fine knitwear"],
       subcategories: {
         tailoring: ["single-breasted jackets", "tailored trousers"],
@@ -148,7 +148,7 @@ export const CATALOG_PROFILES = [
       priceRangeEur: { min: 28, max: 190 },
       saleProbability: 0.22,
       stockRange: { min: 0, max: 95 },
-      departmentWeights: { women: 0.52, men: 0.48 },
+      departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 0.52 }, { key: "MEN", label: "Men", code: "M", generationWeight: 0.48 }],
       categories: ["training tops", "leggings", "shorts", "jackets", "sports bras"],
       subcategories: {
         "training tops": ["performance t-shirts", "seamless tanks"],
@@ -172,11 +172,19 @@ export const CATALOG_PROFILES = [
   },
 ] as const satisfies readonly CatalogProfileSeed[];
 
+const departmentSchema = z.object({
+  key: z.string().regex(/^[A-Z][A-Z0-9_]{0,39}$/),
+  label: z.string().trim().min(1).max(80),
+  code: z.string().regex(/^[A-Z0-9]{1,6}$/),
+  generationWeight: z.number().positive(),
+});
+
 const catalogProfileConfigSchema = z.object({
   priceRangeEur: z.object({ min: z.number().positive(), max: z.number().positive() }),
   saleProbability: z.number().min(0).max(1),
   stockRange: z.object({ min: z.number().int().min(0), max: z.number().int().min(0) }),
-  departmentWeights: z.object({ women: z.number().min(0), men: z.number().min(0) }),
+  departments: z.array(departmentSchema).min(1).optional(),
+  departmentWeights: z.object({ women: z.number().min(0), men: z.number().min(0) }).optional(),
   categories: z.array(z.string().min(1)).min(1),
   subcategories: z.record(z.string(), z.array(z.string().min(1)).min(1)),
   materials: z.array(z.string().min(1)).min(1),
@@ -196,16 +204,28 @@ const catalogProfileConfigSchema = z.object({
 });
 
 export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig {
-  const config = catalogProfileConfigSchema.parse(value);
+  const parsed = catalogProfileConfigSchema.parse(value);
+  const legacy = parsed.departmentWeights;
+  const config = {
+    ...parsed,
+    departments: parsed.departments ?? (legacy ? [
+      { key: "WOMEN", label: "Women", code: "W", generationWeight: legacy.women },
+      { key: "MEN", label: "Men", code: "M", generationWeight: legacy.men },
+    ].filter((d) => d.generationWeight > 0) : []),
+  } as CatalogProfileConfig;
   if (config.priceRangeEur.max < config.priceRangeEur.min) {
     throw new Error("Catalog price range maximum must be greater than or equal to its minimum");
   }
   if (config.stockRange.max < config.stockRange.min) {
     throw new Error("Catalog stock range maximum must be greater than or equal to its minimum");
   }
-  if (config.departmentWeights.women + config.departmentWeights.men <= 0) {
+  if (config.departments.reduce((sum, department) => sum + department.generationWeight, 0) <= 0) {
     throw new Error("Catalog department weights must have a positive total");
   }
+  const keys = config.departments.map((d) => d.key.toLocaleUpperCase());
+  const codes = config.departments.map((d) => d.code.toLocaleUpperCase());
+  if (new Set(keys).size !== keys.length) throw new Error("Catalog department keys must be unique");
+  if (new Set(codes).size !== codes.length) throw new Error("Catalog department codes must be unique");
   for (const category of config.categories) {
     if (!config.subcategories[category]?.length) {
       throw new Error(`Catalog category '${category}' has no subcategories`);

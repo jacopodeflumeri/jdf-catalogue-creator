@@ -7,6 +7,7 @@ import {
   planAssortment,
   plannedProductSchema,
   type DepartmentMode,
+  type GenerationScope,
   type PlannedProduct,
 } from "../domain/planner";
 import { generateInventory, generatePrice } from "../domain/rules";
@@ -23,6 +24,8 @@ export interface CreateGenerationJobInput {
   catalogId: number;
   requestedProducts: number;
   departmentMode?: DepartmentMode;
+  scope?: GenerationScope;
+  colorVariantCount?: 1 | 2 | 3;
   textModel?: string;
   imageModel?: string;
   createdByMappTeamId?: number;
@@ -43,10 +46,14 @@ function validateRequestedProducts(count: number): void {
 export async function createGenerationJob(input: CreateGenerationJobInput) {
   validateRequestedProducts(input.requestedProducts);
   const departmentMode = input.departmentMode ?? "AUTO";
+  const scope = input.scope ?? (departmentMode === "AUTO" ? { type: "ALL" as const } : { type: "DEPARTMENT" as const, departmentKey: departmentMode });
+  const colorVariantCount = input.colorVariantCount ?? 1;
+  if (![1, 2, 3].includes(colorVariantCount)) throw new Error("Color variants must be 1, 2, or 3");
   const catalog = await prisma.syntheticCatalog.findUniqueOrThrow({
     where: { id: input.catalogId },
   });
   const config = parseCatalogProfileConfig(catalog.config);
+  if (colorVariantCount > config.colors.length) throw new Error("Catalog palette has fewer colors than requested variants");
   const existingProducts = await prisma.syntheticProduct.count({
     where: { catalogId: catalog.id },
   });
@@ -59,10 +66,10 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   );
   const seed =
     input.seed ??
-    `${catalog.slug}:${reservation.first}:${input.requestedProducts}:${departmentMode}`;
+    `${catalog.slug}:${reservation.first}:${input.requestedProducts}:${JSON.stringify(scope)}:${colorVariantCount}`;
   const plan = planAssortment({
     sequences: reservation.sequences,
-    departmentMode,
+    scope,
     config,
     seed,
   });
@@ -75,6 +82,9 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
         existingProducts === 0 && reservation.first === 1 ? "INITIAL" : "ADD_PRODUCTS",
       requestedProducts: input.requestedProducts,
       departmentMode,
+      scopeType: scope.type,
+      scopeValue: scope.type === "DEPARTMENT" ? scope.departmentKey : scope.type === "CATEGORY" ? scope.category : null,
+      colorVariantCount,
       textModel: input.textModel ?? catalog.defaultTextModel,
       imageModel: input.imageModel ?? catalog.defaultImageModel,
       stage: "PRODUCTS",
@@ -102,7 +112,8 @@ async function persistGeneratedProduct(input: {
   });
   const config = parseCatalogProfileConfig(job.catalog.config);
   const spec = validateGeneratedProductSpec(input.spec, config);
-  const departmentCode = input.plan.department === "WOMEN" ? "W" : "M";
+  const departmentCode = config.departments.find((department) => department.key === input.plan.department)?.code;
+  if (!departmentCode) throw new Error(`Department '${input.plan.department}' is no longer configured`);
   const externalId = formatProductId({
     catalogPrefix: job.catalog.externalPrefix,
     department: departmentCode,

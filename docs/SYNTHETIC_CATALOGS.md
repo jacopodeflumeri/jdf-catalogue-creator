@@ -104,6 +104,13 @@ palette, materials, sizes, seasons, naming tone, visual direction, and default
 text/image models. Keep the seed idempotent and update existing profiles by
 `slug`; never reset `nextProductSequence` during an update.
 
+Department configuration is now stored as `{ key, label, code, generationWeight }`
+entries. Existing JSON with `departmentWeights` is normalized at read time to
+Women (`W`) and Men (`M`), preserving existing IDs and historical products.
+Categories remain catalog-wide and each category must have at least one
+subcategory. Department codes are unique, uppercase alphanumeric values of up to
+six characters; taxonomy edits are additive.
+
 ## Identifier hierarchy
 
 Identifiers are deterministic and globally unique:

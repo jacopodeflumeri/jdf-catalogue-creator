@@ -1,7 +1,7 @@
-export type CatalogDepartmentCode = "W" | "M";
+export type CatalogDepartmentCode = string;
 
 const PRODUCT_PREFIX_PATTERN = /^[A-Z]{3}$/;
-const PRODUCT_ID_PATTERN = /^[A-Z]{3}-[WM]-\d{6,}$/;
+const PRODUCT_ID_PATTERN = /^[A-Z]{3}-[A-Z0-9]{1,6}-\d{6,}$/;
 
 function assertNonEmptyCode(value: string, label: string): void {
   if (!value) {
@@ -29,8 +29,8 @@ export function formatProductId(input: {
   if (!PRODUCT_PREFIX_PATTERN.test(prefix)) {
     throw new Error("Catalog prefix must contain exactly three uppercase letters");
   }
-  if (input.department !== "W" && input.department !== "M") {
-    throw new Error("Department code must be W or M");
+  if (!/^[A-Z0-9]{1,6}$/.test(input.department)) {
+    throw new Error("Department code must contain 1 to 6 uppercase letters or digits");
   }
   if (!Number.isSafeInteger(input.sequence) || input.sequence < 1) {
     throw new Error("Product sequence must be a positive safe integer");

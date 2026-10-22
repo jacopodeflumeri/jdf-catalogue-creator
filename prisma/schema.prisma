@@ -434,7 +434,7 @@ model SyntheticProduct {
   externalId      String              @unique @map("external_id")
   name            String
   description     String
-  department      CatalogDepartment
+  department      String
   category        String
   subcategory     String
   material        String
@@ -538,6 +538,9 @@ model CatalogGenerationJob {
   jobType             CatalogJobType        @map("job_type")
   requestedProducts   Int                   @map("requested_products")
   departmentMode      CatalogDepartmentMode @default(AUTO) @map("department_mode")
+  scopeType           String                @default("LEGACY") @map("scope_type")
+  scopeValue          String?               @map("scope_value")
+  colorVariantCount   Int                   @default(1) @map("color_variant_count")
   textModel           String                @map("text_model")
   imageModel          String                @map("image_model")
   status              CatalogJobStatus      @default(QUEUED)

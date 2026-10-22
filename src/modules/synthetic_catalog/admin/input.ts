@@ -4,12 +4,20 @@ import {
   DEFAULT_MAX_PRODUCTS_PER_JOB,
   getCatalogGenerationLimits,
 } from "../config/generation-limits";
+import type { GenerationScope } from "../domain/planner";
+
+export const generationScopeSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("ALL") }),
+  z.object({ type: z.literal("DEPARTMENT"), departmentKey: z.string().trim().min(1).max(40) }),
+  z.object({ type: z.literal("CATEGORY"), category: z.string().trim().min(1).max(120) }),
+]);
 
 export function createAddProductsInputSchema(maxProductsPerJob: number) {
   return z.object({
     catalogId: z.number().int().positive(),
     requestedProducts: z.number().int().min(1).max(maxProductsPerJob),
-    departmentMode: z.enum(["AUTO", "WOMEN", "MEN"]),
+    scope: generationScopeSchema,
+    colorVariantCount: z.union([z.literal(2), z.literal(3)]).default(2),
   });
 }
 
@@ -19,6 +27,8 @@ export function parseAddProductsInput(input: unknown) {
   const { maxProductsPerJob } = getCatalogGenerationLimits();
   return createAddProductsInputSchema(maxProductsPerJob).parse(input);
 }
+
+export type ParsedGenerationScope = GenerationScope;
 
 export const catalogSettingsInputSchema = z.object({
   catalogId: z.number().int().positive(),
