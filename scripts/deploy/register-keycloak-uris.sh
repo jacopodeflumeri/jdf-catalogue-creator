@@ -117,7 +117,7 @@ if [ -z "${APP_HOST:-}" ]; then
     NEXTAUTH_URL=$(aws ecs describe-task-definition \
         --task-definition "${TASK_DEF}" \
         --region "${AWS_REGION}" --profile "${AWS_PROFILE}" \
-        --query 'taskDefinition.containerDefinitions[0].environment[?name==`NEXTAUTH_URL`].value | [0]' \
+        --query 'taskDefinition.containerDefinitions[?name==`App`] | [0].environment[?name==`NEXTAUTH_URL`] | [0].value' \
         --output text)
     if [ -z "${NEXTAUTH_URL}" ] || [ "${NEXTAUTH_URL}" = "None" ]; then
         echo "ERROR: NEXTAUTH_URL is not set on the running task definition." >&2

@@ -124,9 +124,10 @@ else
     # -----------------------------------------------------------------------
     # OPT-IN model: register a new immutable task-def revision.
     #
-    # Read the task-definition the service is currently running and rewrite ONLY
-    # the container image. Strip the read-only fields the ECS API rejects on
-    # register-task-definition. register-task-definition requires iam:PassRole on
+    # Read the task definition the service is currently running and rewrite only
+    # the App and CatalogWorker images. They share one release image, but ECS
+    # does not guarantee container array order. Strip the read-only fields that
+    # register-task-definition rejects. That command requires iam:PassRole on
     # the task/execution roles embedded in the task def — enable immutableDeploy
     # only with a deployer that has it.
     # -----------------------------------------------------------------------
@@ -154,7 +155,12 @@ else
         --query 'taskDefinition' \
         --output json | jq \
             --arg IMAGE "${IMAGE_URI}" \
-            '.containerDefinitions[0].image = $IMAGE
+            '.containerDefinitions |= map(
+               if (.name == "App" or .name == "CatalogWorker")
+               then .image = $IMAGE
+               else .
+               end
+             )
              | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                    .compatibilities, .registeredAt, .registeredBy)')
 
