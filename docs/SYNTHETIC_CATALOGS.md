@@ -22,10 +22,11 @@ Activewear using their stable profile slugs.
 `/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
 the full persisted product list in a table, job history, retry controls, and
 generation settings. The product table can be filtered by department, category,
-subcategory, and aggregate image status (`READY`, `FAILED`, `GENERATING`, or
-`MISSING`). It reports color-style count and stock across every style; the
-thumbnail uses the first available FRONT image. `READY` requires every expected
-image of every style to be ready; a failure in any color is shown as `FAILED`.
+subcategory, and aggregate required-core-image status (`READY`, `FAILED`, `GENERATING`, or
+`MISSING`). Information readiness is independent of image readiness. It reports color-style count and stock across every style; the
+thumbnail uses the first available FRONT image. Image status is computed from
+the three required core roles, independently of product/style information
+readiness; a core-image failure in any color is shown as `FAILED`.
 Selecting a row opens `/admin/catalogs/{slug}/products/{externalId}`, where all
 color styles, their IDs, size/SKU inventory, and three generated images are
 shown. Editors can regenerate an individual style image. Numeric catalog and
@@ -39,12 +40,16 @@ and write audit records. A batch at or above the configured large-job threshold
 confirmation showing the expected LiteLLM call count. The request enqueues work
 only; browser navigation and polling never perform model or S3 work.
 
-The generation wizard selects all-catalogue, department, or category scope,
-then two or three color variants. All Catalogue derives its base-product count
+The first manual workflow step is catalogue information. Its wizard selects
+all-catalogue, department, or category scope, then two or three color variants.
+It generates product copy, merchandising fields, colour styles and complete
+size/inventory rows. It creates no image assets or image tasks and makes no image
+provider calls. All Catalogue derives its base-product count
 from the catalogue mix and shows each configured quota; scoped requests retain
 an operator-selected parent-product count and distribute it across matching
 mix rows by their configured counts. Its review shows
-parent products, styles, image assets, size rows, and attributed LiteLLM calls.
+parent products, styles, zero image assets, size rows, and attributed text-model
+calls. Core imagery is a separate manual step.
 Size-row estimates use the exact planned mix rows, category-specific size rule,
 and next product sequence used when the job is queued.
 Editors can add departments, categories with their first subcategory, and
@@ -217,14 +222,16 @@ segment snapshot in their persisted product tasks. Product text and all image
 tasks use that queued context even if catalog settings change later. Legacy
 tasks without the brand and segment fields fall back to the current catalog.
 Each parent product uses one text generation call; the generated primary color is followed by deterministic, seed-selected
-distinct palette colors. Each style gets its own normal size assortment,
-color-seeded inventory, and three image tasks. For `P` products and `C` colors,
-the expected attributed LiteLLM calls are `P + (P × C × 3)`. Failed work can be
+distinct palette colors. Each style gets its own normal size assortment and
+color-seeded inventory. New information jobs have type `CATALOG_INFO`; their
+styles and products are information-ready when persisted. For `P` products, the
+expected first-step attributed LiteLLM calls are `P`. Failed work can be
 resumed without rebuilding completed styles or images, and persisted image task
 context protects queued work from later catalog settings edits. For example,
-10 products with 3 colors create 10 products, 30 styles, 90 image assets/tasks,
-and 100 attributed calls (10 text and 90 image calls). Catalog owners should
-account for the image-call growth when choosing batch size and palette count.
+10 products with 3 colors create 10 products, 30 styles and complete variant
+inventory, with 10 first-step text calls and no image tasks. A later core-image
+job queues up to 90 assets/tasks and calls. Catalog owners should account for
+the image-call growth when choosing batch size and palette count.
 
 The Phase 2 application service remains a narrow product-generation test seam.
 The production workflow is owned by the Phase 5 worker described below.
@@ -237,8 +244,9 @@ open. A claim is one atomic `FOR UPDATE SKIP LOCKED` update that records the
 worker ID, lease time, and attempt before returning the task. Multiple ECS tasks
 can therefore poll safely without generating the same item twice.
 
-Completing a product transaction creates its product, style, variants, three
-image assets, and one `GENERATE_IMAGE` task per role. Non-front tasks are not
+Completing a product transaction creates its product, styles, and variants.
+It does not create image assets or image tasks. A later `CORE_IMAGES` job creates
+the required core assets/tasks. Non-front tasks are not
 claimable until the front asset is terminal, so back and on-model images use the
 front reference when it is available and fall back to prompt-only generation
 after a permanent front failure.
@@ -303,9 +311,9 @@ avoid wasteful repeat spend. There is no direct-provider fallback.
 
 ## Image generation
 
-Each style owns exactly three durable `SyntheticImageAsset` rows: `FRONT`,
-`BACK`, and `ON_MODEL`. Product persistence creates these rows in `QUEUED`
-state. `generateStyleImages()` processes front first, then supplies the stored
+Core image readiness uses the required roles `FRONT`, `BACK`, and `ON_MODEL`;
+these remain the export-required images. A manual core-image job creates the
+durable assets/tasks. `generateStyleImages()` processes front first, then supplies the stored
 front bytes to back and on-model generation through LiteLLM's image-edit
 endpoint. If the proxy explicitly reports that edits are unsupported, the same
 adapter falls back to attributed prompt-only generation; it never calls a

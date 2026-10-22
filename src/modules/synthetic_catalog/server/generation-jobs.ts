@@ -17,7 +17,6 @@ import {
   type ProductGenerator,
 } from "../providers/product-generator";
 import { reserveProductSequenceRange } from "./sequence-reservation";
-import { CATALOG_IMAGE_ROLES } from "../providers/image-generator";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
 import { selectStyleColors, snapshotGenerationSettings } from "../domain/colors";
 import { assertCatalogJobActive, CatalogJobCancelledError } from "./job-cancellation";
@@ -63,10 +62,6 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   if (colorVariantCount > config.colors.length) throw new Error("Catalog palette has fewer colors than requested variants");
   if (scope.type === "DEPARTMENT" && !config.assortmentPlan.some((row) => row.departmentKey.toLocaleLowerCase() === scope.departmentKey.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this department");
   if (scope.type === "CATEGORY" && !config.assortmentPlan.some((row) => row.category.toLocaleLowerCase() === scope.category.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this category");
-  const existingProducts = await prisma.syntheticProduct.count({
-    where: { catalogId: catalog.id, archivedAt: null },
-  });
-
   // Reservation deliberately happens before job creation. If a later write
   // fails, the gap remains and those external IDs are never recycled.
   const reservation = await reserveProductSequenceRange(
@@ -87,8 +82,9 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
     data: {
       catalogId: catalog.id,
       createdByMappTeamId: input.createdByMappTeamId,
-      jobType:
-        existingProducts === 0 && reservation.first === 1 ? "INITIAL" : "ADD_PRODUCTS",
+      // New wizard submissions are explicitly information-only. Legacy job
+      // types remain readable for existing history and are never reinterpreted.
+      jobType: "CATALOG_INFO",
       requestedProducts,
       departmentMode,
       scopeType: scope.type,
@@ -168,7 +164,7 @@ async function persistGeneratedProduct(input: {
         salePrice: price.salePrice,
         currency: price.currency,
         productUrl: `/catalogs/${job.catalog.slug}/products/${externalId}`,
-        status: "GENERATING",
+        status: "READY",
       },
       create: {
         catalogId: job.catalogId,
@@ -186,7 +182,7 @@ async function persistGeneratedProduct(input: {
         salePrice: price.salePrice,
         currency: price.currency,
         productUrl: `/catalogs/${job.catalog.slug}/products/${externalId}`,
-        status: "GENERATING",
+        status: "READY",
       },
     });
 
@@ -197,40 +193,9 @@ async function persistGeneratedProduct(input: {
       if (new Set(variantIds).size !== variantIds.length) throw new Error(`Catalog sizes create colliding variant IDs for style ${styleExternalId}`);
       const style = await tx.syntheticStyle.upsert({
         where: { externalId: styleExternalId },
-        update: { productId: product.id, colorName: color.name, colorCode: color.code, visualSpec: asInputJson(spec.design), status: "GENERATING" },
-        create: { productId: product.id, externalId: styleExternalId, colorName: color.name, colorCode: color.code, visualSpec: asInputJson(spec.design), status: "GENERATING" },
+        update: { productId: product.id, colorName: color.name, colorCode: color.code, visualSpec: asInputJson(spec.design), status: "READY" },
+        create: { productId: product.id, externalId: styleExternalId, colorName: color.name, colorCode: color.code, visualSpec: asInputJson(spec.design), status: "READY" },
       });
-      for (const role of CATALOG_IMAGE_ROLES) {
-      const imageAsset = await tx.syntheticImageAsset.upsert({
-        where: { styleId_role: { styleId: style.id, role } },
-        update: {},
-        create: { styleId: style.id, role, status: "QUEUED" },
-      });
-      const frozenCatalog = { brandName: input.brandName, segment: input.segment, visualDirection: config.visualDirection };
-      await tx.catalogGenerationTask.upsert({
-        where: {
-          jobId_dedupeKey: {
-            jobId: job.id,
-            dedupeKey: `image:${style.externalId}:${role}`,
-          },
-        },
-        update: {
-          productId: product.id,
-          styleId: style.id,
-          imageAssetId: imageAsset.id,
-          payload: asInputJson({ catalogSnapshot: frozenCatalog }),
-        },
-        create: {
-          jobId: job.id,
-          productId: product.id,
-          styleId: style.id,
-          imageAssetId: imageAsset.id,
-          taskType: "GENERATE_IMAGE",
-          dedupeKey: `image:${style.externalId}:${role}`,
-          payload: asInputJson({ catalogSnapshot: frozenCatalog }),
-        },
-      });
-      }
       for (let index = 0; index < inventory.length; index += 1) {
       const item = inventory[index]!;
       const variantExternalId = variantIds[index]!;

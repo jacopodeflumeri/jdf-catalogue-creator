@@ -13,6 +13,7 @@ import {
 import { generateStyleImage } from "./image-assets";
 import { isCatalogWorkerSchemaMissing } from "./worker-readiness";
 import { assertCatalogJobActive, CatalogJobCancelledError } from "./job-cancellation";
+import { REQUIRED_CORE_IMAGE_ROLES } from "../providers/image-generator";
 
 export const DEFAULT_WORKER_POLL_MS = 2_000;
 export const DEFAULT_WORKER_LEASE_MS = 30 * 60 * 1_000;
@@ -131,7 +132,7 @@ async function refreshProductImageState(styleId: number): Promise<void> {
     const styleStatus =
       pending > 0
         ? "GENERATING"
-        : style.images.length === 3 && style.images.every((image) => image.status === "READY")
+        : REQUIRED_CORE_IMAGE_ROLES.every((role) => style.images.some((image) => image.role === role && image.status === "READY"))
           ? "READY"
           : "FAILED";
     await tx.syntheticStyle.update({ where: { id: styleId }, data: { status: styleStatus } });

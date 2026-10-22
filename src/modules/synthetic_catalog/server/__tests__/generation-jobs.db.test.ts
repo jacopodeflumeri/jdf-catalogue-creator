@@ -144,7 +144,7 @@ describe("catalog generation jobs", () => {
     expect(new Set(receivedModels)).toEqual(new Set(["openai/gpt-4o-mini"]));
   });
 
-  it("persists multiple distinct color styles with independent sizes and three image tasks each", async () => {
+  it("persists complete information and variants without creating image assets or tasks", async () => {
     const catalog = await createTestCatalog();
     const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" }, colorVariantCount: 3, seed: "three-colors" });
     const changedConfig = { ...CATALOG_PROFILES[0].config, colors: [CATALOG_PROFILES[0].config.colors[0]!] };
@@ -171,15 +171,13 @@ describe("catalog generation jobs", () => {
     for (const style of product.styles) {
       expect(style.variants.map((variant) => variant.size)).toEqual(CATALOG_PROFILES[0].config.sizes);
       expect(new Set(style.variants.map((variant) => variant.externalId)).size).toBe(style.variants.length);
-      expect(style.images).toHaveLength(3);
-      expect(style.tasks).toHaveLength(3);
-      expect(style.tasks.every((task) => {
-        const payload = task.payload as { catalogSnapshot?: { brandName?: string; segment?: string } };
-        return payload.catalogSnapshot?.brandName === catalog.brandName && payload.catalogSnapshot.segment === catalog.segment;
-      })).toBe(true);
+      expect(style.status).toBe("READY");
+      expect(style.images).toHaveLength(0);
+      expect(style.tasks).toHaveLength(0);
     }
     expect(receivedContext).toEqual([{ brandName: catalog.brandName, segment: catalog.segment }]);
     expect(await prisma.catalogGenerationTask.count({ where: { jobId: job.id, taskType: "GENERATE_PRODUCT" } })).toBe(1);
+    expect(await prisma.catalogGenerationTask.count({ where: { jobId: job.id, taskType: "GENERATE_IMAGE" } })).toBe(0);
   });
 
   it("can requeue a bounded provider failure and finish on retry", async () => {

@@ -55,11 +55,12 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
     config: { departments: catalog.departments, assortmentPlan: catalog.assortmentPlan },
     seed: estimateSeed,
   }) : [];
-  const estimate = estimateAssortmentOutput({
+  const generationEstimate = estimateAssortmentOutput({
     plan: estimatePlan,
     colorVariantCount,
     categorySizeCounts: catalog.categorySizeCounts,
   });
+  const estimate = { ...generationEstimate, images: 0, liteLlmCalls: generationEstimate.products };
   const isLarge = requestedProducts >= catalog.largeJobThreshold;
   const mixDepartments = Array.from(new Set(catalog.assortmentPlan.map((row) => row.departmentKey)));
   const mixCategories = Array.from(new Set(catalog.assortmentPlan.map((row) => row.category)));
@@ -85,7 +86,7 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
   }
 
   return (
-    <Modal isOpen onClose={onClose} title={`Generate products for ${catalog.name}`} size="lg">
+    <Modal isOpen onClose={onClose} title={`Generate catalogue information for ${catalog.name}`} size="lg">
       <div className="mb-6 grid grid-cols-3 gap-2" aria-label="Generation steps">
         {["Scope", "Output", "Review"].map((label, index) => <div key={label} className={`rounded-xl border px-3 py-2 text-center text-sm ${step === index ? "border-primary bg-white/70 font-semibold text-primary" : "border-white/65 text-[#1a1a1a]/55"}`}>{index + 1}. {label}</div>)}
       </div>
@@ -101,20 +102,20 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
       </div>}
       {step === 1 && <div className="space-y-5">
         {scopeType === "ALL" ? <Card title={`Catalogue mix · ${configuredProductCount} products`} description="All Catalogue uses the product counts configured in Settings. This number cannot be changed in the wizard." /> : <FormInput id="catalog-product-count" label="Number of products" type="number" min={1} max={catalog.maxProductsPerJob} value={count} onChange={(event) => setCount(Number(event.target.value))} helpText={`Products are parent records. Maximum ${catalog.maxProductsPerJob} products per job.`} />}
-        <FormSelect id="catalog-color-variants" label="Color variants per product" value={String(colorVariantCount)} onChange={(event) => setColorVariantCount(Number(event.target.value) as 2 | 3)} options={[{ value: "2", label: "2 colors" }, { value: "3", label: "3 colors" }]} helpText="One text call creates product copy shared by all styles. Each style gets its own sizes and three images." />
+        <FormSelect id="catalog-color-variants" label="Color variants per product" value={String(colorVariantCount)} onChange={(event) => setColorVariantCount(Number(event.target.value) as 2 | 3)} options={[{ value: "2", label: "2 colors" }, { value: "3", label: "3 colors" }]} helpText="One text call creates product copy shared by all styles. This step creates sizes and stock, but no images." />
       </div>}
       {step === 2 && <div className="space-y-5">
         <Card title="Request summary" description={scopeType === "ALL" ? "All catalogue" : scopeType === "DEPARTMENT" ? `Department: ${catalog.departments.find((item) => item.key === departmentKey)?.label ?? departmentKey}` : `Category: ${category}`}>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{[["Parent products", estimate.products], ["Color styles", estimate.styles], ["Images", estimate.images], ["Size rows", estimate.sizeRows], ["Attributed LiteLLM calls", estimate.liteLlmCalls]].map(([label, value]) => <div key={label} className="rounded-xl border border-white/70 bg-white/30 p-3"><p className="text-xl font-bold">{value}</p><p className="text-xs text-[#1a1a1a]/55">{label}</p></div>)}</div>
-          <p className="mt-4 text-xs text-[#1a1a1a]/55">One text call per product, plus three image calls per color style. Generation runs in the background.</p>
+          <p className="mt-4 text-xs text-[#1a1a1a]/55">This step generates catalogue information only. Image generation is a separate manual step after these products are ready.</p>
         </Card>
         {scopeType === "ALL" && <Card title="Configured catalogue mix" description="The job will create exactly these base-product quotas."><div className="space-y-2">{Object.entries(groupedMix).map(([department, rows]) => <div key={department}><p className="font-semibold">{catalog.departments.find((item) => item.key === department)?.label ?? department}</p><ul className="ml-4 list-disc text-sm text-[#1a1a1a]/65">{rows.map((row) => <li key={`${department}:${row.category}:${row.subcategory}`}>{row.category} · {row.subcategory}: {row.productCount}</li>)}</ul></div>)}</div></Card>}
-        {isLarge && <NoticeBox variant="warning" title="Large generation job"><FormCheckbox id="confirm-large-catalog-job" label={`I confirm ${estimate.products} products, ${estimate.styles} styles, ${estimate.images} images, and ${estimate.liteLlmCalls} attributed LiteLLM calls`} checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} helpText="The job is queued for background processing." /></NoticeBox>}
+        {isLarge && <NoticeBox variant="warning" title="Large generation job"><FormCheckbox id="confirm-large-catalog-job" label={`I confirm ${estimate.products} products, ${estimate.styles} styles, no images, and ${estimate.liteLlmCalls} attributed LiteLLM calls`} checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} helpText="The job is queued for background processing." /></NoticeBox>}
       </div>}
       {error && <div className="mt-5"><NoticeBox variant="error">{error}</NoticeBox></div>}
       <div className="mt-6 flex justify-between gap-3">
         <Button variant="ghost" onClick={step === 0 ? onClose : () => setStep((value) => value - 1)} disabled={loading}>{step === 0 ? "Cancel" : "Back"}</Button>
-        {step < 2 ? <Button onClick={() => setStep((value) => value + 1)} disabled={(step === 0 && !canContinueScope) || (step === 1 && (requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob))}>Continue</Button> : <Button onClick={() => void submit()} loading={loading} disabled={requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob || (isLarge && !confirmed)}>Queue generation</Button>}
+        {step < 2 ? <Button onClick={() => setStep((value) => value + 1)} disabled={(step === 0 && !canContinueScope) || (step === 1 && (requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob))}>Continue</Button> : <Button onClick={() => void submit()} loading={loading} disabled={requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob || (isLarge && !confirmed)}>Generate catalogue information</Button>}
       </div>
     </Modal>
   );

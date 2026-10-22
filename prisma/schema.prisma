@@ -329,6 +329,9 @@ enum CatalogJobType {
   ADD_PRODUCTS
   RETRY
   REGENERATE_IMAGE
+  CATALOG_INFO
+  CORE_IMAGES
+  COMPLETE_LOOK
 }
 
 enum CatalogDepartmentMode {
@@ -541,6 +544,7 @@ model CatalogGenerationJob {
   id                  Int                   @id @default(autoincrement())
   publicId            String                @unique @default(uuid()) @map("public_id")
   catalogId           Int                   @map("catalog_id")
+  sourceJobId         Int?                  @map("source_job_id")
   createdByMappTeamId Int?                  @map("created_by_mapp_team_id")
   jobType             CatalogJobType        @map("job_type")
   requestedProducts   Int                   @map("requested_products")
@@ -562,14 +566,17 @@ model CatalogGenerationJob {
   createdAt           DateTime              @default(now()) @map("created_at")
   updatedAt           DateTime              @updatedAt @map("updated_at")
 
-  catalog   SyntheticCatalog        @relation(fields: [catalogId], references: [id], onDelete: Cascade)
-  createdBy MappTeam?               @relation(fields: [createdByMappTeamId], references: [id], onDelete: SetNull)
-  products  SyntheticProduct[]
-  tasks     CatalogGenerationTask[]
+  catalog     SyntheticCatalog        @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  sourceJob   CatalogGenerationJob?   @relation("CatalogJobSource", fields: [sourceJobId], references: [id], onDelete: SetNull)
+  derivedJobs CatalogGenerationJob[]  @relation("CatalogJobSource")
+  createdBy   MappTeam?               @relation(fields: [createdByMappTeamId], references: [id], onDelete: SetNull)
+  products    SyntheticProduct[]
+  tasks       CatalogGenerationTask[]
 
   @@index([catalogId, createdAt])
   @@index([status, createdAt])
   @@index([createdByMappTeamId])
+  @@index([sourceJobId])
   @@map("catalog_generation_job")
 }
 
