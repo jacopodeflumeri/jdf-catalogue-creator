@@ -13,8 +13,8 @@ const detail = {
     id: 1,
     departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 1 }],
     assortmentPlan: [
-      { departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 2, outfitSlot: "OUTERWEAR" },
-      { departmentKey: "WOMEN", category: "shirts", subcategory: "poplin shirts", productCount: 3, outfitSlot: "TOP" },
+      { id: "mix-coats", departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 2, outfitSlot: "OUTERWEAR" },
+      { id: "mix-shirts", departmentKey: "WOMEN", category: "shirts", subcategory: "poplin shirts", productCount: 3, outfitSlot: "TOP" },
     ],
   },
 } as unknown as CatalogDetailView;

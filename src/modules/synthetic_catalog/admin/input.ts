@@ -47,25 +47,29 @@ export const catalogSettingsInputSchema = z.object({
 
 export const catalogTaxonomyInputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("DEPARTMENT"), catalogId: z.number().int().positive(), label: z.string().trim().min(1).max(80), code: z.string().trim().min(1).max(6), generationWeight: z.number().positive() }),
-  z.object({ type: z.literal("CATEGORY"), catalogId: z.number().int().positive(), category: z.string().trim().min(1).max(120), subcategory: z.string().trim().min(1).max(120) }),
-  z.object({ type: z.literal("SUBCATEGORY"), catalogId: z.number().int().positive(), category: z.string().trim().min(1).max(120), subcategory: z.string().trim().min(1).max(120) }),
 ]);
 
 export const catalogMixInputSchema = z.object({
   catalogId: z.number().int().positive(),
   rows: z.array(z.object({
-    departmentKey: z.string().trim().min(1).max(40),
+    id: z.string().trim().regex(/^[A-Za-z0-9._:-]{1,200}$/),
+    departmentKey: z.string().trim().min(1).max(40).nullable(),
     category: z.string().trim().min(1).max(120),
     subcategory: z.string().trim().min(1).max(120),
-    productCount: z.number().int().positive(),
-    outfitSlot: z.enum(["TOP", "BOTTOM", "ONE_PIECE", "OUTERWEAR", "FOOTWEAR", "BAG", "ACCESSORY"]),
+    productCount: z.number().int().nonnegative(),
+    outfitSlot: z.enum(["TOP", "BOTTOM", "ONE_PIECE", "OUTERWEAR", "FOOTWEAR", "BAG", "ACCESSORY"]).nullable(),
   })).min(1).max(500),
 }).superRefine(({ rows }, context) => {
   const seen = new Set<string>();
+  const ids = new Set<string>();
   rows.forEach((row, index) => {
-    const key = [row.departmentKey, row.category, row.subcategory].map((value) => value.trim().toLocaleLowerCase()).join("\u0000");
+    const key = [row.departmentKey ?? "", row.category, row.subcategory].map((value) => value.trim().toLocaleLowerCase()).join("\u0000");
     if (seen.has(key)) context.addIssue({ code: "custom", path: ["rows", index], message: "This department, category, and subcategory row already exists" });
     seen.add(key);
+    if (ids.has(row.id)) context.addIssue({ code: "custom", path: ["rows", index, "id"], message: "Catalogue mix row IDs must be unique" });
+    ids.add(row.id);
+    if (row.departmentKey == null && (row.productCount !== 0 || row.outfitSlot != null)) context.addIssue({ code: "custom", path: ["rows", index], message: "Unassigned rows need zero products and no outfit slot" });
+    if (row.departmentKey != null && (row.productCount < 1 || row.outfitSlot == null)) context.addIssue({ code: "custom", path: ["rows", index], message: "Assigned rows need a positive quota and an outfit slot" });
   });
 });
 

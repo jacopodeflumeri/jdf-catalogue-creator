@@ -151,9 +151,11 @@ function productIssues(
   if ((duplicates.products.get(product.externalId) ?? 0) > 1) add("duplicate_product_id", "Product ID is not unique");
   const department = catalog.config.departments.find((item) => item.key === product.department);
   if (!department) add("department", "Department is not in the catalog configuration");
-  if (!catalog.config.categories.includes(product.category)) add("category", "Category is not in the catalog profile");
-  if (!catalog.config.subcategories[product.category]?.includes(product.subcategory)) {
-    add("subcategory", "Subcategory does not belong to the product category");
+  const categoryRows = catalog.config.assortmentPlan.filter((row) => row.category.toLocaleLowerCase() === product.category.toLocaleLowerCase());
+  if (categoryRows.length === 0) add("category", "Category is not in the catalogue mix");
+  if (!categoryRows.some((row) => row.subcategory.toLocaleLowerCase() === product.subcategory.toLocaleLowerCase())) add("subcategory", "Subcategory does not belong to the product category in the catalogue mix");
+  if (!categoryRows.some((row) => row.departmentKey?.toLocaleLowerCase() === product.department.toLocaleLowerCase() && row.subcategory.toLocaleLowerCase() === product.subcategory.toLocaleLowerCase())) {
+    add("department_category", "Department, category, and subcategory combination is not assigned in the catalogue mix");
   }
   const price = Number(product.basePrice);
   const salePrice = product.salePrice == null ? null : Number(product.salePrice);

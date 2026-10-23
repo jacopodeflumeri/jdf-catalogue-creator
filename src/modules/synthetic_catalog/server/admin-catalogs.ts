@@ -1,6 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
-import { parseCatalogProfileConfig } from "../config/profiles";
+import { catalogCategories, catalogSubcategories, parseCatalogProfileConfig } from "../config/profiles";
 import { configuredDepartmentLabel } from "../config/department-label";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
 import { sizesForCategory } from "../domain/rules";
@@ -218,8 +218,8 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
       failedImageCount: images.filter((image) => image.status === "FAILED").length,
       estimatedSizesPerProduct: config.sizes.length,
       departments: config.departments.map(({ key, label }) => ({ key, label })),
-      categories: [...config.categories],
-      categorySizeCounts: Object.fromEntries(config.categories.map((category) => [category, sizesForCategory(config, category).length])),
+      categories: catalogCategories(config),
+      categorySizeCounts: Object.fromEntries(catalogCategories(config).map((category) => [category, sizesForCategory(config, category).length])),
       assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
       ...generationLimits,
       latestJob: catalog.jobs[0] ? jobView(catalog.jobs[0]) : null,
@@ -266,9 +266,9 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       visualDirection: config.visualDirection,
       estimatedSizesPerProduct: config.sizes.length,
       departments: config.departments.map((department) => ({ ...department })),
-      categories: [...config.categories],
-      categorySizeCounts: Object.fromEntries(config.categories.map((category) => [category, sizesForCategory(config, category).length])),
-      subcategories: Object.fromEntries(Object.entries(config.subcategories).map(([key, value]) => [key, [...value]])),
+      categories: catalogCategories(config),
+      categorySizeCounts: Object.fromEntries(catalogCategories(config).map((category) => [category, sizesForCategory(config, category).length])),
+      subcategories: catalogSubcategories(config),
       assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
       ...generationLimits,
     },

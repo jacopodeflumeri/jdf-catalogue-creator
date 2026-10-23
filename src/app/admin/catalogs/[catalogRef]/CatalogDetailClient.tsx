@@ -82,10 +82,6 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
   const [departmentLabel, setDepartmentLabel] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
   const [departmentWeight, setDepartmentWeight] = useState("0.1");
-  const [newCategory, setNewCategory] = useState("");
-  const [newCategorySubcategory, setNewCategorySubcategory] = useState("");
-  const [existingCategory, setExistingCategory] = useState(detail.catalog.categories[0] ?? "");
-  const [newSubcategory, setNewSubcategory] = useState("");
   const { confirm } = useConfirm();
 
   async function submit(event: React.FormEvent) {
@@ -134,7 +130,7 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
         {canEdit && <div className="flex justify-end"><Button type="submit" loading={busy}><Icon type="save" size="sm" /> Save settings</Button></div>}
       </form>
     </Card>
-    <Card title="Catalog taxonomy" description="Add-only settings. Existing product identifiers and queued jobs keep their saved values.">
+    <Card title="Departments" description="Departments keep stable keys, labels, product ID codes, and generation settings.">
       {canEdit ? <div className="grid gap-6 xl:grid-cols-3">
         <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "DEPARTMENT", catalogId: detail.catalog.id, label: departmentLabel, code: departmentCode, generationWeight: Number(departmentWeight) }); }}>
           <h4 className="font-semibold">Add department</h4>
@@ -143,21 +139,9 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
           <FormInput id="tax-department-weight" label="Generation weight" type="number" min="0.01" step="0.01" value={departmentWeight} disabled={!canEdit} onChange={(event) => setDepartmentWeight(event.target.value)} />
           {canEdit && <Button type="submit" loading={busy}>Add department</Button>}
         </form>
-        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "CATEGORY", catalogId: detail.catalog.id, category: newCategory, subcategory: newCategorySubcategory }); }}>
-          <h4 className="font-semibold">Add category</h4>
-          <FormInput id="tax-category" label="Category" value={newCategory} disabled={!canEdit} onChange={(event) => setNewCategory(event.target.value)} />
-          <FormInput id="tax-first-subcategory" label="First subcategory" value={newCategorySubcategory} disabled={!canEdit} onChange={(event) => setNewCategorySubcategory(event.target.value)} />
-          {canEdit && <Button type="submit" loading={busy}>Add category</Button>}
-        </form>
-        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "SUBCATEGORY", catalogId: detail.catalog.id, category: existingCategory, subcategory: newSubcategory }); }}>
-          <h4 className="font-semibold">Add subcategory</h4>
-          <FormSelect id="tax-existing-category" label="Category" value={existingCategory} disabled={!canEdit} onChange={(event) => setExistingCategory(event.target.value)} options={detail.catalog.categories.map((value) => ({ value, label: value }))} />
-          <FormInput id="tax-subcategory" label="Subcategory" value={newSubcategory} disabled={!canEdit} onChange={(event) => setNewSubcategory(event.target.value)} />
-          {canEdit && <Button type="submit" loading={busy}>Add subcategory</Button>}
-        </form>
       </div> : <p className="text-sm text-[#1a1a1a]/55">You have read-only access to catalog taxonomy.</p>}
       {message && <div className="mt-4"><NoticeBox variant={message.kind}>{message.text}</NoticeBox></div>}
-      <div className="mt-6 grid gap-4 md:grid-cols-3"><div><p className="text-sm font-semibold">Departments</p><ul className="mt-2 list-disc pl-5 text-sm">{detail.catalog.departments.map((item) => <li key={item.key}>{item.label} · {item.code} · weight {item.generationWeight}</li>)}</ul></div><div><p className="text-sm font-semibold">Categories</p><ul className="mt-2 list-disc pl-5 text-sm">{detail.catalog.categories.map((item) => <li key={item}>{item}</li>)}</ul></div><div><p className="text-sm font-semibold">Subcategories</p><ul className="mt-2 list-disc pl-5 text-sm">{Object.entries(detail.catalog.subcategories).map(([key, values]) => <li key={key}>{key}: {values.join(", ")}</li>)}</ul></div></div>
+      <ul className="mt-6 grid gap-3 text-sm md:grid-cols-2">{detail.catalog.departments.map((item) => <li key={item.key} className="rounded-xl border border-white/60 bg-white/35 px-4 py-3">{item.label} · {item.key} · code {item.code} · weight {item.generationWeight}</li>)}</ul>
     </Card>
     <CatalogueMixEditor detail={detail} canEdit={canEdit} onSaved={onSaved} />
     </div>

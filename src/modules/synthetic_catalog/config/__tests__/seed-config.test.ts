@@ -1,4 +1,5 @@
 import { CATALOG_PROFILES } from "../profiles";
+import { catalogCategories, catalogSubcategories } from "../profiles";
 import { mergeSeedCatalogConfig } from "../seed-config";
 
 describe("catalog seed taxonomy merge", () => {
@@ -9,25 +10,27 @@ describe("catalog seed taxonomy merge", () => {
       ...profile.config.departments,
       { key: "CHILDREN_BABY", label: "Children & Baby", code: "CB", generationWeight: 0.2 },
     ];
-    existing.categories = [...profile.config.categories, "babywear"];
+    existing.categories = ["coats", "babywear"];
     existing.subcategories = {
-      ...profile.config.subcategories,
-      coats: [...profile.config.subcategories.coats!, "raincoats"],
+      coats: ["wool coats", "trench coats", "raincoats"],
       babywear: ["onesies"],
     };
     existing.assortmentPlan = [...profile.config.assortmentPlan, {
-      departmentKey: "CHILDREN_BABY", category: "babywear", subcategory: "onesies", productCount: 4,
+      departmentKey: "CHILDREN_BABY", category: "babywear", subcategory: "onesies", productCount: 4, outfitSlot: "ONE_PIECE",
     }];
 
     const reseeded = mergeSeedCatalogConfig(profile.config, existing);
 
     expect(reseeded.departments).toContainEqual({ key: "CHILDREN_BABY", label: "Children & Baby", code: "CB", generationWeight: 0.2 });
-    expect(reseeded.categories).toContain("babywear");
-    expect(reseeded.subcategories.coats).toContain("raincoats");
-    expect(reseeded.subcategories.babywear).toEqual(["onesies"]);
-    expect(reseeded.assortmentPlan).toContainEqual({
+    expect(catalogCategories(reseeded)).toContain("babywear");
+    expect(catalogSubcategories(reseeded).coats).toContain("raincoats");
+    expect(catalogSubcategories(reseeded).babywear).toEqual(["onesies"]);
+    expect(JSON.stringify(reseeded)).not.toContain('"categories"');
+    expect(JSON.stringify(reseeded)).not.toContain('"subcategories"');
+    expect(reseeded.assortmentPlan).toContainEqual(expect.objectContaining({
       departmentKey: "CHILDREN_BABY", category: "babywear", subcategory: "onesies", productCount: 4,
-    });
+      outfitSlot: "ONE_PIECE",
+    }));
     expect(reseeded.materials).toEqual(profile.config.materials);
     expect(mergeSeedCatalogConfig(profile.config, reseeded)).toEqual(reseeded);
   });

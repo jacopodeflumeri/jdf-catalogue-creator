@@ -50,6 +50,24 @@ describe("assortment planner", () => {
     expect(planAssortment(input)).toEqual(planned);
   });
 
+  it("keeps unassigned taxonomy rows visible without using them as generation quota", () => {
+    const configWithUnassigned = {
+      ...config,
+      assortmentPlan: [
+        ...config.assortmentPlan,
+        { id: "unassigned", departmentKey: null, category: "babywear", subcategory: "onesies", productCount: 0, outfitSlot: null },
+      ],
+    };
+    const planned = planAssortment({
+      sequences: Array.from({ length: 20 }, (_, index) => index + 1),
+      scope: { type: "ALL" },
+      config: configWithUnassigned,
+      seed: "orphan-row-does-not-generate",
+    });
+    expect(planned).toHaveLength(20);
+    expect(planned.every((item) => item.category !== "babywear")).toBe(true);
+  });
+
   it("uses weighted largest remainders for small scoped jobs", () => {
     const weightedConfig = {
       ...config,

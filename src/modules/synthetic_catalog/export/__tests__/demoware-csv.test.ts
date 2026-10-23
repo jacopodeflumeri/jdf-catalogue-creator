@@ -142,7 +142,11 @@ describe("Demoware CSV export", () => {
         { ...product().styles[0]!, externalId: "PRE-K-000001-OAT", colorName: "Oat", variants: product().styles[0]!.variants.map((variant) => ({ ...variant, externalId: variant.externalId.replace("PRE-W-000001-NAVY", "PRE-K-000001-OAT"), sku: variant.sku.replace("PRE-W-000001-NAVY", "PRE-K-000001-OAT") })), images: product().styles[0]!.images.map((image, index) => ({ ...image, publicId: `00000000-0000-4000-8000-00000000000${index + 4}` })) },
       ],
     });
-    const config = { ...CATALOG_PROFILES[0].config, departments: [...CATALOG_PROFILES[0].config.departments, { key: "KIDS", label: "Kids", code: "K", generationWeight: 0.2 }] };
+    const config = {
+      ...CATALOG_PROFILES[0].config,
+      departments: [...CATALOG_PROFILES[0].config.departments, { key: "KIDS", label: "Kids", code: "K", generationWeight: 0.2 }],
+      assortmentPlan: [...CATALOG_PROFILES[0].config.assortmentPlan, { id: "kids-coats", departmentKey: "KIDS", category: "coats", subcategory: "wool coats", productCount: 1, outfitSlot: "OUTERWEAR" as const }],
+    };
     const result = buildDemowareCsv(source([item], config), "https://catalogs.example.test");
     expect(result.summary).toEqual(expect.objectContaining({ stylesExported: 2, variantsExported: 4, imagesReferenced: 6 }));
     expect(result.csv).toContain("PRE-K-000001-OAT");

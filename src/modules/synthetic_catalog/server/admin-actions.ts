@@ -18,7 +18,7 @@ import type {
   CatalogProductDetailView,
 } from "../admin/types";
 import { parseCatalogProfileConfig } from "../config/profiles";
-import { addCatalogCategory, addCatalogDepartment, addCatalogSubcategory } from "../config/taxonomy";
+import { addCatalogDepartment } from "../config/taxonomy";
 import { cancelGenerationJob, createGenerationJob, resumeGenerationJob } from "./generation-jobs";
 import {
   enqueueImageRegeneration,
@@ -211,10 +211,10 @@ export async function updateCatalogSettingsAction(input: unknown): Promise<Catal
         brandName: values.brandName,
         defaultTextModel: values.defaultTextModel,
         defaultImageModel: values.defaultImageModel,
-        config: {
+        config: JSON.parse(JSON.stringify({
           ...existingConfig,
           visualDirection: values.visualDirection,
-        } as Prisma.InputJsonValue,
+        })) as Prisma.InputJsonValue,
       },
     });
     await writeAuditLog({
@@ -248,22 +248,18 @@ export async function addCatalogTaxonomyAction(input: unknown): Promise<CatalogA
       await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${values.catalogId} FOR UPDATE`;
       const existing = await tx.syntheticCatalog.findUniqueOrThrow({ where: { id: values.catalogId } });
       const config = parseCatalogProfileConfig(existing.config);
-      const updated = values.type === "DEPARTMENT"
-        ? addCatalogDepartment(config, values)
-        : values.type === "CATEGORY"
-          ? addCatalogCategory(config, values.category, values.subcategory)
-          : addCatalogSubcategory(config, values.category, values.subcategory);
+      const updated = addCatalogDepartment(config, values);
       await tx.syntheticCatalog.update({ where: { id: existing.id }, data: { config: JSON.parse(JSON.stringify(updated)) as Prisma.InputJsonValue } });
       return { existing, updated };
     });
-    const summary = values.type === "DEPARTMENT" ? `Added department ${values.label.trim()}` : values.type === "CATEGORY" ? `Added category ${values.category.trim()}` : `Added subcategory to ${values.category.trim()}`;
+    const summary = `Added department ${values.label.trim()}`;
     await writeAuditLog({
       ...sessionAuditActor(session),
       action: "taxonomy_added",
       entityType: "synthetic_catalog",
       entityId: catalog.existing.id,
       message: `${summary} in ${catalog.existing.name}`,
-      data: { catalogId: catalog.existing.id, taxonomyType: values.type },
+      data: { catalogId: catalog.existing.id, taxonomyType: "DEPARTMENT" },
     });
     revalidateCatalog(catalog.existing.slug);
     return { ok: true };
@@ -277,32 +273,16 @@ export async function saveCatalogMixAction(input: unknown): Promise<CatalogActio
   try {
     const values = catalogMixInputSchema.parse(input);
     const { maxProductsPerJob } = getCatalogGenerationLimits();
-    const totalProducts = values.rows.reduce((total, row) => total + row.productCount, 0);
-    if (!Number.isSafeInteger(totalProducts) || totalProducts > maxProductsPerJob) {
+    const totalProducts = values.rows.reduce((total, row) => total + (row.departmentKey == null ? 0 : row.productCount), 0);
+    if (!Number.isSafeInteger(totalProducts) || totalProducts < 1 || totalProducts > maxProductsPerJob) {
       throw new Error(`Catalogue mix total must be between 1 and ${maxProductsPerJob} products`);
     }
     const result = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${values.catalogId} FOR UPDATE`;
       const catalog = await tx.syntheticCatalog.findUniqueOrThrow({ where: { id: values.catalogId } });
       const config = parseCatalogProfileConfig(catalog.config);
-      const categories = [...config.categories];
-      const subcategories: Record<string, string[]> = Object.fromEntries(Object.entries(config.subcategories).map(([key, value]) => [key, [...value]]));
-      for (const row of values.rows) {
-        let category = categories.find((item) => item.toLocaleLowerCase() === row.category.toLocaleLowerCase());
-        if (!category) {
-          category = row.category;
-          categories.push(category);
-          subcategories[category] = [];
-        }
-        const existingSubcategories = subcategories[category] ?? [];
-        if (!existingSubcategories.some((item) => item.toLocaleLowerCase() === row.subcategory.toLocaleLowerCase())) {
-          subcategories[category] = [...existingSubcategories, row.subcategory];
-        }
-      }
       const updatedConfig = parseCatalogProfileConfig({
         ...config,
-        categories,
-        subcategories,
         assortmentPlan: values.rows,
       });
       const outfitSlotChanges = updatedConfig.assortmentPlan.flatMap((row) => {

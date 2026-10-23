@@ -1,4 +1,5 @@
 import { CATALOG_PROFILES } from "../../config/profiles";
+import { parseCatalogProfileConfig } from "../../config/profiles";
 
 const mockRequireAdmin = jest.fn();
 const mockWriteAuditLog = jest.fn();
@@ -46,28 +47,28 @@ describe("catalog taxonomy mutation action", () => {
     }));
   });
 
-  it("rejects viewers before any taxonomy write", async () => {
+  it("rejects viewers before any department write", async () => {
     mockRequireAdmin.mockRejectedValue(new Error("Editor access required"));
-    await expect(addCatalogTaxonomyAction({ type: "CATEGORY", catalogId: 1, category: "Test", subcategory: "Initial" })).rejects.toThrow("Editor access required");
+    await expect(addCatalogTaxonomyAction({ type: "DEPARTMENT", catalogId: 1, label: "Kids", code: "K", generationWeight: 0.2 })).rejects.toThrow("Editor access required");
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockWriteAuditLog).not.toHaveBeenCalled();
   });
 
-  it("saves a validated mix and adds row taxonomy atomically with an audit event", async () => {
-    const row = { departmentKey: "WOMEN", category: "new apparel", subcategory: "longline tops", productCount: 7 };
-    const result = await saveCatalogMixAction({ catalogId: 1, rows: [...CATALOG_PROFILES[0].config.assortmentPlan, row] });
+  it("saves the canonical mix without a second taxonomy structure and records an audit event", async () => {
+    const row = { id: "new-row", departmentKey: "WOMEN", category: "new apparel", subcategory: "longline tops", productCount: 7, outfitSlot: "TOP" };
+    const result = await saveCatalogMixAction({ catalogId: 1, rows: [...parseCatalogProfileConfig(CATALOG_PROFILES[0].config).assortmentPlan, row] });
     expect(result).toEqual({ ok: true });
     expect(mockRequireAdmin).toHaveBeenCalledWith({ requireEditorAccess: true });
-    const saved = mockUpdate.mock.calls[0]![0] as { data: { config: { categories: string[]; subcategories: Record<string, string[]>; assortmentPlan: unknown[] } } };
-    expect(saved.data.config.categories).toContain("new apparel");
-    expect(saved.data.config.subcategories["new apparel"]).toEqual(["longline tops"]);
+    const saved = mockUpdate.mock.calls[0]![0] as { data: { config: Record<string, unknown> & { assortmentPlan: unknown[] } } };
+    expect(saved.data.config).not.toHaveProperty("categories");
+    expect(saved.data.config).not.toHaveProperty("subcategories");
     expect(saved.data.config.assortmentPlan).toContainEqual(row);
     expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "catalog_mix_updated", entityType: "synthetic_catalog" }));
   });
 
   it("rejects duplicate mix tuples and viewers cannot mutate them", async () => {
-    const row = CATALOG_PROFILES[0].config.assortmentPlan[0]!;
-    const duplicate = await saveCatalogMixAction({ catalogId: 1, rows: [row, { ...row, category: row.category.toUpperCase(), productCount: 2 }] });
+    const row = parseCatalogProfileConfig(CATALOG_PROFILES[0].config).assortmentPlan[0]!;
+    const duplicate = await saveCatalogMixAction({ catalogId: 1, rows: [row, { ...row, id: "duplicate-row", category: row.category.toUpperCase(), productCount: 2 }] });
     expect(duplicate).toMatchObject({ ok: false });
     expect(mockUpdate).not.toHaveBeenCalled();
 

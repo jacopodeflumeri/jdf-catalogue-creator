@@ -1,5 +1,6 @@
 import {
   addProductsInputSchema,
+  catalogMixInputSchema,
   catalogSettingsInputSchema,
 } from "../input";
 
@@ -26,5 +27,12 @@ describe("catalog admin input", () => {
     expect(catalogSettingsInputSchema.parse(valid)).toEqual(valid);
     expect(() => catalogSettingsInputSchema.parse({ ...valid, defaultImageModel: "gpt-image-2" }))
       .toThrow();
+  });
+
+  it("accepts visible unassigned mix rows only with zero quota and no outfit slot", () => {
+    const taxonomyRow = { id: "legacy-row", departmentKey: null, category: "babywear", subcategory: "onesies", productCount: 0, outfitSlot: null };
+    expect(catalogMixInputSchema.parse({ catalogId: 1, rows: [taxonomyRow] }).rows).toEqual([taxonomyRow]);
+    expect(() => catalogMixInputSchema.parse({ catalogId: 1, rows: [{ ...taxonomyRow, productCount: 2 }] })).toThrow();
+    expect(() => catalogMixInputSchema.parse({ catalogId: 1, rows: [{ ...taxonomyRow, departmentKey: "WOMEN", productCount: 2 }] })).toThrow();
   });
 });

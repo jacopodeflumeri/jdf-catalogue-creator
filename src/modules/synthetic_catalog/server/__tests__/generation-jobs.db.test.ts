@@ -62,7 +62,7 @@ describe("catalog generation jobs", () => {
       return { row: payload.plan, mix: payload.configSnapshot.assortmentPlan };
     });
     expect(queuedPlans.every(({ mix }) => mix.reduce((total, row) => total + row.productCount, 0) === expectedTotal)).toBe(true);
-    expect(queuedPlans.map(({ row }) => row)).toEqual(expect.arrayContaining(CATALOG_PROFILES[0]!.config.assortmentPlan.map((row) => expect.objectContaining(row))));
+    expect(queuedPlans.map(({ row }) => row)).toEqual(expect.arrayContaining(CATALOG_PROFILES[0]!.config.assortmentPlan.filter((row) => row.departmentKey != null).map((row) => expect.objectContaining(row))));
     expect(tasks).toHaveLength(expectedTotal);
   });
 

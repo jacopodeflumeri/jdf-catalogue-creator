@@ -13,7 +13,7 @@
 import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../src/generated/prisma/client'
-import { CATALOG_PROFILES } from '../src/modules/synthetic_catalog/config/profiles'
+import { CATALOG_PROFILES, parseCatalogProfileConfig } from '../src/modules/synthetic_catalog/config/profiles'
 import { mergeSeedCatalogConfig } from '../src/modules/synthetic_catalog/config/seed-config'
 
 // Match the app's runtime behavior: construct DATABASE_URL from DB_* if it
@@ -343,7 +343,7 @@ async function main() {
     })
     const config = current
       ? mergeSeedCatalogConfig(profile.config, current.config)
-      : profile.config
+      : parseCatalogProfileConfig(profile.config)
     await prisma.syntheticCatalog.upsert({
       where: { slug: profile.slug },
       update: {

@@ -54,14 +54,14 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   });
   const config = parseCatalogProfileConfig(catalog.config);
   const requestedProducts = scope.type === "ALL"
-    ? config.assortmentPlan.reduce((sum, row) => sum + row.productCount, 0)
+    ? config.assortmentPlan.reduce((sum, row) => sum + (row.departmentKey == null ? 0 : row.productCount), 0)
     : input.requestedProducts;
   if (requestedProducts == null) throw new Error("A product count is required for the selected scope");
+  if (scope.type === "ALL" && !config.assortmentPlan.some((row) => row.departmentKey != null && row.productCount > 0)) throw new Error("Configure assigned catalogue mix rows with positive quotas before generating the all catalogue scope");
   validateRequestedProducts(requestedProducts);
-  if (scope.type === "ALL" && config.assortmentPlan.length === 0) throw new Error("Configure the catalogue mix before generating the all catalogue scope");
   if (colorVariantCount > config.colors.length) throw new Error("Catalog palette has fewer colors than requested variants");
-  if (scope.type === "DEPARTMENT" && !config.assortmentPlan.some((row) => row.departmentKey.toLocaleLowerCase() === scope.departmentKey.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this department");
-  if (scope.type === "CATEGORY" && !config.assortmentPlan.some((row) => row.category.toLocaleLowerCase() === scope.category.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this category");
+  if (scope.type === "DEPARTMENT" && !config.assortmentPlan.some((row) => row.departmentKey?.toLocaleLowerCase() === scope.departmentKey.toLocaleLowerCase() && row.productCount > 0)) throw new Error("No catalogue mix rows are configured for this department");
+  if (scope.type === "CATEGORY" && !config.assortmentPlan.some((row) => row.departmentKey != null && row.productCount > 0 && row.category.toLocaleLowerCase() === scope.category.toLocaleLowerCase())) throw new Error("No catalogue mix rows are configured for this category");
   // Reservation deliberately happens before job creation. If a later write
   // fails, the gap remains and those external IDs are never recycled.
   const reservation = await reserveProductSequenceRange(

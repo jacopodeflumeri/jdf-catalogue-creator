@@ -83,30 +83,33 @@ changing their saved pairing. Complete the Look does not change core-image
 readiness or block ordinary Catalogue CSV readiness.
 Size-row estimates use the exact planned mix rows, category-specific size rule,
 and next product sequence used when the job is queued.
-Editors can add departments, categories with their first subcategory, and
-subcategories from catalog Settings. Taxonomy controls are add-only; viewers see
-the configured values without mutation controls. Taxonomy writes are validated,
-transactional, and audited.
+Editors can add departments from Settings. Departments retain stable keys,
+labels, product ID codes, and generation weights. Viewers see them without
+mutation controls; department writes are validated, transactional, and audited.
+Categories and subcategories are edited in Catalogue Mix only.
 
-Settings also includes the editable Catalogue mix table. Each canonical row is
-`{ departmentKey, category, subcategory, productCount, outfitSlot }`; row tuples are unique
-case-insensitively and product counts are positive integers. Adding a category
-or subcategory in a mix row updates the catalog-wide taxonomy in the same
-transaction. Removing a row affects future jobs only. The outfit slot is
-planning metadata and never changes product quotas. Supported slots are `TOP`,
+Settings also includes the editable Catalogue Mix table. Each canonical row is
+`{ id, departmentKey, category, subcategory, productCount, outfitSlot }`; row
+tuples and IDs are unique. Assigned rows need a department, positive quota, and
+outfit slot. Unassigned rows use a null department, zero quota, and null slot;
+they preserve category/subcategory combinations that existed in the old
+catalog-wide taxonomy without inventing department assignments or changing
+generation totals. Assigning a department and configuring quota and slot makes
+that combination available for generation. The mix is the only persisted source
+for department/category/subcategory relationships, quotas, and outfit slots.
+Removing a row affects future jobs and Complete the Look planning. Supported
+slots are `TOP`,
 `BOTTOM`, `ONE_PIECE`, `OUTERWEAR`, `FOOTWEAR`, `BAG`, and `ACCESSORY`. Built-in
 rows have explicit mappings; legacy known rows normalize through exact
-category/subcategory keys, and new custom rows must choose a slot. The one-time
-schema migration assigns `ACCESSORY` to unknown historical rows so existing
-catalogues remain readable; editors can correct those rows in Settings.
-Categories absent from the mix remain visible as taxonomy that needs an explicit row, and are never
-assigned to departments by a generated cross-product.
+category/subcategory keys, and new assigned rows must choose a slot. Categories
+and subcategories that were absent from the old mix become visible as
+unassigned rows and are never assigned to departments by a generated
+cross-product.
 
-The Catalogue Mix editor assigns a client-only stable identity when each row
-enters editor state. That identity is used for React reconciliation and is
-removed before saving; editable category and subcategory text never serves as a
-row key. This keeps focus and row state stable while typing or removing a
-neighboring row.
+Catalogue Mix row IDs are persisted and remain stable while their editable
+values change. New rows receive an ID once when added. The ID is also the React
+key, so category and subcategory edits keep focus and removing a neighboring
+row does not move another row's state.
 
 The detail client polls persisted state every three seconds only while a job is
 queued or running. Product batches use `CATALOG_MAX_PRODUCTS_PER_JOB` (default
@@ -179,23 +182,22 @@ The four profiles are defined in
 | Luxury Fashion | Maison Veyra | `LUX` | luxury |
 | Activewear | Kinetic Form | `ACT` | activewear |
 
-Each profile owns its price and stock ranges, department mix, taxonomy inputs,
-palette, materials, sizes, seasons, naming tone, visual direction, and default
-text/image models. Seeding creates taxonomy defaults for new catalogs. On
+Each profile owns its price and stock ranges, department mix, initial
+category/subcategory entries, palette, materials, sizes, seasons, naming tone,
+visual direction, and default text/image models. Seeding creates Catalogue Mix
+defaults for new catalogs. On
 existing catalogs it refreshes static profile settings while merging in the
-current normalized taxonomy, so departments, categories, and subcategories
-added through Settings survive a reseed. Existing mix rows are retained and
-profile defaults are added only for missing tuples. Keep the seed idempotent and update
+current normalized Catalogue Mix, so departments and mix rows survive a reseed.
+Existing mix rows are retained and profile defaults are added only for missing
+tuples. Keep the seed idempotent and update
 existing profiles by `slug`; never reset `nextProductSequence` during an update.
 
 Department configuration is now stored as `{ key, label, code, generationWeight }`
 entries. Existing JSON with `departmentWeights` is normalized at read time to
 Women (`W`) and Men (`M`), preserving existing IDs and historical products.
-Categories remain catalog-wide and each category must have at least one
-subcategory. Department codes are unique, uppercase alphanumeric values of up to
-six characters; taxonomy edits are additive. Product records and filters keep
-the stable department key; the admin table and product detail page display the
-configured department label.
+Department codes are unique, uppercase alphanumeric values of up to six
+characters. Product records and filters keep the stable department key; the
+admin table and product detail page display the configured department label.
 
 The catalogue mix, rather than independent department/category lists, controls
 generation combinations. ALL creates exactly the sum of row quotas. Department
@@ -207,10 +209,11 @@ new jobs.
 
 The `20261022150000_catalogue_mix_defaults` migration upgrades the four existing
 profile configs with explicit, reviewed rows when `assortmentPlan` is absent.
-It does not cross-join departments and categories or replace custom taxonomy.
-Legacy custom categories without a safe department assignment remain visible in
-Settings until an editor adds an explicit mix row; production does not depend on
-running the development seed for this upgrade.
+The `20261023100000_catalogue_mix_canonical` migration assigns stable IDs to
+existing rows, folds taxonomy-only category/subcategory combinations into
+unassigned zero-quota rows, and removes the duplicated `categories` and
+`subcategories` config properties. Production does not depend on running the
+development seed for either upgrade.
 
 Complete the Look recommendations use persisted style colour hex values and
 catalogue mix slots. `src/modules/synthetic_catalog/domain/outfit-planner.ts`
@@ -567,6 +570,16 @@ Overview counts, active product counts, and Catalogue CSV validation/export
 exclude archived products. The Products tab defaults to Active and offers an
 Archived filter for restore. The table omits Season and Stock to keep product
 identity, style count, price, and aggregate image state visible at desktop width.
+
+### 2026-10-23 — Catalogue Mix is the canonical taxonomy
+
+Persisted catalog config stores category/subcategory relationships, generation
+quotas, and Complete the Look slots only in Catalogue Mix rows. Legacy taxonomy
+combinations without an existing department assignment migrate to visible,
+zero-quota unassigned rows. This preserves the old vocabulary without
+fabricating a department or altering existing All Catalogue generation totals.
+Departments remain a separate settings list because their keys, labels, ID
+codes, and generation weights have independent identity and use.
 
 ## Operations and sample approval runbook
 

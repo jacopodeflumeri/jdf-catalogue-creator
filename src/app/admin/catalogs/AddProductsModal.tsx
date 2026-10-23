@@ -22,7 +22,7 @@ interface AddProductsModalProps {
     categorySizeCounts: Record<string, number>;
     departments: Array<{ key: string; label: string }>;
     categories: string[];
-    assortmentPlan: Array<{ departmentKey: string; category: string; subcategory: string; productCount: number }>;
+    assortmentPlan: Array<{ id: string; departmentKey: string | null; category: string; subcategory: string; productCount: number; outfitSlot: string | null }>;
     maxProductsPerJob: number;
     largeJobThreshold: number;
   } | null;
@@ -42,17 +42,18 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
   const [error, setError] = useState<string | null>(null);
 
   if (!catalog) return null;
-  const configuredProductCount = catalog.assortmentPlan.reduce((total, row) => total + row.productCount, 0);
+  const generationRows = catalog.assortmentPlan.filter((row) => row.departmentKey != null && row.productCount > 0);
+  const configuredProductCount = generationRows.reduce((total, row) => total + row.productCount, 0);
   const requestedProducts = scopeType === "ALL" ? configuredProductCount : count;
   const estimateScope = scopeType === "ALL" ? { type: "ALL" as const }
     : scopeType === "DEPARTMENT" ? { type: "DEPARTMENT" as const, departmentKey }
       : { type: "CATEGORY" as const, category };
   const estimateSeed = `${catalog.slug}:${catalog.nextProductSequence}:${requestedProducts}:${JSON.stringify(estimateScope)}:${colorVariantCount}`;
-  const canContinueScope = scopeType === "ALL" ? catalog.assortmentPlan.length > 0 : (scopeType === "DEPARTMENT" ? Boolean(departmentKey) : Boolean(category));
-  const estimatePlan = requestedProducts > 0 && canContinueScope && catalog.assortmentPlan.length > 0 ? planAssortment({
+  const canContinueScope = scopeType === "ALL" ? generationRows.length > 0 : (scopeType === "DEPARTMENT" ? Boolean(departmentKey) : Boolean(category));
+  const estimatePlan = requestedProducts > 0 && canContinueScope && generationRows.length > 0 ? planAssortment({
     sequences: Array.from({ length: requestedProducts }, (_, index) => catalog.nextProductSequence + index),
     scope: estimateScope,
-    config: { departments: catalog.departments, assortmentPlan: catalog.assortmentPlan },
+    config: { departments: catalog.departments, assortmentPlan: generationRows },
     seed: estimateSeed,
   }) : [];
   const generationEstimate = estimateAssortmentOutput({
@@ -62,10 +63,10 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
   });
   const estimate = { ...generationEstimate, images: 0, liteLlmCalls: generationEstimate.products };
   const isLarge = requestedProducts >= catalog.largeJobThreshold;
-  const mixDepartments = Array.from(new Set(catalog.assortmentPlan.map((row) => row.departmentKey)));
-  const mixCategories = Array.from(new Set(catalog.assortmentPlan.map((row) => row.category)));
-  const groupedMix = catalog.assortmentPlan.reduce<Record<string, Array<{ category: string; subcategory: string; productCount: number }>>>((groups, row) => {
-    (groups[row.departmentKey] ??= []).push(row);
+  const mixDepartments = Array.from(new Set(generationRows.map((row) => row.departmentKey!)));
+  const mixCategories = Array.from(new Set(generationRows.map((row) => row.category)));
+  const groupedMix = generationRows.reduce<Record<string, Array<{ category: string; subcategory: string; productCount: number }>>>((groups, row) => {
+    (groups[row.departmentKey!] ??= []).push(row);
     return groups;
   }, {});
 
@@ -92,7 +93,7 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
       </div>
       {step === 0 && <div className="space-y-5">
         <Card title="All catalogue" description="Generate the configured product count from the catalogue mix."><Button variant={scopeType === "ALL" ? "primary" : "secondary"} onClick={() => setScopeType("ALL")}>All catalogue</Button></Card>
-        {catalog.assortmentPlan.length === 0 && <NoticeBox variant="warning">Configure at least one valid catalogue mix row in Settings before queueing generation.</NoticeBox>}
+        {generationRows.length === 0 && <NoticeBox variant="warning">Assign a department, positive quota, and outfit slot to at least one Catalogue Mix row in Settings before queueing generation.</NoticeBox>}
         <Card title="Specific department" description="Every generated product will use this department.">
           <div className="flex gap-3"><Button variant={scopeType === "DEPARTMENT" ? "primary" : "secondary"} onClick={() => setScopeType("DEPARTMENT")}>Choose department</Button>{scopeType === "DEPARTMENT" && <FormSelect label="Department" value={departmentKey} onChange={(event) => setDepartmentKey(event.target.value)} options={catalog.departments.filter((item) => mixDepartments.includes(item.key)).map((item) => ({ value: item.key, label: item.label }))} />}</div>
         </Card>

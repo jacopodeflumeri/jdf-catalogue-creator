@@ -19,7 +19,11 @@ describe("catalog profile configuration", () => {
 
   it("has complete generation defaults for every profile", () => {
     for (const profile of CATALOG_PROFILES) {
-      expect(profile.config.categories.length).toBeGreaterThan(0);
+      const parsed = parseCatalogProfileConfig(profile.config);
+      expect(parsed.assortmentPlan.length).toBeGreaterThan(0);
+      expect(parsed.assortmentPlan.every((row) => Boolean(row.id))).toBe(true);
+      expect(parsed).not.toHaveProperty("categories");
+      expect(parsed).not.toHaveProperty("subcategories");
       expect(profile.config.colors.length).toBeGreaterThan(0);
       expect(profile.defaultTextModel).toMatch(/^openai\//);
       expect(profile.defaultImageModel).toMatch(/^openai\//);
@@ -36,17 +40,37 @@ describe("catalog profile configuration", () => {
     ]);
   });
 
-  it("accepts pre-mix configs and validates canonical mix rows", () => {
+  it("folds legacy taxonomy-only combinations into unassigned mix rows", () => {
     const legacy = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
     delete legacy.assortmentPlan;
-    expect(parseCatalogProfileConfig(legacy).assortmentPlan).toEqual([]);
+    legacy.categories = ["coats", "knitwear", "shirts", "trousers", "dresses"];
+    legacy.subcategories = {
+      coats: ["wool coats", "trench coats"],
+      knitwear: ["cardigans", "crew necks"],
+      shirts: ["poplin shirts", "silk shirts"],
+      trousers: ["tailored trousers", "wide-leg trousers"],
+      dresses: ["midi dresses", "shirt dresses"],
+    };
+    const folded = parseCatalogProfileConfig(legacy);
+    expect(folded.assortmentPlan.every((row) => row.departmentKey === null && row.productCount === 0 && row.outfitSlot === null)).toBe(true);
+    expect(folded.assortmentPlan).toHaveLength(10);
+    expect(folded).not.toHaveProperty("categories");
+    expect(folded).not.toHaveProperty("subcategories");
+  });
 
-    const duplicate = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+  it("validates canonical mix rows and requires generation settings on assigned rows", () => {
+    const legacy = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+
+    const duplicate = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
     duplicate.assortmentPlan = [...CATALOG_PROFILES[0].config.assortmentPlan, CATALOG_PROFILES[0].config.assortmentPlan[0]];
     expect(() => parseCatalogProfileConfig(duplicate)).toThrow("must be unique");
 
-    const invalidDepartment = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+    const invalidDepartment = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
     invalidDepartment.assortmentPlan = [{ departmentKey: "UNKNOWN", category: "coats", subcategory: "wool coats", productCount: 2 }];
     expect(() => parseCatalogProfileConfig(invalidDepartment)).toThrow("not configured");
+
+    const invalidUnassigned = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
+    invalidUnassigned.assortmentPlan = [{ departmentKey: null, category: "coats", subcategory: "wool coats", productCount: 1, outfitSlot: null }];
+    expect(() => parseCatalogProfileConfig(invalidUnassigned)).toThrow("zero products");
   });
 });

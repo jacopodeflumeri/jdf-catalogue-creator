@@ -9,7 +9,7 @@ export type GenerationScope =
 export type PlannedDepartment = string;
 
 export interface AssortmentPlanRow {
-  departmentKey: string;
+  departmentKey: string | null;
   category: string;
   subcategory: string;
   productCount: number;
@@ -58,10 +58,10 @@ export function planAssortment(input: {
 
   const legacyMode = input.departmentMode ?? "AUTO";
   const scope = input.scope ?? (legacyMode === "AUTO" ? { type: "ALL" } : { type: "DEPARTMENT", departmentKey: legacyMode });
-  const allRows = input.config.assortmentPlan;
+  const allRows = input.config.assortmentPlan.filter((row) => row.departmentKey != null && row.productCount > 0);
   if (allRows.length === 0) throw new Error("Catalogue mix is not configured");
   const matchingRows = scope.type === "ALL" ? [...allRows]
-    : scope.type === "DEPARTMENT" ? allRows.filter((row) => row.departmentKey.toLocaleLowerCase() === scope.departmentKey.toLocaleLowerCase())
+    : scope.type === "DEPARTMENT" ? allRows.filter((row) => row.departmentKey?.toLocaleLowerCase() === scope.departmentKey.toLocaleLowerCase())
       : allRows.filter((row) => row.category.toLocaleLowerCase() === scope.category.toLocaleLowerCase());
   if (matchingRows.length === 0) throw new Error(`No catalogue mix rows match the selected ${scope.type.toLowerCase()} scope`);
   if (scope.type === "DEPARTMENT" && !input.config.departments.some((department) => department.key.toLocaleLowerCase() === scope.departmentKey.toLocaleLowerCase())) {
@@ -77,6 +77,6 @@ export function planAssortment(input: {
 
   return input.sequences.map((sequence, index) => {
     const row = selectedRows[index]!;
-    return { sequence, seed: `${input.seed}:${sequence}`, department: row.departmentKey, category: row.category, subcategory: row.subcategory };
+    return { sequence, seed: `${input.seed}:${sequence}`, department: row.departmentKey!, category: row.category, subcategory: row.subcategory };
   });
 }

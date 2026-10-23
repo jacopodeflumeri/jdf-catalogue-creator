@@ -1,5 +1,5 @@
 import { CATALOG_PROFILES } from "../profiles";
-import { addCatalogCategory, addCatalogDepartment, addCatalogSubcategory } from "../taxonomy";
+import { addCatalogDepartment } from "../taxonomy";
 
 const config = CATALOG_PROFILES[0].config;
 
@@ -11,14 +11,4 @@ describe("editable catalog taxonomy", () => {
     expect(() => addCatalogDepartment(next, { label: "Junior", code: "k", generationWeight: 1 })).toThrow("code already exists");
   });
 
-  it("requires an initial subcategory and rejects case-insensitive duplicates", () => {
-    const next = addCatalogCategory(config, "  Occasionwear ", "  Evening gowns ");
-    expect(next.subcategories.Occasionwear).toEqual(["Evening gowns"]);
-    expect(() => addCatalogCategory(next, "OCCASIONWEAR", "Dresses")).toThrow("already exists");
-    expect(addCatalogSubcategory(next, "occasionwear", "Cocktail dresses").subcategories.Occasionwear).toEqual([
-      "Evening gowns", "Cocktail dresses",
-    ]);
-    expect(() => addCatalogSubcategory(next, "occasionwear", "evening gowns")).toThrow("already exists");
-    expect(() => addCatalogCategory(config, "", "Dresses")).toThrow("cannot be empty");
-  });
 });

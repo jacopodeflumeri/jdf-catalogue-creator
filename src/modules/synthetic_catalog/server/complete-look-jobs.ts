@@ -1,15 +1,15 @@
 ﻿import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
-import { parseCatalogProfileConfig, defaultOutfitSlot, type OutfitSlot } from "../config/profiles";
+import { parseCatalogProfileConfig, type OutfitSlot } from "../config/profiles";
 import { planOutfits, type OutfitStyle, type PlannedOutfit } from "../domain/outfit-planner";
 
 function asJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
-function slotFor(product: { category: string; subcategory: string }, config: ReturnType<typeof parseCatalogProfileConfig>): OutfitSlot | undefined {
-  const row = config.assortmentPlan.find((item) => item.category.toLocaleLowerCase() === product.category.toLocaleLowerCase() && item.subcategory.toLocaleLowerCase() === product.subcategory.toLocaleLowerCase());
-  return row?.outfitSlot ?? defaultOutfitSlot(product.category, product.subcategory);
+function slotFor(product: { department: string; category: string; subcategory: string }, config: ReturnType<typeof parseCatalogProfileConfig>): OutfitSlot | undefined {
+  const row = config.assortmentPlan.find((item) => item.departmentKey?.toLocaleLowerCase() === product.department.toLocaleLowerCase() && item.category.toLocaleLowerCase() === product.category.toLocaleLowerCase() && item.subcategory.toLocaleLowerCase() === product.subcategory.toLocaleLowerCase());
+  return row?.outfitSlot ?? undefined;
 }
 
 async function calculate(catalogId: number, sourceJobId?: number) {
