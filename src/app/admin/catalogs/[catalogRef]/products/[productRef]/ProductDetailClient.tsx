@@ -21,7 +21,7 @@ import {
 import CatalogStatusBadge from "../../../CatalogStatusBadge";
 
 const ACTIVE_IMAGE_STATUSES = new Set(["QUEUED", "GENERATING"]);
-const IMAGE_ROLES = ["FRONT", "BACK", "ON_MODEL"] as const;
+const IMAGE_ROLES = ["FRONT", "BACK"] as const;
 
 function formatMoney(value: string, currency: string): string {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(value));
@@ -184,7 +184,7 @@ export default function ProductDetailClient({
 
       {product.styles.map((style) => <div key={style.id} className="space-y-6">
       <Card title={`${style.colorName} · ${style.externalId}`} description={style.status.toLowerCase()} headerActions={<span className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: style.colorHex }} aria-label={`${style.colorName} swatch`} />}>
-        <div className="grid gap-5 sm:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-2">
           {IMAGE_ROLES.map((role) => {
             const image = style.images.find((candidate) => candidate.role === role);
             return <ImageTile key={`${style.id}-${role}`} role={role} image={image} canEdit={canEdit} busy={busyImageId === image?.id} onRegenerate={() => image && void regenerate(image.id)} />;

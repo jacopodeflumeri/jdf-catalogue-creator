@@ -117,7 +117,8 @@ export interface CatalogCsvExport {
   summary: CatalogExportSummary;
 }
 
-const REQUIRED_IMAGE_ROLES: readonly ExportImageRole[] = ["FRONT", "BACK", "ON_MODEL"];
+const REQUIRED_IMAGE_ROLES: readonly ExportImageRole[] = ["FRONT", "BACK"];
+const CSV_IMAGE_ROLES: readonly ExportImageRole[] = ["FRONT", "BACK", "ON_MODEL"];
 const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/webp", "image/png", "image/jpeg"]);
 
 function countValues(values: string[]): Map<string, number> {
@@ -180,7 +181,7 @@ function productIssues(
     const coreImages = style.images.filter((image) => (REQUIRED_IMAGE_ROLES as readonly string[]).includes(image.role));
     const imagesByRole = new Map(coreImages.map((image) => [image.role, image]));
     if (coreImages.length !== REQUIRED_IMAGE_ROLES.length || imagesByRole.size !== REQUIRED_IMAGE_ROLES.length) {
-      add("image_roles", `Style ${style.externalId} must have exactly front, back, and on-model images`);
+      add("image_roles", `Style ${style.externalId} must have exactly one front and one back image`);
     }
     for (const role of REQUIRED_IMAGE_ROLES) {
       const image = imagesByRole.get(role);
@@ -246,11 +247,14 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
     const department = source.config.departments.find((item) => item.key === product.department);
     for (const style of product.styles) {
       stylesExported += 1;
-      imagesReferenced += REQUIRED_IMAGE_ROLES.length;
       const images = new Map(style.images.map((image) => [image.role, image]));
-      const imageUrls = REQUIRED_IMAGE_ROLES.map((role) =>
-        absoluteUrl(`/api/catalog-assets/${images.get(role)!.publicId}`, appUrl),
-      );
+      const imageUrls = CSV_IMAGE_ROLES.map((role) => {
+        const image = images.get(role);
+        return image?.status === "READY" && image.storageKey
+          ? absoluteUrl(`/api/catalog-assets/${image.publicId}`, appUrl)
+          : "";
+      });
+      imagesReferenced += imageUrls.filter(Boolean).length;
       const look = style.completeLook;
       const lookUsable = look?.status === "READY" && look.imageAsset?.status === "READY" && Boolean(look.imageAsset.storageKey) && look.items.every((item) => !item.archived);
       const completeLookUrl = lookUsable ? absoluteUrl(`/api/catalog-assets/${look!.imageAsset!.publicId}`, appUrl) : "";

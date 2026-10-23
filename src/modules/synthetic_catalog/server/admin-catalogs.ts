@@ -4,6 +4,7 @@ import { catalogCategories, catalogSubcategories, parseCatalogProfileConfig } fr
 import { configuredDepartmentLabel } from "../config/department-label";
 import { getCatalogGenerationLimits } from "../config/generation-limits";
 import { sizesForCategory } from "../domain/rules";
+import { REQUIRED_CORE_IMAGE_ROLES } from "../providers/image-generator";
 import type {
   CatalogDetailView,
   CatalogJobView,
@@ -205,7 +206,9 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
   return catalogs.map((catalog) => {
     const config = parseCatalogProfileConfig(catalog.config);
     const styles = catalog.products.flatMap((product) => product.styles);
-    const images = styles.flatMap((style) => style.images).filter((image) => image.role !== "COMPLETE_LOOK");
+    const images = styles
+      .flatMap((style) => style.images)
+      .filter((image) => (REQUIRED_CORE_IMAGE_ROLES as readonly string[]).includes(image.role));
     return {
       id: catalog.id,
       nextProductSequence: catalog.nextProductSequence,
@@ -250,9 +253,9 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
     prisma.syntheticProduct.count({ where: { catalogId: catalog.id, archivedAt: null } }),
     prisma.syntheticStyle.count({ where: { product: { catalogId: catalog.id, archivedAt: null } } }),
     prisma.syntheticVariant.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } } } }),
-    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: ["FRONT", "BACK", "ON_MODEL"] }, status: "READY" } }),
-    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: ["FRONT", "BACK", "ON_MODEL"] }, status: "FAILED" } }),
-    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: ["FRONT", "BACK", "ON_MODEL"] }, status: { in: ["QUEUED", "GENERATING"] } } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: [...REQUIRED_CORE_IMAGE_ROLES] }, status: "READY" } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: [...REQUIRED_CORE_IMAGE_ROLES] }, status: "FAILED" } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: [...REQUIRED_CORE_IMAGE_ROLES] }, status: { in: ["QUEUED", "GENERATING"] } } }),
   ]);
 
   return {

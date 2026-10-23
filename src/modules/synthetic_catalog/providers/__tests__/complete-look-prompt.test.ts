@@ -6,9 +6,9 @@ describe("Complete the Look prompt", () => {
       anchor: { name: "Top", category: "tops", subcategory: "training top", material: "jersey", season: "Core", colorName: "Navy", colorCode: "NAVY", visualSpec: { patternCode: "STRIPED", embellishmentCodes: ["EMBROIDERY"] } },
       catalog: { brandName: "Fictional", segment: "activewear", visualDirection: "clean studio" },
       references: [
-        { data: Buffer.from("1"), mimeType: "image/webp", assetId: 1, description: "anchor item already worn by the model" },
-        { data: Buffer.from("2"), mimeType: "image/webp", assetId: 2, description: "authoritative anchor product reference" },
-        { data: Buffer.from("3"), mimeType: "image/webp", assetId: 3, description: "companion bottom leggings in black; assigned pattern FLORAL; assigned embellishments [\"CONTRAST_STITCHING\"]" },
+        { data: Buffer.from("1"), mimeType: "image/webp", assetId: 1, description: "authoritative anchor product reference" },
+        { data: Buffer.from("2"), mimeType: "image/webp", assetId: 2, description: "companion bottom leggings in black; assigned pattern FLORAL; assigned embellishments [\"CONTRAST_STITCHING\"]" },
+        { data: Buffer.from("3"), mimeType: "image/webp", assetId: 3, description: "companion outerwear jacket in navy" },
       ],
     });
     expect(prompt.indexOf("Image 1:")).toBeLessThan(prompt.indexOf("Image 2:"));

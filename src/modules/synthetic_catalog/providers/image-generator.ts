@@ -1,5 +1,6 @@
-export const REQUIRED_CORE_IMAGE_ROLES = ["FRONT", "BACK", "ON_MODEL"] as const;
-export const OPTIONAL_IMAGE_ROLES = ["COMPLETE_LOOK"] as const;
+export const REQUIRED_CORE_IMAGE_ROLES = ["FRONT", "BACK"] as const;
+/** ON_MODEL is retained for existing assets and explicit legacy regeneration only. */
+export const OPTIONAL_IMAGE_ROLES = ["ON_MODEL", "COMPLETE_LOOK"] as const;
 /** Backwards-compatible alias used by existing core image generation code. */
 export const CATALOG_IMAGE_ROLES = REQUIRED_CORE_IMAGE_ROLES;
 export type CatalogImageRoleValue = (typeof REQUIRED_CORE_IMAGE_ROLES)[number] | (typeof OPTIONAL_IMAGE_ROLES)[number];

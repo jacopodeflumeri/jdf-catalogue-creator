@@ -33,10 +33,10 @@ generation settings. The product table can be filtered by department, category,
 subcategory, and aggregate required-core-image status (`READY`, `FAILED`, `GENERATING`, or
 `MISSING`). Information readiness is independent of image readiness. It reports color-style count and stock across every style; the
 thumbnail uses the first available FRONT image. Image status is computed from
-the three required core roles, independently of product/style information
+the two required core roles, independently of product/style information
 readiness; a core-image failure in any color is shown as `FAILED`.
 Selecting a row opens `/admin/catalogs/{slug}/products/{externalId}`, where all
-color styles, their IDs, size/SKU inventory, and three required core images are
+color styles, their IDs, size/SKU inventory, and two required core images are
 shown, followed by an optional Complete the Look image and ordered companion
 products when available. Editors can regenerate an individual style image. Numeric catalog and
 product IDs are also accepted so audit-log links remain stable.
@@ -63,14 +63,16 @@ The visible workflow now exposes a Step 2 action after a completed information
 batch, plus an explicit all-active-products-missing-core-images action for
 historical catalogue records. Both create separate `CORE_IMAGES` jobs linked to
 their source information job when one is selected. They enqueue only missing or
-failed `FRONT`, `BACK`, and `ON_MODEL` roles; READY assets are preserved.
+failed `FRONT` and `BACK` roles; READY assets are preserved. Existing
+`ON_MODEL` assets remain stored for backwards compatibility but are neither
+required nor queued by Step 2.
 Catalogue-level transaction locking and active-task checks make repeated
 submissions idempotent. A preflight confirmation shows target products, colour
 styles, and image calls before queueing.
 Step 3 is also manual and offers a source information batch or all eligible
 active catalogue products. Before queueing, every active style in the full
 catalogue must have READY FRONT and BACK images, even for a batch target;
-ON_MODEL is optional. The preflight lists missing/failed roles and affected PDPs,
+Legacy `ON_MODEL` assets are irrelevant to this gate. The preflight lists missing/failed roles and affected PDPs,
 then summarizes eligible and skipped styles, skip reasons, and image calls.
 Complete the Look jobs share the worker's lock, cancellation, retries and lease
 recovery. They store one look per colour style and preserve the persisted
@@ -79,8 +81,9 @@ same-department, season-compatible, from different products, and have READY
 FRONT images. Recipes use the explicit mix slots; neutrals pair broadly,
 harmonious colours score higher, competing saturated accents are penalized, and
 reuse counts reduce a style's score when it has already been selected often.
-Anchors use ON_MODEL first when READY, then FRONT, followed by companion FRONT
-images in the saved outfit order. The image edit passes those files through
+References use the anchor FRONT image followed by companion FRONT images in the
+saved outfit order. Step 3 creates the model-worn outfit image from those
+product-only references. The image edit passes those files through
 LiteLLM with feature `synthetic-catalog-image-complete-look`; unsupported
 multi-reference edits fail visibly and remain retryable.
 
@@ -143,9 +146,10 @@ The adapter reads persisted catalog records and emits one row per variant in a
 fixed 27-column order. The original 23 fields keep their order; Complete the
 Look fields and then Design Mix fields are appended. Every style of a parent product gets its own size rows,
 style ID, color, and image URLs. IDs and SKUs are never regenerated during
-export. Front, back, and on-model assets map to
-`image_url_1`, `image_url_2`, and `image_url_3` respectively, and the same three
-stable opaque URLs repeat across every size row in a style. URL values use
+export. Front and back assets map to `image_url_1` and `image_url_2`. The legacy
+`image_url_3` column remains in place for contract compatibility and contains an
+existing READY `ON_MODEL` asset when one exists; it is blank for newly generated
+styles. The same stable opaque URLs repeat across every size row in a style. URL values use
 `APP_URL`; deployed environments must set it to the HTTPS hostname Demoware can
 reach. Text beginning with `=`, `+`, `-`, or `@` is prefixed with an apostrophe
 to prevent spreadsheet formula execution when an operator opens the file. The
@@ -164,7 +168,7 @@ products whose product and every style are `READY` pass export validation. The
 validator also checks required values, identifier uniqueness and parentage,
 profile taxonomy and category-specific sizes, positive prices, sale-price
 ordering, EUR currency, non-negative stock and matching availability, plus
-exactly three ready images with stored keys, allowed MIME metadata, and minimum
+exactly one ready front and one ready back image with stored keys, allowed MIME metadata, and minimum
 512px dimensions. The storage adapter already decodes every generated source
 with Sharp before it can be persisted as WebP, so an image with READY metadata
 has passed decode and non-empty-byte validation at write time.
@@ -173,7 +177,9 @@ The Export tab shows products, styles, variant rows, referenced images, excluded
 products, and the first validation issues before download. The companion
 `/api/admin/catalogs/{slug}/validation-report.json` download contains the full
 issue list, readiness checks, schema version, generation timestamp, and the
-front/back/on-model contract. A catalog is `readyForImport` only when it contains
+ordered image slots plus an explicit `requiredImageRoles: ["FRONT", "BACK"]`
+contract; `ON_MODEL` is the legacy optional third slot. A catalog is
+`readyForImport` only when it contains
 at least one product and variant row, every product is exportable, and there are
 no validation issues. A catalog with no
 exportable variants returns HTTP 422 instead of a misleading header-only file.
@@ -284,7 +290,7 @@ normalization live in `src/modules/synthetic_catalog/domain/ids.ts`.
   non-null JSONB embellishment fields with an empty-list default for legacy rows.
 - `SyntheticStyle` stores a color execution and its visual specification.
 - `SyntheticVariant` stores size, stock, availability, external ID, and SKU.
-- `SyntheticImageAsset` tracks front, back, and on-model generation independently.
+- `SyntheticImageAsset` tracks front, back, legacy on-model, and Complete the Look images independently.
 - `CatalogGenerationJob` records one requested operation and aggregate progress.
 - `CatalogGenerationTask` is the durable, retryable unit claimed by the worker.
 
@@ -307,7 +313,7 @@ The information task's frozen assignment is the source of truth for structured
 output and persistence. Provider output must return the exact planned pattern
 and ordered embellishment code list. The product row is canonical across colors;
 each style's `visualSpec` carries the same codes and construction details.
-FRONT, BACK, ON_MODEL, and Complete the Look prompts preserve these attributes
+FRONT, BACK, legacy ON_MODEL regeneration, and Complete the Look prompts preserve these attributes
 and forbid unassigned decoration. Image requests continue through the attributed
 LiteLLM module.
 
@@ -340,7 +346,7 @@ resumed without rebuilding completed styles or images, and persisted image task
 context protects queued work from later catalog settings edits. For example,
 10 products with 3 colors create 10 products, 30 styles and complete variant
 inventory, with 10 first-step text calls and no image tasks. A later core-image
-job queues up to 90 assets/tasks and calls. Catalog owners should account for
+job queues up to 60 assets/tasks and calls. Catalog owners should account for
 the image-call growth when choosing batch size and palette count.
 
 The Phase 2 application service remains a narrow product-generation test seam.
@@ -356,9 +362,9 @@ can therefore poll safely without generating the same item twice.
 
 Completing a product transaction creates its product, styles, and variants.
 It does not create image assets or image tasks. A later `CORE_IMAGES` job creates
-the required core assets/tasks. Non-front tasks are not
-claimable until the front asset is terminal, so back and on-model images use the
-front reference when it is available and fall back to prompt-only generation
+the required core assets/tasks. Back tasks are not
+claimable until the front asset is terminal, so back images use the front
+reference when it is available and fall back to prompt-only generation
 after a permanent front failure.
 
 Transient network/proxy/S3 errors return the task to `QUEUED` with exponential
@@ -421,16 +427,16 @@ avoid wasteful repeat spend. There is no direct-provider fallback.
 
 ## Image generation
 
-Core image readiness uses the required roles `FRONT`, `BACK`, and `ON_MODEL`;
-these remain the export-required images. A manual core-image job creates the
+Core image readiness uses only the required roles `FRONT` and `BACK`; these are
+also the export-required images. A manual core-image job creates the
 durable assets/tasks. `generateStyleImages()` processes front first, then supplies the stored
-front bytes to back and on-model generation through LiteLLM's image-edit
+front bytes to back generation through LiteLLM's image-edit
 endpoint. If the proxy explicitly reports that edits are unsupported, the same
 adapter falls back to attributed prompt-only generation; it never calls a
 provider directly.
 
-Role-specific prompts require a complete product-only front/back view or a
-clearly visible on-model garment, while prohibiting real brands, logos, text,
+Role-specific prompts require a complete product-only front/back view. Complete
+the Look prompts create the model-worn outfit in Step 3, while prohibiting real brands, logos, text,
 watermarks, and recognizable campaigns. Every non-streaming call uses the
 persisted image model, a role-specific feature name, and a 240-second timeout.
 JSON image-generation requests carry normal billing metadata. Multipart image
@@ -644,11 +650,11 @@ codes, and generation weights have independent identity and use.
 4. Wait for each job to reach a terminal state. For failures, read the persisted
    task reason in the Jobs tab. Retry the job for failed tasks, or regenerate one
    failed/unsuitable image from its image tile; do not restart successful work.
-5. Human-review all three roles for garment consistency, absence of logos/text,
-   and correct front/back/on-model framing. Download the validation report; it
+5. Human-review FRONT and BACK for product consistency and absence of logos/text,
+   then review the model-worn Complete the Look output from Step 3. Download the validation report; it
    must say `readyForImport: true` before downloading the CSV.
 6. With the current Demoware staging importer contract and access supplied,
-   import each small CSV, verify all three image URLs are fetchable, then run the
+   import each small CSV, verify the two required image URLs are fetchable, then run the
    Labeller. Record manual approval outside the application.
 7. Only after all four samples are manually approved may an operator queue larger
    batches. The application does not automatically expand a sample into a full
@@ -716,8 +722,9 @@ The static slug mapping is `premium-apparel` → `/img/aureline.png`,
 `/img/maison-veyra.png`, and `activewear` → `/img/kinetiq-form.png`. For a
 planned logo repeat, only that catalogue's supplied fictional logo is allowed,
 as a restrained repeated textile or surface motif. FRONT receives the
-catalogue logo reference only. BACK and ON_MODEL receive the authoritative
-FRONT product image first, then the catalogue logo. This exact reference set
+catalogue logo reference only. BACK receives the authoritative FRONT product
+image first, then the catalogue logo. Legacy ON_MODEL regeneration retains the
+same reference behavior, but Step 2 does not create that role. This exact reference set
 requires editing through LiteLLM; unsupported reference processing fails
 visibly and uses normal task retries without prompt-only fallback. Ordinary
 patterns get no logo reference. Real-world, unassigned, invented, altered, or

@@ -54,7 +54,7 @@ async function getReference(
       where: { styleId_role: { styleId, role: "FRONT" } },
     });
     if (front?.storageKey && front.mimeType) references.push({ data: await storage.get(front.storageKey), mimeType: front.mimeType, assetId: front.id, description: "authoritative FRONT product image" });
-    else if (logoPattern) throw new Error("Brand logo repeat BACK and ON_MODEL images require the authoritative FRONT image first");
+    else if (logoPattern) throw new Error("Brand logo repeat non-FRONT images require the authoritative FRONT image first");
   }
   if (logoPattern) {
     references.push(await loadCatalogLogoReference(catalogSlug));
@@ -224,10 +224,8 @@ async function generateCompleteLookImage(input: {
   await assertCompleteLookCurrent(look.id);
   const asset = await prisma.syntheticImageAsset.findUniqueOrThrow({ where: { styleId_role: { styleId: input.styleId, role: "COMPLETE_LOOK" } } });
   const references: ImageReference[] = [];
-  const anchorOnModel = look.anchorStyle.images.find((image) => image.role === "ON_MODEL" && image.status === "READY" && image.storageKey && image.mimeType);
   const anchorFront = look.anchorStyle.images.find((image) => image.role === "FRONT" && image.status === "READY" && image.storageKey && image.mimeType);
   if (!anchorFront) throw new Error("The anchor FRONT reference is not ready");
-  if (anchorOnModel) references.push({ data: await input.storage.get(anchorOnModel.storageKey!), mimeType: anchorOnModel.mimeType!, assetId: anchorOnModel.id, description: "anchor item already worn by the model" });
   references.push({ data: await input.storage.get(anchorFront.storageKey!), mimeType: anchorFront.mimeType!, assetId: anchorFront.id, description: "authoritative anchor product reference" });
   for (const item of look.items) {
     if (item.companionStyle.product.archivedAt) throw new Error("A companion product is archived");
@@ -284,7 +282,7 @@ export async function generateStyleImages(input: {
       await generateStyleImage({ ...input, role });
     } catch {
       // Each role has its own durable FAILED state. Continue so a failed front
-      // image does not prevent prompt-only back and on-model generation.
+      // image does not prevent prompt-only back generation.
     }
   }
   return prisma.syntheticImageAsset.findMany({

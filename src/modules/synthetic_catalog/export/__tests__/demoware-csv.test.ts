@@ -122,6 +122,20 @@ describe("Demoware CSV export", () => {
     expect(result.summary.imagesReferenced).toBe(3);
   });
 
+  it("exports front and back without requiring a legacy on-model image", () => {
+    const style = product().styles[0]!;
+    const images = style.images.filter((image) => image.role !== "ON_MODEL");
+    const result = buildDemowareCsv(
+      source([product({ styles: [{ ...style, images }] })]),
+      "https://catalogs.example.test",
+    );
+    const first = result.csv.trimEnd().split("\r\n")[1]!.split(",");
+    const index = (column: (typeof DEMOWARE_CSV_COLUMNS)[number]) => DEMOWARE_CSV_COLUMNS.indexOf(column);
+    expect(result.summary.readyForImport).toBe(true);
+    expect(result.summary.imagesReferenced).toBe(2);
+    expect(first[index("image_url_3")]).toBe("");
+  });
+
   it("leaves both optional values blank for stale looks and archived companions", () => {
     const style = product().styles[0]!;
     const stale = { status: "STALE", imageAsset: { publicId: "00000000-0000-4000-8000-000000000004", status: "READY", storageKey: "look.webp" }, items: [{ productExternalId: "PRE-W-000010", archived: false }] };

@@ -43,7 +43,7 @@ describe("core image jobs", () => {
     const job = await createCoreImagesJob({ catalogId: catalog.id, sourceJobId: source.id });
     expect(job.jobType).toBe("CORE_IMAGES");
     expect(job.sourceJobId).toBe(source.id);
-    expect(job.tasks).toHaveLength(5);
+    expect(job.tasks).toHaveLength(3);
     expect(job.tasks.some((task) => task.styleId === style.id && task.dedupeKey.endsWith(":FRONT"))).toBe(false);
     await expect(createCoreImagesJob({ catalogId: catalog.id, sourceJobId: source.id })).rejects.toThrow("already active");
   });
@@ -52,7 +52,7 @@ describe("core image jobs", () => {
     const { catalog, products } = await fixture();
     await prisma.syntheticProduct.update({ where: { id: products[1]!.id }, data: { generationJobId: null, archivedAt: new Date() } });
     const job = await createCoreImagesJob({ catalogId: catalog.id, allMissing: true });
-    expect(job.tasks).toHaveLength(3);
+    expect(job.tasks).toHaveLength(2);
     expect(job.tasks.every((task) => task.productId === products[0]!.id)).toBe(true);
   });
 });

@@ -65,7 +65,7 @@ describe("synthetic image asset persistence", () => {
   beforeEach(() => truncateAllTables());
   afterAll(() => disconnectPrisma());
 
-  it("persists three images with front references and regenerates one role independently", async () => {
+  it("persists front and back images and regenerates one role independently", async () => {
     const profile = CATALOG_PROFILES[0];
     const catalog = await prisma.syntheticCatalog.create({
       data: {
@@ -89,7 +89,7 @@ describe("synthetic image asset persistence", () => {
     const style = await prisma.syntheticStyle.findFirstOrThrow({
       where: { product: { catalogId: catalog.id } },
     });
-    expect(await prisma.syntheticImageAsset.count({ where: { styleId: style.id } })).toBe(3);
+    expect(await prisma.syntheticImageAsset.count({ where: { styleId: style.id } })).toBe(0);
 
     const calls: CatalogImageGenerationInput[] = [];
     const generator: CatalogImageGenerator = {
@@ -98,7 +98,7 @@ describe("synthetic image asset persistence", () => {
         return {
           data: ONE_PIXEL_PNG,
           mimeType: "image/png",
-          usedReference: Boolean(input.reference),
+          usedReference: Boolean(input.references?.length),
         };
       },
     };
@@ -109,20 +109,17 @@ describe("synthetic image asset persistence", () => {
       generator,
       storage,
     });
-    expect(generated).toHaveLength(3);
+    expect(generated).toHaveLength(2);
     expect(generated.every((asset) => asset.status === "READY")).toBe(true);
     expect(generated.every((asset) => asset.storageKey?.startsWith("public/catalogs/"))).toBe(true);
-    expect(calls.map((call) => [call.role, Boolean(call.reference)])).toEqual([
+    expect(calls.map((call) => [call.role, Boolean(call.references?.length)])).toEqual([
       ["FRONT", false],
       ["BACK", true],
-      ["ON_MODEL", true],
     ]);
 
     const front = generated.find((asset) => asset.role === "FRONT")!;
     const back = generated.find((asset) => asset.role === "BACK")!;
-    const onModel = generated.find((asset) => asset.role === "ON_MODEL")!;
     expect(back.referenceAssetId).toBe(front.id);
-    expect(onModel.referenceAssetId).toBe(front.id);
 
     await regenerateImageAsset({
       imageAssetId: back.id,
@@ -135,7 +132,7 @@ describe("synthetic image asset persistence", () => {
     });
     expect(after.find((asset) => asset.role === "BACK")?.attemptCount).toBe(2);
     expect(after.find((asset) => asset.role === "FRONT")?.attemptCount).toBe(1);
-    expect(after.find((asset) => asset.role === "ON_MODEL")?.attemptCount).toBe(1);
+    expect(after.some((asset) => asset.role === "ON_MODEL")).toBe(false);
     expect(calls.at(-1)).toEqual(expect.objectContaining({ role: "BACK", regeneration: true }));
   });
 });

@@ -16,6 +16,7 @@ export interface CatalogValidationReport {
     format: "demoware-csv";
     columns: number;
     imageOrder: ["FRONT", "BACK", "ON_MODEL"];
+    requiredImageRoles: ["FRONT", "BACK"];
   };
   checks: {
     hasProducts: boolean;
@@ -133,6 +134,7 @@ export async function createCatalogValidationReport(
       format: "demoware-csv",
       columns: DEMOWARE_CSV_COLUMNS.length,
       imageOrder: ["FRONT", "BACK", "ON_MODEL"],
+      requiredImageRoles: ["FRONT", "BACK"],
     },
     checks: {
       hasProducts: summary.totalProducts > 0,
