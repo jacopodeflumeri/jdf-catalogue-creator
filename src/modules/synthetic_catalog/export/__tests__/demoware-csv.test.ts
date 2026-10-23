@@ -16,6 +16,8 @@ function product(overrides: Partial<CatalogExportProductSource> = {}): CatalogEx
     subcategory: "wool coats",
     material: "cashmere",
     season: "Autumn/Winter",
+    patternCode: null,
+    embellishmentCodes: [],
     basePrice: "220.00",
     salePrice: "180.00",
     currency: "EUR",
@@ -106,10 +108,10 @@ describe("Demoware CSV export", () => {
     const rows = result.csv.trimEnd().split("\r\n");
     const first = rows[1]!.split(",");
     const index = (column: (typeof DEMOWARE_CSV_COLUMNS)[number]) => DEMOWARE_CSV_COLUMNS.indexOf(column);
-    expect(DEMOWARE_CSV_COLUMNS.slice(-2)).toEqual(["complete_look_image_url", "companion_products"]);
+    expect(DEMOWARE_CSV_COLUMNS.slice(-4)).toEqual(["complete_look_image_url", "companion_products", "pattern", "embellishments"]);
     expect(first[index("complete_look_image_url")]).toBe("https://catalogs.example.test/api/catalog-assets/00000000-0000-4000-8000-000000000004");
     expect(first[index("companion_products")]).toBe("PRE-W-000010;PRE-W-000011");
-    expect(rows[2]!.split(",").slice(-2)).toEqual(first.slice(-2));
+    expect(rows[2]!.split(",").slice(-4)).toEqual(first.slice(-4));
   });
 
   it("keeps core export readiness when a fourth optional COMPLETE_LOOK asset exists", () => {
@@ -127,10 +129,18 @@ describe("Demoware CSV export", () => {
     for (const completeLook of [stale, archived]) {
       const result = buildDemowareCsv(source([product({ styles: [{ ...style, completeLook }] })]), "https://catalogs.example.test");
       const first = result.csv.trimEnd().split("\r\n")[1]!.split(",");
-      expect(first.at(-2)).toBe("");
-      expect(first.at(-1)).toBe("");
+      expect(first.at(-4)).toBe("");
+      expect(first.at(-3)).toBe("");
       expect(result.summary.readyForImport).toBe(true);
     }
+  });
+
+  it("appends pattern and semicolon-separated embellishments while keeping legacy values blank", () => {
+    const legacyProduct = product({ patternCode: undefined, embellishmentCodes: undefined });
+    const plain = buildDemowareCsv(source([legacyProduct]), "https://catalogs.example.test").csv.trimEnd().split("\r\n")[1]!.split(",");
+    expect(plain.slice(-2)).toEqual(["", ""]);
+    const styled = buildDemowareCsv(source([product({ patternCode: "FLORAL", embellishmentCodes: ["EMBROIDERY", "LACE_TRIM"] })]), "https://catalogs.example.test").csv.trimEnd().split("\r\n")[1]!.split(",");
+    expect(styled.slice(-2)).toEqual(["FLORAL", "EMBROIDERY;LACE_TRIM"]);
   });
 
   it("exports every color style with its own size rows and configured custom department label", () => {

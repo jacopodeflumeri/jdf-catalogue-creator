@@ -54,14 +54,17 @@ describe("catalog generation jobs", () => {
     const changedConfig = {
       ...CATALOG_PROFILES[0]!.config,
       assortmentPlan: CATALOG_PROFILES[0]!.config.assortmentPlan.map((row, index) => index === 0 ? { ...row, productCount: row.productCount + 9 } : row),
+      designMix: { ...CATALOG_PROFILES[0]!.config.designMix, patternPercentage: 0, patterns: [] },
     };
     await prisma.syntheticCatalog.update({ where: { id: catalog.id }, data: { config: json(changedConfig) } });
     const tasks = await prisma.catalogGenerationTask.findMany({ where: { jobId: job.id } });
     const queuedPlans = tasks.map((task) => {
-      const payload = task.payload as { plan: { department: string; category: string; subcategory: string }; configSnapshot: { assortmentPlan: typeof changedConfig.assortmentPlan } };
-      return { row: payload.plan, mix: payload.configSnapshot.assortmentPlan };
+      const payload = task.payload as { plan: { department: string; category: string; subcategory: string; design: { patternCode: string | null; embellishmentCodes: string[] } }; configSnapshot: { assortmentPlan: typeof changedConfig.assortmentPlan; designMix: { patternPercentage: number; patterns: Array<{ code: string }> } } };
+      return { row: payload.plan, mix: payload.configSnapshot.assortmentPlan, design: payload.plan.design, designMix: payload.configSnapshot.designMix };
     });
-    expect(queuedPlans.every(({ mix }) => mix.reduce((total, row) => total + row.productCount, 0) === expectedTotal)).toBe(true);
+    expect(queuedPlans.every(({ mix, designMix }) => mix.reduce((total, row) => total + row.productCount, 0) === expectedTotal && designMix.patternPercentage === CATALOG_PROFILES[0]!.config.designMix.patternPercentage)).toBe(true);
+    expect(queuedPlans.filter(({ design }) => design.patternCode != null)).toHaveLength(Math.floor(expectedTotal * CATALOG_PROFILES[0]!.config.designMix.patternPercentage / 100 + 0.5));
+    expect(queuedPlans.every(({ design, designMix }) => design.patternCode == null || designMix.patterns.some((item) => item.code === design.patternCode))).toBe(true);
     expect(queuedPlans.map(({ row }) => row)).toEqual(expect.arrayContaining(CATALOG_PROFILES[0]!.config.assortmentPlan.filter((row) => row.departmentKey != null).map((row) => expect.objectContaining(row))));
     expect(tasks).toHaveLength(expectedTotal);
   });
@@ -146,6 +149,8 @@ describe("catalog generation jobs", () => {
 
   it("persists complete information and variants without creating image assets or tasks", async () => {
     const catalog = await createTestCatalog();
+    const assignedConfig = { ...CATALOG_PROFILES[0].config, designMix: { ...CATALOG_PROFILES[0].config.designMix, patternPercentage: 100, embellishmentPercentage: 0 } };
+    await prisma.syntheticCatalog.update({ where: { id: catalog.id }, data: { config: json(assignedConfig) } });
     const job = await createGenerationJob({ catalogId: catalog.id, requestedProducts: 1, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" }, colorVariantCount: 3, seed: "three-colors" });
     const changedConfig = { ...CATALOG_PROFILES[0].config, colors: [CATALOG_PROFILES[0].config.colors[0]!] };
     await prisma.syntheticCatalog.update({
@@ -166,9 +171,12 @@ describe("catalog generation jobs", () => {
       include: { styles: { include: { variants: true, images: true, tasks: true } } },
     });
     expect(product.styles).toHaveLength(3);
+    expect(product.patternCode).not.toBeNull();
+    expect(product.embellishmentCodes).toEqual([]);
     expect(new Set(product.styles.map((style) => style.colorCode)).size).toBe(3);
     expect(new Set(product.styles.map((style) => style.externalId)).size).toBe(3);
     for (const style of product.styles) {
+      expect(style.visualSpec).toEqual(expect.objectContaining({ patternCode: product.patternCode, embellishmentCodes: [] }));
       expect(style.variants.map((variant) => variant.size)).toEqual(CATALOG_PROFILES[0].config.sizes);
       expect(new Set(style.variants.map((variant) => variant.externalId)).size).toBe(style.variants.length);
       expect(style.status).toBe("READY");

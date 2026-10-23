@@ -1,5 +1,5 @@
 import { CATALOG_PROFILES } from "../../config/profiles";
-import { planAssortment } from "../../domain/planner";
+import { allocateDesignMix, planAssortment } from "../../domain/planner";
 import {
   isRetryableProductGenerationError,
   LiteLLMProductGenerator,
@@ -17,12 +17,12 @@ function generationInput(): ProductGenerationInput {
       brandName: profile.brandName,
       config: profile.config,
     },
-    plan: planAssortment({
+    plan: allocateDesignMix(planAssortment({
       sequences: [1],
       departmentMode: "WOMEN",
       config: profile.config,
       seed: "litellm-test",
-    })[0]!,
+    }), { ...profile.config.designMix, patternPercentage: 100, embellishmentPercentage: 0 }, "litellm-test")[0]!,
   };
 }
 
@@ -39,6 +39,8 @@ function validSpec(input: ProductGenerationInput) {
       silhouette: "structured",
       construction: "softly tailored",
       details: ["notched collar"],
+      patternCode: input.plan.design?.patternCode ?? null,
+      embellishmentCodes: [],
     },
   };
 }
@@ -146,5 +148,14 @@ describe("LiteLLMProductGenerator", () => {
     expect(isRetryableProductGenerationError(new ProductResponseError("bad response"))).toBe(
       false,
     );
+  });
+
+  it("rejects provider output that introduces unassigned decoration", async () => {
+    const input = generationInput();
+    const wrongCode = input.plan.design?.patternCode === "FLORAL" ? "STRIPED" : "FLORAL";
+    const invalid = { ...validSpec(input), design: { ...validSpec(input).design, patternCode: wrongCode } };
+    const completion = jest.fn().mockResolvedValue({ choices: [{ message: { content: JSON.stringify(invalid) } }] });
+    await expect(new LiteLLMProductGenerator({ completion }).generateProduct(input)).rejects.toThrow(/does not match the planned pattern/);
+    expect(completion).toHaveBeenCalledTimes(1);
   });
 });

@@ -12,6 +12,7 @@ export function buildCompleteLookPrompt(input: CompleteLookPromptInput): string 
     "Produce one photorealistic portrait-oriented fashion catalogue image with one adult fictional model.",
     "The model wears the exact anchor colour style and also wears or carries every selected companion catalogue item.",
     "Preserve the construction, materials, colours, proportions, and visible details from every reference image. Keep the anchor item clearly visible.",
+    "Preserve the anchor and every companion product's exact assigned pattern and embellishments. Do not simplify, replace, or invent decoration on any item.",
     "Use coherent styling and the catalogue visual direction. Do not add another prominent saleable garment.",
     "Neutral unbranded basics may fill unavoidable functional gaps such as shoes when no footwear companion is selected, but are not catalogue companions.",
     "No real brands, logos, text, watermarks, celebrities, or recognizable campaigns.",

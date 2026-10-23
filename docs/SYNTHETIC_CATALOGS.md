@@ -132,8 +132,8 @@ UTF-8 `text/csv`, RFC 4180 quoting and CRLF rows, disables caching, and uses a
 stable filename derived from the catalog slug.
 
 The adapter reads persisted catalog records and emits one row per variant in a
-fixed 25-column order. The original 23 fields keep their order; Complete the
-Look fields are appended. Every style of a parent product gets its own size rows,
+fixed 27-column order. The original 23 fields keep their order; Complete the
+Look fields and then Design Mix fields are appended. Every style of a parent product gets its own size rows,
 style ID, color, and image URLs. IDs and SKUs are never regenerated during
 export. Front, back, and on-model assets map to
 `image_url_1`, `image_url_2`, and `image_url_3` respectively, and the same three
@@ -141,11 +141,14 @@ stable opaque URLs repeat across every size row in a style. URL values use
 `APP_URL`; deployed environments must set it to the HTTPS hostname Demoware can
 reach. Text beginning with `=`, `+`, `-`, or `@` is prefixed with an apostrophe
 to prevent spreadsheet formula execution when an operator opens the file. The
-final columns are `complete_look_image_url` and `companion_products`; the URL is
+Complete the Look columns are `complete_look_image_url` and `companion_products`; the URL is
 the stable asset endpoint only for a READY non-stale look, and companion product
 IDs are semicolon-separated in persisted outfit order. For example:
 `PRE-W-000010;PRE-W-000011`. Without a usable look, both cells are blank and
 this optional data does not affect core export readiness.
+The last two columns are `pattern` and `embellishments`. Empty design values are
+exported as blank cells. Multiple embellishment codes use a semicolon separator
+in the saved deterministic assignment order.
 
 Department validation uses the catalog's configured department keys and exports
 the configured label, preserving the existing `Women` and `Men` values. Only
@@ -238,6 +241,8 @@ categories and embellishments for categories suited to decorative construction;
 bags and unrelated accessories are not implicitly eligible. An explicit rule
 can narrow or exclude either attribute. Settings writes require editor access and
 are audited; seeding preserves the saved Design Mix.
+New profile seeds start with reviewed targets: Premium 30% / 15%, Fast Fashion
+45% / 20%, Luxury 20% / 35%, and Activewear 25% / 10% (pattern / embellishment).
 
 For information jobs, the planner uses half-up rounding (`floor(x + 0.5)`) on
 `N × percentage / 100`. It selects exact patterned and embellished product
@@ -266,6 +271,9 @@ normalization live in `src/modules/synthetic_catalog/domain/ids.ts`.
 
 - `SyntheticCatalog` stores profile configuration and the next product sequence.
 - `SyntheticProduct` stores catalog-level merchandising data and prices.
+- `SyntheticProduct` also stores canonical pattern and embellishment codes;
+  migration `20261023110000_synthetic_product_design` adds nullable pattern and
+  non-null JSONB embellishment fields with an empty-list default for legacy rows.
 - `SyntheticStyle` stores a color execution and its visual specification.
 - `SyntheticVariant` stores size, stock, availability, external ID, and SKU.
 - `SyntheticImageAsset` tracks front, back, and on-model generation independently.
@@ -286,6 +294,14 @@ availability, IDs, and URLs.
 `ProductGenerator` is the structured seam for product copy and visual concepts.
 Phase 2 tests use `MockProductGenerator`, which is deterministic and
 network-free. Phase 3 adds `LiteLLMProductGenerator` for real calls.
+
+The information task's frozen assignment is the source of truth for structured
+output and persistence. Provider output must return the exact planned pattern
+and ordered embellishment code list. The product row is canonical across colors;
+each style's `visualSpec` carries the same codes and construction details.
+FRONT, BACK, ON_MODEL, and Complete the Look prompts preserve these attributes
+and forbid unassigned decoration. Image requests continue through the attributed
+LiteLLM module.
 
 `createGenerationJob()` reserves all sequences before persisting one
 `GENERATE_PRODUCT` task per planned product. `runGenerationJob()` persists each

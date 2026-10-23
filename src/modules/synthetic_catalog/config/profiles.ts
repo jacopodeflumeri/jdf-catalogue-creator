@@ -7,6 +7,9 @@ export const CATALOG_IMAGE_MODEL_OPTIONS = [
   "openai/gpt-image-1.5",
 ] as const;
 
+export const DEFAULT_PATTERN_VOCABULARY = ["STRIPED", "CHECKED", "FLORAL", "GEOMETRIC", "ABSTRACT", "ANIMAL", "POLKA_DOT", "COLOR_BLOCKED"] as const;
+export const DEFAULT_EMBELLISHMENT_VOCABULARY = ["EMBROIDERY", "SEQUINS", "BEADING", "STUDS", "APPLIQUE", "CONTRAST_STITCHING", "LACE_TRIM", "METALLIC_HARDWARE"] as const;
+
 export interface CatalogProfileConfig {
   priceRangeEur: { min: number; max: number };
   saleProbability: number;
@@ -42,6 +45,7 @@ export interface CatalogMixRow {
 }
 
 interface CatalogProfileConfigInput extends Omit<CatalogProfileConfig, "assortmentPlan" | "designMix"> {
+  designMix?: CatalogDesignMix;
   assortmentPlan: readonly {
     id?: string;
     departmentKey: string | null;
@@ -125,6 +129,7 @@ export const CATALOG_PROFILES = [
       seasons: ["Spring/Summer", "Autumn/Winter"],
       namingTone: "Refined, understated, and material-led",
       visualDirection: "Editorial studio photography with soft directional light and restrained styling",
+      designMix: profileDesignMix(30, 15, 5),
     },
   },
   {
@@ -163,6 +168,7 @@ export const CATALOG_PROFILES = [
       seasons: ["Spring", "Summer", "Autumn", "Winter"],
       namingTone: "Energetic, trend-aware, and concise",
       visualDirection: "Bright ecommerce studio imagery with contemporary styling and clean shadows",
+      designMix: profileDesignMix(45, 20, 10),
     },
   },
   {
@@ -201,6 +207,7 @@ export const CATALOG_PROFILES = [
       seasons: ["Resort", "Spring/Summer", "Pre-Fall", "Autumn/Winter"],
       namingTone: "Distinctive, evocative, and craftsmanship-focused",
       visualDirection: "High-fashion campaign imagery with sculptural lighting and gallery-like composition",
+      designMix: profileDesignMix(20, 35, 10),
     },
   },
   {
@@ -239,6 +246,7 @@ export const CATALOG_PROFILES = [
       seasons: ["Core", "Spring/Summer", "Autumn/Winter"],
       namingTone: "Technical, confident, and benefit-led",
       visualDirection: "Dynamic sports campaign photography with crisp detail and controlled motion",
+      designMix: profileDesignMix(25, 10, 5),
     },
   },
 ] as const satisfies readonly CatalogProfileSeed[];
@@ -291,14 +299,20 @@ const catalogProfileConfigSchema = z.object({
   }).optional(),
 });
 
-export const DEFAULT_PATTERN_VOCABULARY = ["STRIPED", "CHECKED", "FLORAL", "GEOMETRIC", "ABSTRACT", "ANIMAL", "POLKA_DOT", "COLOR_BLOCKED"] as const;
-export const DEFAULT_EMBELLISHMENT_VOCABULARY = ["EMBROIDERY", "SEQUINS", "BEADING", "STUDS", "APPLIQUE", "CONTRAST_STITCHING", "LACE_TRIM", "METALLIC_HARDWARE"] as const;
+function profileDesignMix(patternPercentage: number, embellishmentPercentage: number, maxCombinedPercentage: number): CatalogDesignMix {
+  const label = (code: string) => code.toLocaleLowerCase().replaceAll("_", " ").replace(/\b\w/g, (character) => character.toLocaleUpperCase());
+  return {
+    patternPercentage, embellishmentPercentage, allowCombined: true, maxCombinedPercentage,
+    patterns: DEFAULT_PATTERN_VOCABULARY.map((code) => ({ code, label: label(code) })),
+    embellishments: DEFAULT_EMBELLISHMENT_VOCABULARY.map((code) => ({ code, label: label(code) })), rules: [],
+  };
+}
 
 function normalizeDesignMix(value: CatalogDesignMix | undefined, mixRows: readonly CatalogMixRow[]): CatalogDesignMix {
   const source = value ?? {
     patternPercentage: 0, embellishmentPercentage: 0, allowCombined: false, maxCombinedPercentage: 0,
-    patterns: DEFAULT_PATTERN_VOCABULARY.map((code) => ({ code, label: code.toLocaleLowerCase().replaceAll("_", " ").replace(/\\b\\w/g, (c) => c.toLocaleUpperCase()) })),
-    embellishments: DEFAULT_EMBELLISHMENT_VOCABULARY.map((code) => ({ code, label: code.toLocaleLowerCase().replaceAll("_", " ").replace(/\\b\\w/g, (c) => c.toLocaleUpperCase()) })),
+    patterns: DEFAULT_PATTERN_VOCABULARY.map((code) => ({ code, label: code.toLocaleLowerCase().replaceAll("_", " ").replace(/\b\w/g, (c) => c.toLocaleUpperCase()) })),
+    embellishments: DEFAULT_EMBELLISHMENT_VOCABULARY.map((code) => ({ code, label: code.toLocaleLowerCase().replaceAll("_", " ").replace(/\b\w/g, (c) => c.toLocaleUpperCase()) })),
     rules: [],
   };
   const normalizeVocabulary = (items: Array<{ code: string; label: string }>, name: string) => {
@@ -308,6 +322,7 @@ function normalizeDesignMix(value: CatalogDesignMix | undefined, mixRows: readon
   };
   const patterns = normalizeVocabulary(source.patterns, "Pattern");
   const embellishments = normalizeVocabulary(source.embellishments, "Embellishment");
+  if (patterns.some((item) => item.code === "SOLID")) throw new Error("SOLID must be represented by no pattern, not a pattern vocabulary code");
   const patternCodes = new Set(patterns.map((item) => item.code));
   const embellishmentCodes = new Set(embellishments.map((item) => item.code));
   const rowIds = new Set(mixRows.map((row) => row.id));

@@ -40,6 +40,8 @@ function productView(product: ProductWithRelations, config: ReturnType<typeof pa
     subcategory: product.subcategory,
     material: product.material,
     season: product.season,
+    patternCode: product.patternCode,
+    embellishmentCodes: Array.isArray(product.embellishmentCodes) ? product.embellishmentCodes.filter((code): code is string => typeof code === "string") : [],
     basePrice: product.basePrice.toFixed(2),
     salePrice: product.salePrice?.toFixed(2) ?? null,
     currency: product.currency,

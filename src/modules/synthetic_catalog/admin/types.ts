@@ -85,6 +85,8 @@ export interface CatalogProductView {
   subcategory: string;
   material: string;
   season: string;
+  patternCode: string | null;
+  embellishmentCodes: string[];
   basePrice: string;
   salePrice: string | null;
   currency: string;

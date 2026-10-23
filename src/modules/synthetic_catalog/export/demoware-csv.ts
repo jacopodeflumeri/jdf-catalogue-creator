@@ -28,6 +28,8 @@ export const DEMOWARE_CSV_COLUMNS = [
   "product_url",
   "complete_look_image_url",
   "companion_products",
+  "pattern",
+  "embellishments",
 ] as const;
 
 export const MIN_EXPORT_IMAGE_DIMENSION = 512;
@@ -74,6 +76,8 @@ export interface CatalogExportProductSource {
   subcategory: string;
   material: string;
   season: string;
+  patternCode?: string | null;
+  embellishmentCodes?: string[];
   basePrice: string;
   salePrice: string | null;
   currency: string;
@@ -277,6 +281,8 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
             absoluteUrl(product.productUrl ?? `/catalogs/${source.slug}/products/${product.externalId}`, appUrl),
             completeLookUrl,
             companionProducts,
+            product.patternCode ?? "",
+            [...(product.embellishmentCodes ?? [])].join(";"),
           ]),
         );
       }

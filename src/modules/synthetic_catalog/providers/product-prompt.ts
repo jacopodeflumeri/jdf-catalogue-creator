@@ -14,6 +14,8 @@ export function buildProductPrompt(input: ProductGenerationInput): ProductPrompt
       "Never imitate a real brand, logo, trademark, celebrity, or identifiable campaign.",
       "The application owns IDs, prices, sale rules, sizes, stock, availability, URLs, and distribution; do not return those fields.",
       "Use only the supplied material, color, and season vocabularies.",
+      "Do not add patterns or embellishments that are not explicitly assigned. Do not add logos, trademarks, brand motifs, or recognizable real-brand signatures.",
+      "Incorporate the assigned design naturally into the product name, description, construction, placement, and details.",
     ].join(" "),
     user: JSON.stringify(
       {
@@ -29,10 +31,13 @@ export function buildProductPrompt(input: ProductGenerationInput): ProductPrompt
           category: plan.category,
           subcategory: plan.subcategory,
         },
+        plannedDesign: plan.design ?? { patternCode: null, embellishmentCodes: [] },
         controlledVocabulary: {
           materials: catalog.config.materials,
           colors: catalog.config.colors.map(({ name, code }) => ({ name, code })),
           seasons: catalog.config.seasons,
+          patterns: catalog.config.designMix.patterns,
+          embellishments: catalog.config.designMix.embellishments,
         },
         responseShape: {
           name: "string, maximum 160 characters",
@@ -45,6 +50,8 @@ export function buildProductPrompt(input: ProductGenerationInput): ProductPrompt
             silhouette: "string",
             construction: "string",
             details: ["up to 8 short strings"],
+            patternCode: "exact plannedDesign.patternCode or null",
+            embellishmentCodes: "exact plannedDesign.embellishmentCodes in the same order",
           },
         },
       },

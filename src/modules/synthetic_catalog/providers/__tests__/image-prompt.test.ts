@@ -20,7 +20,7 @@ function input(role: "FRONT" | "BACK" | "ON_MODEL", hasFrontReference = false) {
       externalId: "PRE-W-000001-IVY",
       colorName: "Ivy",
       colorCode: "IVY",
-      visualSpec: { silhouette: "longline", details: ["notched collar"] },
+      visualSpec: { silhouette: "longline", details: ["notched collar"], patternCode: "STRIPED", embellishmentCodes: ["EMBROIDERY"] },
     },
     hasFrontReference,
   };
@@ -33,6 +33,9 @@ describe("catalog image prompts", () => {
     expect(prompt).toContain("No person, mannequin, hanger");
     expect(prompt).toContain("Do not include any logo");
     expect(prompt).toContain("PRE-W-000001-IVY");
+    expect(prompt).toContain("STRIPED");
+    expect(prompt).toContain("EMBROIDERY");
+    expect(prompt).toContain("Do not simplify, replace, or add unassigned decoration");
   });
 
   it("treats the front as authoritative for back and on-model images", () => {

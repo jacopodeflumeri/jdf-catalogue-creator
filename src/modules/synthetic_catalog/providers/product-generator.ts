@@ -13,6 +13,8 @@ export const generatedProductSpecSchema = z.object({
     silhouette: z.string().min(1),
     construction: z.string().min(1),
     details: z.array(z.string().min(1)).max(8),
+    patternCode: z.string().nullable(),
+    embellishmentCodes: z.array(z.string()),
   }),
 });
 
@@ -21,6 +23,7 @@ export type GeneratedProductSpec = z.infer<typeof generatedProductSpecSchema>;
 export function validateGeneratedProductSpec(
   rawSpec: unknown,
   config: CatalogProfileConfig,
+  plannedDesign: PlannedProduct["design"] = { patternCode: null, embellishmentCodes: [] },
 ): GeneratedProductSpec {
   const spec = generatedProductSpecSchema.parse(rawSpec);
   if (!config.materials.includes(spec.material)) {
@@ -33,6 +36,11 @@ export function validateGeneratedProductSpec(
   if (!color || color.name !== spec.colorName) {
     throw new Error(`Generated color '${spec.colorCode}' is outside the catalog palette`);
   }
+  const expected = plannedDesign ?? { patternCode: null, embellishmentCodes: [] };
+  if (spec.design.patternCode !== expected.patternCode) throw new Error(`Generated pattern '${spec.design.patternCode ?? "none"}' does not match the planned pattern '${expected.patternCode ?? "none"}'`);
+  if (spec.design.embellishmentCodes.length !== expected.embellishmentCodes.length || spec.design.embellishmentCodes.some((code, index) => code !== expected.embellishmentCodes[index])) throw new Error("Generated embellishment codes do not match the planned assignment");
+  if (spec.design.patternCode != null && !config.designMix.patterns.some((item) => item.code === spec.design.patternCode)) throw new Error(`Generated pattern '${spec.design.patternCode}' is outside the frozen vocabulary`);
+  if (spec.design.embellishmentCodes.some((code) => !config.designMix.embellishments.some((item) => item.code === code))) throw new Error("Generated embellishment code is outside the frozen vocabulary");
   return spec;
 }
 

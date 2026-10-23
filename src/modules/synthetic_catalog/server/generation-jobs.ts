@@ -6,7 +6,6 @@ import { assertJobTransition } from "../domain/job-state";
 import {
   planAssortment,
   allocateDesignMix,
-  roundDesignTarget,
   plannedProductSchema,
   type DepartmentMode,
   type GenerationScope,
@@ -129,7 +128,7 @@ async function persistGeneratedProduct(input: {
     include: { catalog: true },
   });
   const config = input.configSnapshot;
-  const spec = validateGeneratedProductSpec(input.spec, config);
+  const spec = validateGeneratedProductSpec(input.spec, config, input.plan.design);
   const departmentCode = (input.plan as PlannedProduct & { departmentCode?: string }).departmentCode ?? config.departments.find((department) => department.key === input.plan.department)?.code;
   if (!departmentCode) throw new Error(`Department '${input.plan.department}' is no longer configured`);
   const externalId = formatProductId({
@@ -163,6 +162,8 @@ async function persistGeneratedProduct(input: {
         subcategory: input.plan.subcategory,
         material: spec.material,
         season: spec.season,
+        patternCode: spec.design.patternCode,
+        embellishmentCodes: asInputJson(spec.design.embellishmentCodes),
         basePrice: price.basePrice,
         salePrice: price.salePrice,
         currency: price.currency,
@@ -181,6 +182,8 @@ async function persistGeneratedProduct(input: {
         subcategory: input.plan.subcategory,
         material: spec.material,
         season: spec.season,
+        patternCode: spec.design.patternCode,
+        embellishmentCodes: asInputJson(spec.design.embellishmentCodes),
         basePrice: price.basePrice,
         salePrice: price.salePrice,
         currency: price.currency,

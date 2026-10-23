@@ -200,7 +200,8 @@ async function generateCompleteLookImage(input: {
     if (item.companionStyle.product.archivedAt) throw new Error("A companion product is archived");
     const front = item.companionStyle.images.find((image) => image.role === "FRONT" && image.status === "READY" && image.storageKey && image.mimeType);
     if (!front) throw new Error(`Companion ${item.companionStyle.externalId} has no READY FRONT image`);
-    references.push({ data: await input.storage.get(front.storageKey!), mimeType: front.mimeType!, assetId: front.id, description: `companion ${item.outfitSlot.toLowerCase().replaceAll("_", " ")} ${item.companionStyle.product.name} in ${item.companionStyle.colorName}` });
+    const companionDesign = item.companionStyle.visualSpec && typeof item.companionStyle.visualSpec === "object" ? item.companionStyle.visualSpec as Record<string, unknown> : {};
+    references.push({ data: await input.storage.get(front.storageKey!), mimeType: front.mimeType!, assetId: front.id, description: `companion ${item.outfitSlot.toLowerCase().replaceAll("_", " ")} ${item.companionStyle.product.name} in ${item.companionStyle.colorName}; assigned pattern ${String(companionDesign.patternCode ?? "none")}; assigned embellishments ${JSON.stringify(companionDesign.embellishmentCodes ?? [])}; construction ${JSON.stringify(companionDesign.details ?? [])}` });
   }
   if (references.length < 2) throw new Error("Complete the Look requires multiple reference images");
   if (references.length > 8) throw new Error("Complete the Look reference set exceeds the supported limit");

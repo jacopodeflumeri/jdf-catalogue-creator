@@ -65,7 +65,7 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
   const embellishmentCount = roundDesignTarget(requestedProducts, catalog.designMix.embellishmentPercentage);
   const combinedCount = designPlan.filter((item) => item.design?.patternCode != null && item.design.embellishmentCodes.length > 0).length;
   const generationEstimate = estimateAssortmentOutput({
-    plan: designPlan,
+    plan: designError ? rawEstimatePlan : designPlan,
     colorVariantCount,
     categorySizeCounts: catalog.categorySizeCounts,
   });
@@ -85,7 +85,7 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
     const scope = scopeType === "ALL" ? { type: "ALL" as const }
       : scopeType === "DEPARTMENT" ? { type: "DEPARTMENT" as const, departmentKey }
         : { type: "CATEGORY" as const, category };
-    const result = await createCatalogGenerationJobAction({ catalogId: catalog.id, ...(scopeType !== "ALL" && { requestedProducts: count }), colorVariantCount, scope });
+    const result = await createCatalogGenerationJobAction({ catalogId: catalog.id, ...(scopeType !== "ALL" && { requestedProducts: count }), colorVariantCount, scope, seed: estimateSeed });
     setLoading(false);
     if (!result.ok || result.jobId == null) {
       setError(result.message ?? "Could not queue the generation job");

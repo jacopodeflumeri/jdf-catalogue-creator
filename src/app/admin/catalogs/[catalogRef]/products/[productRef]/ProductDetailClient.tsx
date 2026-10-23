@@ -173,6 +173,8 @@ export default function ProductDetailClient({
             <DetailItem label="Subcategory" value={product.subcategory} />
             <DetailItem label="Material" value={product.material} />
             <DetailItem label="Season" value={product.season} />
+            <DetailItem label="Pattern" value={product.patternCode ?? "None"} />
+            <DetailItem label="Embellishments" value={product.embellishmentCodes.length ? product.embellishmentCodes.join(", ") : "None"} />
             <DetailItem label="Brand" value={catalog.brandName} />
             <DetailItem label="Base price" value={formatMoney(product.basePrice, product.currency)} />
             <DetailItem label="Current price" value={formatMoney(displayPrice, product.currency)} />

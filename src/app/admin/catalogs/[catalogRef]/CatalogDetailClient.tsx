@@ -83,7 +83,6 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
   const [departmentLabel, setDepartmentLabel] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
   const [departmentWeight, setDepartmentWeight] = useState("0.1");
-  const { confirm } = useConfirm();
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

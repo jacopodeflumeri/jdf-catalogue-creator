@@ -27,7 +27,7 @@ export class MockProductGenerator implements ProductGenerator {
 
     return {
       name: `${prefix} ${categoryName}`,
-      description: `${titleCase(color.name)} ${plan.subcategory} in ${material}, designed with a ${silhouette} silhouette for the ${season} collection.`,
+      description: `${titleCase(color.name)} ${plan.subcategory} in ${material}, designed with a ${silhouette} silhouette${plan.design?.patternCode ? ` and a ${plan.design.patternCode.toLowerCase().replaceAll("_", " ")} pattern` : ""}${plan.design?.embellishmentCodes.length ? ` with ${plan.design.embellishmentCodes.map((code) => code.toLowerCase().replaceAll("_", " ")).join(" and ")}` : ""} for the ${season} collection.`,
       material,
       season,
       colorName: color.name,
@@ -36,6 +36,8 @@ export class MockProductGenerator implements ProductGenerator {
         silhouette,
         construction,
         details: [plan.subcategory, input.catalog.config.visualDirection],
+        patternCode: plan.design?.patternCode ?? null,
+        embellishmentCodes: plan.design?.embellishmentCodes ?? [],
       },
     };
   }

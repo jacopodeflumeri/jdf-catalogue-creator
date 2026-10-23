@@ -43,6 +43,7 @@ const ROLE_DIRECTION: Record<CatalogImageRoleValue, string[]> = {
   COMPLETE_LOOK: [
     "Create a complete outfit image using the ordered anchor and companion references supplied in the prompt.",
     "Preserve the anchor item and all selected companion catalogue products exactly.",
+    "Preserve every assigned pattern and embellishment on the anchor and each companion; never simplify, replace, or invent decorative details.",
   ],
 };
 
@@ -60,6 +61,7 @@ export function buildCatalogImagePrompt(input: CatalogImagePromptInput): string 
     `Product: ${input.product.name}; ${input.product.department} / ${input.product.category} / ${input.product.subcategory}; material: ${input.product.material}; season: ${input.product.season}.`,
     `Style ID: ${input.style.externalId}; exact color: ${input.style.colorName} (${input.style.colorCode}).`,
     `Construction specification: ${JSON.stringify(input.style.visualSpec ?? {})}.`,
+    `Design continuity: preserve the exact assigned pattern and embellishments and their construction/placement details from the specification across every view. Do not simplify, replace, or add unassigned decoration.`,
     "Do not include any logo, trademark, brand text, caption, watermark, border, collage, or extra product.",
     "Do not imitate a real brand, celebrity, identifiable model, or recognizable campaign.",
     "Portrait orientation, high fidelity, realistic fabric texture, production-ready catalog photography.",

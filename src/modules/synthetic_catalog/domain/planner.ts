@@ -55,10 +55,13 @@ function designRule(rowId: string | undefined, mix: CatalogDesignMix, category: 
   if (explicit) return explicit;
   const normalized = category.toLocaleLowerCase();
   const patternFriendly = /dress|shirt|top|knit|denim|trouser|legging|short|jacket|coat|skirt|blouse/.test(normalized);
-  const embellishmentFriendly = /dress|shirt|top|knit|jacket|coat|skirt|blouse|eveningwear/.test(normalized);
+  const embellishmentCodes = /trouser|denim|legging|short/.test(normalized) ? ["CONTRAST_STITCHING"]
+    : /jacket|coat|outerwear/.test(normalized) ? ["CONTRAST_STITCHING", "APPLIQUE", "METALLIC_HARDWARE", "STUDS", "EMBROIDERY"]
+      : /dress|shirt|top|knit|skirt|blouse|eveningwear/.test(normalized) ? ["EMBROIDERY", "SEQUINS", "BEADING", "APPLIQUE", "CONTRAST_STITCHING", "LACE_TRIM"]
+        : [];
   return {
     allowedPatternCodes: patternFriendly ? mix.patterns.map((item) => item.code) : [],
-    allowedEmbellishmentCodes: embellishmentFriendly ? mix.embellishments.map((item) => item.code) : [],
+    allowedEmbellishmentCodes: embellishmentCodes.filter((code) => mix.embellishments.some((item) => item.code === code)),
   };
 }
 
@@ -101,22 +104,41 @@ export function allocateDesignMix<T extends PlannedProduct & { mixRowId?: string
     const r = designRule(product.mixRowId, mix, product.category);
     return r.allowedPatternCodes.length > 0 && r.allowedEmbellishmentCodes.length > 0;
   });
-  const patternExclusive = patterned.filter((product) => !sharedEligible.includes(product)).length;
-  const embellishmentExclusive = embellished.filter((product) => !sharedEligible.includes(product)).length;
-  const minOverlap = Math.max(0, patternTarget + embellishmentTarget - n, patternTarget - patternExclusive, embellishmentTarget - embellishmentExclusive);
+  const minOverlap = Math.max(
+    0,
+    patternTarget + embellishmentTarget - n,
+    patternTarget + embellishmentTarget - new Set([...patterned, ...embellished]).size,
+  );
   if (sharedEligible.length < minOverlap) throw new Error(`Pattern and embellishment targets require at least ${minOverlap} combined products, but only ${sharedEligible.length} are compatible in this scope`);
   if (minOverlap > combinedLimit) throw new Error(`Design targets require ${minOverlap} combined products, above the configured overlap limit of ${combinedLimit}`);
   const overlapCount = minOverlap;
   if (overlapCount > sharedEligible.length) throw new Error(`Configured overlap target ${overlapCount} cannot be met: only ${sharedEligible.length} products allow both`);
   const overlap = quotaAwareSubset(sharedEligible, overlapCount, `${seed}:overlap`, rowQuotas);
   const selectedPattern = [...overlap, ...quotaAwareSubset(patterned.filter((p) => !overlap.includes(p)), patternTarget - overlapCount, `${seed}:patterns`, rowQuotas)];
-  const selectedEmbellishments = [...overlap, ...quotaAwareSubset(embellished.filter((p) => !overlap.includes(p)), embellishmentTarget - overlapCount, `${seed}:embellishments`, rowQuotas)];
+  const selectedEmbellishments = [...overlap, ...quotaAwareSubset(embellished.filter((p) => !selectedPattern.includes(p)), embellishmentTarget - overlapCount, `${seed}:embellishments`, rowQuotas)];
   const patternSet = new Set(selectedPattern);
   const embellishmentSet = new Set(selectedEmbellishments);
+  const patternCodes = new Map<T, string>();
+  const patternUsage = new Map<string, number>();
+  for (const product of seededShuffle(`${seed}:pattern-code-order`, selectedPattern)) {
+    const choices = designRule(product.mixRowId, mix, product.category).allowedPatternCodes;
+    const minUse = Math.min(...choices.map((code) => patternUsage.get(code) ?? 0));
+    const code = seededShuffle(`${seed}:${product.seed}:pattern-code`, choices.filter((item) => (patternUsage.get(item) ?? 0) === minUse))[0]!;
+    patternCodes.set(product, code);
+    patternUsage.set(code, (patternUsage.get(code) ?? 0) + 1);
+  }
+  const embellishmentCodesByProduct = new Map<T, string[]>();
+  const embellishmentUsage = new Map<string, number>();
+  for (const product of seededShuffle(`${seed}:embellishment-code-order`, selectedEmbellishments)) {
+    const choices = designRule(product.mixRowId, mix, product.category).allowedEmbellishmentCodes;
+    const minUse = Math.min(...choices.map((code) => embellishmentUsage.get(code) ?? 0));
+    const code = seededShuffle(`${seed}:${product.seed}:embellishment-code`, choices.filter((item) => (embellishmentUsage.get(item) ?? 0) === minUse))[0]!;
+    embellishmentCodesByProduct.set(product, [code]);
+    embellishmentUsage.set(code, (embellishmentUsage.get(code) ?? 0) + 1);
+  }
   return products.map((product) => {
-    const rule = designRule(product.mixRowId, mix, product.category);
-    const patternCode = patternSet.has(product) ? seededShuffle(`${seed}:${product.seed}:pattern-code`, rule.allowedPatternCodes)[0]! : null;
-    const embellishmentCodes = embellishmentSet.has(product) ? [seededShuffle(`${seed}:${product.seed}:embellishment-code`, rule.allowedEmbellishmentCodes)[0]!] : [];
+    const patternCode = patternSet.has(product) ? patternCodes.get(product)! : null;
+    const embellishmentCodes = embellishmentSet.has(product) ? embellishmentCodesByProduct.get(product)! : [];
     return { ...product, design: { patternCode, embellishmentCodes } };
   });
 }

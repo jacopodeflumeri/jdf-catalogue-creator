@@ -32,4 +32,14 @@ describe("MockProductGenerator", () => {
     expect(profile.config.colors.map((color) => color.code)).toContain(first.colorCode);
     expect(profile.config.seasons).toContain(first.season);
   });
+
+  it("returns exactly the frozen assignment", async () => {
+    const profile = CATALOG_PROFILES[0]!;
+    const plain = planAssortment({ sequences: [8], departmentMode: "WOMEN", config: profile.config, seed: "assigned-design" })[0]!;
+    const plan = { ...plain, design: { patternCode: "STRIPED", embellishmentCodes: ["EMBROIDERY"] } };
+    const spec = await new MockProductGenerator().generateProduct({ model: profile.defaultTextModel, catalog: { slug: profile.slug, segment: profile.segment, brandName: profile.brandName, config: profile.config }, plan });
+    expect(spec.design.patternCode).toBe("STRIPED");
+    expect(spec.design.embellishmentCodes).toEqual(["EMBROIDERY"]);
+    expect(generatedProductSpecSchema.parse(spec)).toEqual(spec);
+  });
 });

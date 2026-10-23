@@ -18,6 +18,7 @@ export function createAddProductsInputSchema(maxProductsPerJob: number) {
     requestedProducts: z.number().int().min(1).max(maxProductsPerJob).optional(),
     scope: generationScopeSchema,
     colorVariantCount: z.union([z.literal(2), z.literal(3)]).default(2),
+    seed: z.string().trim().min(1).max(200).optional(),
   }).superRefine((values, context) => {
     if (values.scope.type === "ALL" && values.requestedProducts != null) {
       context.addIssue({ code: "custom", path: ["requestedProducts"], message: "All catalogue product count comes from the configured catalogue mix" });

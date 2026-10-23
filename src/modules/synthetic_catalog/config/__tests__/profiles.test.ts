@@ -14,6 +14,11 @@ describe("catalog profile configuration", () => {
     const config = CATALOG_PROFILES[0]!.config;
     expect(() => parseCatalogProfileConfig({ ...config, designMix: { patternPercentage: 60, embellishmentPercentage: 50, allowCombined: false, maxCombinedPercentage: 0, patterns: [{ code: "STRIPED", label: "Striped" }], embellishments: [{ code: "EMBROIDERY", label: "Embroidery" }], rules: [] } })).toThrow(/require overlap/);
   });
+
+  it("reserves SOLID for the null pattern value", () => {
+    const config = CATALOG_PROFILES[0]!.config;
+    expect(() => parseCatalogProfileConfig({ ...config, designMix: { ...parseCatalogProfileConfig(config).designMix, patterns: [{ code: "SOLID", label: "Solid" }] } })).toThrow(/SOLID must be represented by no pattern/);
+  });
   it("defines exactly the four required profiles", () => {
     expect(CATALOG_PROFILES.map((profile) => profile.slug)).toEqual([
       "premium-apparel",

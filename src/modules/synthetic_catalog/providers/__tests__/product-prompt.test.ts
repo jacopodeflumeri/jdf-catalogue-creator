@@ -1,16 +1,16 @@
 import { CATALOG_PROFILES } from "../../config/profiles";
-import { planAssortment } from "../../domain/planner";
+import { allocateDesignMix, planAssortment } from "../../domain/planner";
 import { buildProductPrompt } from "../product-prompt";
 
 describe("buildProductPrompt", () => {
   it("fixes the planned slot and controlled vocabularies without delegating domain rules", () => {
     const profile = CATALOG_PROFILES[0];
-    const plan = planAssortment({
+    const plan = allocateDesignMix(planAssortment({
       sequences: [21],
       departmentMode: "WOMEN",
       config: profile.config,
       seed: "prompt-test",
-    })[0]!;
+    }), { ...profile.config.designMix, patternPercentage: 100, embellishmentPercentage: 0 }, "prompt-test")[0]!;
     const prompt = buildProductPrompt({
       model: profile.defaultTextModel,
       catalog: {
@@ -37,5 +37,8 @@ describe("buildProductPrompt", () => {
     expect(user.responseShape).not.toHaveProperty("price");
     expect(user.responseShape).not.toHaveProperty("stock");
     expect(user.responseShape).not.toHaveProperty("id");
+    expect(user.plannedDesign.patternCode).toBeTruthy();
+    expect(user.responseShape.design.patternCode).toContain("plannedDesign.patternCode");
+    expect(prompt.system).toContain("Do not add patterns or embellishments");
   });
 });

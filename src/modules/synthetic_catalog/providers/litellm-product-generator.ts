@@ -98,7 +98,7 @@ export class LiteLLMProductGenerator implements ProductGenerator {
             cause: error,
           });
         }
-        return validateGeneratedProductSpec(parsed, input.catalog.config);
+        return validateGeneratedProductSpec(parsed, input.catalog.config, input.plan.design);
       } catch (error) {
         lastError = error;
         if (attempt === this.maxAttempts || !isRetryableProductGenerationError(error)) {

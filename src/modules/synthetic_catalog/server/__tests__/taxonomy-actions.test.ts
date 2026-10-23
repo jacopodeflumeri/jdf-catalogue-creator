@@ -22,7 +22,7 @@ jest.mock("@/lib/prisma/client", () => ({
   },
 }));
 
-import { addCatalogTaxonomyAction, saveCatalogMixAction } from "../admin-actions";
+import { addCatalogTaxonomyAction, saveCatalogDesignMixAction, saveCatalogMixAction } from "../admin-actions";
 
 describe("catalog taxonomy mutation action", () => {
   beforeEach(() => {
@@ -74,6 +74,29 @@ describe("catalog taxonomy mutation action", () => {
 
     mockRequireAdmin.mockRejectedValue(new Error("Editor access required"));
     await expect(saveCatalogMixAction({ catalogId: 1, rows: [row] })).rejects.toThrow("Editor access required");
+    expect(mockWriteAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("saves validated Design Mix settings with editor authorization and an audit event", async () => {
+    const config = parseCatalogProfileConfig(CATALOG_PROFILES[0].config);
+    const row = config.assortmentPlan.find((item) => item.departmentKey != null)!;
+    const designMix = { ...config.designMix, patternPercentage: 40, embellishmentPercentage: 10, rules: [{ catalogMixRowId: row.id, allowedPatternCodes: ["FLORAL"], allowedEmbellishmentCodes: [] }] };
+    const result = await saveCatalogDesignMixAction({ catalogId: 1, designMix });
+    expect(result).toEqual({ ok: true });
+    expect(mockRequireAdmin).toHaveBeenCalledWith({ requireEditorAccess: true });
+    const saved = mockUpdate.mock.calls[0]![0] as { data: { config: { designMix: typeof designMix } } };
+    expect(saved.data.config.designMix.patternPercentage).toBe(40);
+    expect(saved.data.config.designMix.rules).toEqual(designMix.rules);
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "catalog_design_mix_updated", entityType: "synthetic_catalog" }));
+  });
+
+  it("rejects viewers and invalid Design Mix vocabulary references", async () => {
+    const config = parseCatalogProfileConfig(CATALOG_PROFILES[0].config);
+    const invalid = await saveCatalogDesignMixAction({ catalogId: 1, designMix: { ...config.designMix, rules: [{ catalogMixRowId: "deleted-row", allowedPatternCodes: [], allowedEmbellishmentCodes: [] }] } });
+    expect(invalid).toMatchObject({ ok: false });
+    expect(mockUpdate).not.toHaveBeenCalled();
+    mockRequireAdmin.mockRejectedValue(new Error("Editor access required"));
+    await expect(saveCatalogDesignMixAction({ catalogId: 1, designMix: config.designMix })).rejects.toThrow("Editor access required");
     expect(mockWriteAuditLog).not.toHaveBeenCalled();
   });
 });
