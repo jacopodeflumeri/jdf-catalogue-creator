@@ -3,6 +3,7 @@ interface PageHeaderProps {
   description?: string;
   className?: string;
   actions?: React.ReactNode;
+  leadingVisual?: React.ReactNode;
   /**
    * `default` — admin pages (text-4xl title, text-lg description).
    * `compact` — customer pages (text-3xl extrabold title, text-sm
@@ -30,11 +31,14 @@ export default function PageHeader({
   description,
   className = "",
   actions,
+  leadingVisual,
   size = "default",
 }: PageHeaderProps) {
   const classes = SIZE_CLASSES[size];
   return (
     <div className={`flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 ${className}`}>
+      <div className="flex min-w-0 items-center gap-4">
+      {leadingVisual}
       <div className={classes.stack}>
         <h1 className={classes.title}>{title}</h1>
         {description && (
@@ -42,6 +46,7 @@ export default function PageHeader({
             {description}
           </p>
         )}
+      </div>
       </div>
       {actions && (
         <div className="flex-shrink-0 flex items-center gap-2">

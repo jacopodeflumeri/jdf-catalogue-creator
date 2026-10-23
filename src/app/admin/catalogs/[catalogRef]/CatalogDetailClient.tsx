@@ -38,6 +38,7 @@ import DownloadCsvButton, { DownloadValidationReportButton } from "../DownloadCs
 import ProductTable from "./ProductTable";
 import CatalogueMixEditor from "./CatalogueMixEditor";
 import DesignMixEditor from "./DesignMixEditor";
+import CatalogBrandLogo from "../CatalogBrandLogo";
 
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 
@@ -398,6 +399,7 @@ export default function CatalogDetailClient({
       <PageHeader
         title={detail.catalog.name}
         description={`${detail.catalog.brandName} · ${detail.catalog.externalPrefix} · ${detail.catalog.segment}`}
+        leadingVisual={<CatalogBrandLogo slug={detail.catalog.slug} brandName={detail.catalog.brandName} size="header" />}
         actions={<><Button variant="secondary" onClick={() => router.push("/admin/catalogs")}><Icon type="arrow-left" size="sm" /> All catalogs</Button>{canEdit && <Button onClick={() => setShowAdd(true)}><Icon type="plus" size="sm" /> Generate catalogue information</Button>}</>}
       />
       {error && <NoticeBox variant="error">{error}</NoticeBox>}

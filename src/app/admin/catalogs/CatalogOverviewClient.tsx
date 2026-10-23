@@ -10,6 +10,7 @@ import type { CatalogOverviewView } from "@/modules/synthetic_catalog/admin/type
 import AddProductsModal from "./AddProductsModal";
 import CatalogStatusBadge from "./CatalogStatusBadge";
 import DownloadCsvButton from "./DownloadCsvButton";
+import CatalogBrandLogo from "./CatalogBrandLogo";
 
 export default function CatalogOverviewClient({
   initialCatalogs,
@@ -55,6 +56,10 @@ export default function CatalogOverviewClient({
               </div>
             }
           >
+            <div className="mb-5 flex min-w-0 items-center gap-4">
+              <CatalogBrandLogo slug={catalog.slug} brandName={catalog.brandName} />
+              <div className="min-w-0"><p className="font-medium text-[#1a1a1a]">{catalog.brandName}</p><p className="text-sm text-[#1a1a1a]/60">{catalog.segment}</p></div>
+            </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {[
                 ["Products", catalog.productCount],

@@ -17,6 +17,12 @@ reporting, and operational recovery guidance.
 
 `/admin` redirects to `/admin/catalogs`, where every active profile appears as
 one overview card with product, style, variant, image, and latest-job state.
+Cards and catalogue workspace headers show app-owned fictional logos using the
+stable slug mapping: `premium-apparel` → `/img/aureline.png`, `fast-fashion` →
+`/img/loopline.png`, `luxury-fashion` → `/img/maison-veyra.png`, and `activewear`
+→ `/img/kinetiq-form.png`. These static files live in `public/img` and are
+included in the application image. Lookup uses the catalogue slug, never
+editable brand text; unavailable images fall back to the visible brand name.
 The admin sidebar also links directly to Premium, Fast Fashion, Luxury, and
 Activewear using their stable profile slugs.
 `/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
