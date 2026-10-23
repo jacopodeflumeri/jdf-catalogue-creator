@@ -51,12 +51,16 @@ only; browser navigation and polling never perform model or S3 work.
 
 The first manual workflow step is catalogue information. Its wizard selects
 all-catalogue, department, or category scope, then two or three color variants.
+Choosing a department or category initializes its selector to the first eligible
+Catalogue Mix value, while still allowing the operator to choose another value.
 It generates product copy, merchandising fields, colour styles and complete
 size/inventory rows. It creates no image assets or image tasks and makes no image
 provider calls. All Catalogue derives its base-product count
 from the catalogue mix and shows each configured quota; scoped requests retain
 an operator-selected parent-product count and distribute it across matching
-mix rows by their configured counts. Its review shows
+mix rows, weighted by their configured product counts. Design Mix pattern and
+embellishment percentages and row compatibility rules are applied and frozen
+during this information job, not during either image-generation step. Its review shows
 parent products, styles, zero image assets, size rows, and attributed text-model
 calls. Core imagery is a separate manual step.
 The visible workflow now exposes a Step 2 action after a completed information

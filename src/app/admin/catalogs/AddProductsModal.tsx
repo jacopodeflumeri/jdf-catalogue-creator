@@ -78,6 +78,16 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
     return groups;
   }, {});
 
+  function chooseDepartmentScope() {
+    setDepartmentKey((current) => mixDepartments.includes(current) ? current : mixDepartments[0] ?? "");
+    setScopeType("DEPARTMENT");
+  }
+
+  function chooseCategoryScope() {
+    setCategory((current) => mixCategories.includes(current) ? current : mixCategories[0] ?? "");
+    setScopeType("CATEGORY");
+  }
+
   async function submit() {
     if (!catalog || (isLarge && !confirmed)) return;
     setLoading(true);
@@ -103,10 +113,10 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
         <Card title="All catalogue" description="Generate the configured product count from the catalogue mix."><Button variant={scopeType === "ALL" ? "primary" : "secondary"} onClick={() => setScopeType("ALL")}>All catalogue</Button></Card>
         {generationRows.length === 0 && <NoticeBox variant="warning">Assign a department, positive quota, and outfit slot to at least one Catalogue Mix row in Settings before queueing generation.</NoticeBox>}
         <Card title="Specific department" description="Every generated product will use this department.">
-          <div className="flex gap-3"><Button variant={scopeType === "DEPARTMENT" ? "primary" : "secondary"} onClick={() => setScopeType("DEPARTMENT")}>Choose department</Button>{scopeType === "DEPARTMENT" && <FormSelect label="Department" value={departmentKey} onChange={(event) => setDepartmentKey(event.target.value)} options={catalog.departments.filter((item) => mixDepartments.includes(item.key)).map((item) => ({ value: item.key, label: item.label }))} />}</div>
+          <div className="flex gap-3"><Button variant={scopeType === "DEPARTMENT" ? "primary" : "secondary"} onClick={chooseDepartmentScope}>Choose department</Button>{scopeType === "DEPARTMENT" && <FormSelect id="catalog-department" label="Department" value={departmentKey} onChange={(event) => setDepartmentKey(event.target.value)} options={catalog.departments.filter((item) => mixDepartments.includes(item.key)).map((item) => ({ value: item.key, label: item.label }))} />}</div>
         </Card>
         <Card title="Specific category" description="Products are distributed across the configured department and subcategory rows for this category.">
-          <div className="flex gap-3"><Button variant={scopeType === "CATEGORY" ? "primary" : "secondary"} onClick={() => setScopeType("CATEGORY")}>Choose category</Button>{scopeType === "CATEGORY" && <FormSelect label="Category" value={category} onChange={(event) => setCategory(event.target.value)} options={mixCategories.map((value) => ({ value, label: value }))} />}</div>
+          <div className="flex gap-3"><Button variant={scopeType === "CATEGORY" ? "primary" : "secondary"} onClick={chooseCategoryScope}>Choose category</Button>{scopeType === "CATEGORY" && <FormSelect id="catalog-category" label="Category" value={category} onChange={(event) => setCategory(event.target.value)} options={mixCategories.map((value) => ({ value, label: value }))} />}</div>
         </Card>
       </div>}
       {step === 1 && <div className="space-y-5">
