@@ -6,7 +6,7 @@
 # =============================================================================
 # Stage 1: Full Dependencies
 # =============================================================================
-FROM node:22.16.0-bookworm-slim AS deps
+FROM node:22.23.4-bookworm-slim AS deps
 WORKDIR /app
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
@@ -33,7 +33,7 @@ RUN npm prune --omit=dev
 # =============================================================================
 # Stage 3: Builder
 # =============================================================================
-FROM node:22.16.0-bookworm-slim AS builder
+FROM node:22.23.4-bookworm-slim AS builder
 WORKDIR /app
 
 # Build arguments for version info (passed from build-and-push.sh)
@@ -74,7 +74,7 @@ RUN npx next build
 # =============================================================================
 # Stage 4: Production Runner
 # =============================================================================
-FROM node:22.16.0-bookworm-slim AS runner
+FROM node:22.23.4-bookworm-slim AS runner
 WORKDIR /app
 
 # Set production environment
