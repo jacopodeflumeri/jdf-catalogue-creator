@@ -39,7 +39,10 @@ WITH source_rows AS (
     rows.row_value || jsonb_build_object(
       'id', COALESCE(NULLIF(rows.row_value->>'id', ''), 'mix-' || substr(md5(rows.catalog_id::text || ':' || rows.ordinality::text || ':' || COALESCE(rows.row_value->>'departmentKey', '') || ':' || lower(rows.row_value->>'category') || ':' || lower(rows.row_value->>'subcategory')), 1, 20)),
       'departmentKey', CASE WHEN rows.is_taxonomy_only THEN NULL ELSE rows.row_value->'departmentKey' END,
-      'productCount', CASE WHEN rows.is_taxonomy_only THEN 0 ELSE rows.row_value->'productCount' END,
+      'productCount', CASE
+        WHEN rows.is_taxonomy_only THEN to_jsonb(0)
+        ELSE COALESCE(rows.row_value->'productCount', to_jsonb(0))
+      END,
       'outfitSlot', CASE WHEN rows.is_taxonomy_only THEN NULL ELSE COALESCE(rows.row_value->'outfitSlot', 'null'::jsonb) END
     ) AS row_value
   FROM source_rows AS rows
