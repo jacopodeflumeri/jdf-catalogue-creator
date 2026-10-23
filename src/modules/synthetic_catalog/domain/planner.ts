@@ -66,7 +66,16 @@ function designRule(rowId: string | undefined, mix: CatalogDesignMix, category: 
   };
 }
 
-function quotaAwareSubset<T extends { mixRowId?: string }>(items: T[], count: number, seed: string, quotas: Map<string, number>): T[] {
+function quotaAwareSubset<T extends { mixRowId?: string }>(
+  items: T[],
+  count: number,
+  seed: string,
+  quotas: Map<string, number>,
+  canSelect: (item: T, selected: readonly T[]) => boolean = () => true,
+): T[] {
+  if (count < 0 || count > items.length) {
+    throw new Error(`Design target requires ${count} selections from ${items.length} compatible products`);
+  }
   const tie = new Map(seededShuffle(`${seed}:tie`, items).map((item, index) => [item, index]));
   const selected: T[] = [];
   const rowCounts = new Map<string, number>();
@@ -78,7 +87,12 @@ function quotaAwareSubset<T extends { mixRowId?: string }>(items: T[], count: nu
       const bs = (rowCounts.get(br) ?? 0) / Math.max(1, quotas.get(br) ?? 1);
       return as - bs || tie.get(a)! - tie.get(b)!;
     });
-    const item = remaining.shift()!;
+    const selectedIndex = remaining.findIndex((item) => canSelect(item, selected));
+    if (selectedIndex < 0) {
+      throw new Error("Design targets cannot be fulfilled together for this scope");
+    }
+    const [item] = remaining.splice(selectedIndex, 1);
+    if (!item) throw new Error("Design allocation exhausted its compatible products");
     selected.push(item);
     const key = item.mixRowId ?? "";
     rowCounts.set(key, (rowCounts.get(key) ?? 0) + 1);
@@ -115,7 +129,22 @@ export function allocateDesignMix<T extends PlannedProduct & { mixRowId?: string
   const overlapCount = minOverlap;
   if (overlapCount > sharedEligible.length) throw new Error(`Configured overlap target ${overlapCount} cannot be met: only ${sharedEligible.length} products allow both`);
   const overlap = quotaAwareSubset(sharedEligible, overlapCount, `${seed}:overlap`, rowQuotas);
-  const selectedPattern = [...overlap, ...quotaAwareSubset(patterned.filter((p) => !overlap.includes(p)), patternTarget - overlapCount, `${seed}:patterns`, rowQuotas)];
+  const overlapSet = new Set(overlap);
+  const embellishmentCandidates = embellished.filter((product) => !overlapSet.has(product));
+  const embellishmentsStillNeeded = embellishmentTarget - overlapCount;
+  const selectedPattern = [
+    ...overlap,
+    ...quotaAwareSubset(
+      patterned.filter((product) => !overlapSet.has(product)),
+      patternTarget - overlapCount,
+      `${seed}:patterns`,
+      rowQuotas,
+      (candidate, selected) => {
+        const unavailable = new Set([...selected, candidate]);
+        return embellishmentCandidates.filter((product) => !unavailable.has(product)).length >= embellishmentsStillNeeded;
+      },
+    ),
+  ];
   const selectedEmbellishments = [...overlap, ...quotaAwareSubset(embellished.filter((p) => !selectedPattern.includes(p)), embellishmentTarget - overlapCount, `${seed}:embellishments`, rowQuotas)];
   const patternSet = new Set(selectedPattern);
   const embellishmentSet = new Set(selectedEmbellishments);

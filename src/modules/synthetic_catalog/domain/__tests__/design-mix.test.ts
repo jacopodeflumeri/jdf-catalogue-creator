@@ -69,4 +69,36 @@ describe("deterministic design mix allocation", () => {
     const plan = planAssortment({ sequences: [1, 2, 3, 4], scope: { type: "CATEGORY", category: "coats" }, config: { ...config, assortmentPlan: rows }, seed: "coats" }).map((product) => ({ ...product, category: "bags" }));
     expect(() => allocateDesignMix(plan, { ...mix, patternPercentage: 0, embellishmentPercentage: 100 }, "coats")).toThrow(/Embellishment target/);
   });
+
+  it("reserves scarce embellishment-compatible products in a 66-product scoped job", () => {
+    const products = Array.from({ length: 66 }, (_, index) => ({
+      sequence: index + 1,
+      seed: `women-66:${index + 1}`,
+      department: "WOMEN",
+      category: index < 20 ? "pattern only" : index < 30 ? "shared design" : "plain",
+      subcategory: "test",
+      mixRowId: index < 20 ? "pattern-row" : index < 30 ? "shared-row" : "plain-row",
+    }));
+    const configuredMix = {
+      patternPercentage: 30,
+      embellishmentPercentage: 15,
+      allowCombined: true,
+      maxCombinedPercentage: 5,
+      patterns: [{ code: "STRIPED", label: "Striped" }],
+      embellishments: [{ code: "EMBROIDERY", label: "Embroidery" }],
+      rules: [
+        { catalogMixRowId: "pattern-row", allowedPatternCodes: ["STRIPED"], allowedEmbellishmentCodes: [] },
+        { catalogMixRowId: "shared-row", allowedPatternCodes: ["STRIPED"], allowedEmbellishmentCodes: ["EMBROIDERY"] },
+        { catalogMixRowId: "plain-row", allowedPatternCodes: [], allowedEmbellishmentCodes: [] },
+      ],
+    };
+
+    const planned = allocateDesignMix(products, configuredMix, "women-66");
+
+    expect(planned.filter((product) => product.design?.patternCode != null)).toHaveLength(20);
+    expect(planned.filter((product) => product.design?.embellishmentCodes.length)).toHaveLength(10);
+    expect(planned.filter((product) => product.design?.patternCode && product.design.embellishmentCodes.length)).toHaveLength(0);
+    expect(planned.filter((product) => product.design?.patternCode).every((product) => product.mixRowId === "pattern-row")).toBe(true);
+    expect(planned.filter((product) => product.design?.embellishmentCodes.length).every((product) => product.mixRowId === "shared-row")).toBe(true);
+  });
 });
