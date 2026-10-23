@@ -5,6 +5,8 @@ import { formatProductId, formatStyleId, formatVariantId } from "../domain/ids";
 import { assertJobTransition } from "../domain/job-state";
 import {
   planAssortment,
+  allocateDesignMix,
+  roundDesignTarget,
   plannedProductSchema,
   type DepartmentMode,
   type GenerationScope,
@@ -71,12 +73,13 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   const seed =
     input.seed ??
     `${catalog.slug}:${reservation.first}:${requestedProducts}:${JSON.stringify(scope)}:${colorVariantCount}`;
-  const plan = planAssortment({
+  const assortment = planAssortment({
     sequences: reservation.sequences,
     scope,
     config,
     seed,
   });
+  const plan = allocateDesignMix(assortment, config.designMix, seed);
 
   return prisma.catalogGenerationJob.create({
     data: {

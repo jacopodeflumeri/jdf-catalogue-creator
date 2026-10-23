@@ -239,6 +239,18 @@ bags and unrelated accessories are not implicitly eligible. An explicit rule
 can narrow or exclude either attribute. Settings writes require editor access and
 are audited; seeding preserves the saved Design Mix.
 
+For information jobs, the planner uses half-up rounding (`floor(x + 0.5)`) on
+`N × percentage / 100`. It selects exact patterned and embellished product
+sets from the scoped assortment, balancing selections across eligible Catalogue
+Mix rows in proportion to their planned counts. Pattern and embellishment codes
+are selected from each row's compatible vocabulary with the job seed. A
+disabled overlap requires disjoint sets; when overlap is enabled the actual
+intersection is capped by the rounded maximum. Impossible targets and category
+eligibility conflicts fail before sequence reservation or task creation. The
+wizard runs the same planner and displays its exact counts. Each queued product
+task stores its complete assignment and configuration snapshot, so retries and
+later catalogue setting edits do not change the planned design.
+
 Identifiers are deterministic and globally unique:
 
 - Product: `{PREFIX}-{W|M}-{SEQUENCE}`, for example `PRE-W-000042`

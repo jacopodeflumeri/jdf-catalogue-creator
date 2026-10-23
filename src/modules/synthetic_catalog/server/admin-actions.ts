@@ -284,6 +284,7 @@ export async function saveCatalogMixAction(input: unknown): Promise<CatalogActio
       const updatedConfig = parseCatalogProfileConfig({
         ...config,
         assortmentPlan: values.rows,
+        designMix: { ...config.designMix, rules: config.designMix.rules.filter((rule) => values.rows.some((row) => row.id === rule.catalogMixRowId)) },
       });
       const outfitSlotChanges = updatedConfig.assortmentPlan.flatMap((row) => {
         const prior = config.assortmentPlan.find((item) => item.departmentKey === row.departmentKey && item.category === row.category && item.subcategory === row.subcategory);

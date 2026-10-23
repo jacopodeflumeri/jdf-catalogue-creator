@@ -9,7 +9,7 @@ import FormSelect from "@/components/ui/form/FormSelect";
 import Modal from "@/components/ui/modal/Modal";
 import NoticeBox from "@/components/ui/NoticeBox";
 import { estimateAssortmentOutput } from "@/modules/synthetic_catalog/domain/colors";
-import { planAssortment } from "@/modules/synthetic_catalog/domain/planner";
+import { allocateDesignMix, planAssortment, roundDesignTarget } from "@/modules/synthetic_catalog/domain/planner";
 import { createCatalogGenerationJobAction } from "@/modules/synthetic_catalog/server/admin-actions";
 
 interface AddProductsModalProps {
@@ -23,6 +23,7 @@ interface AddProductsModalProps {
     departments: Array<{ key: string; label: string }>;
     categories: string[];
     assortmentPlan: Array<{ id: string; departmentKey: string | null; category: string; subcategory: string; productCount: number; outfitSlot: string | null }>;
+    designMix: import("@/modules/synthetic_catalog/config/profiles").CatalogDesignMix;
     maxProductsPerJob: number;
     largeJobThreshold: number;
   } | null;
@@ -50,14 +51,21 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
       : { type: "CATEGORY" as const, category };
   const estimateSeed = `${catalog.slug}:${catalog.nextProductSequence}:${requestedProducts}:${JSON.stringify(estimateScope)}:${colorVariantCount}`;
   const canContinueScope = scopeType === "ALL" ? generationRows.length > 0 : (scopeType === "DEPARTMENT" ? Boolean(departmentKey) : Boolean(category));
-  const estimatePlan = requestedProducts > 0 && canContinueScope && generationRows.length > 0 ? planAssortment({
+  const rawEstimatePlan = requestedProducts > 0 && canContinueScope && generationRows.length > 0 ? planAssortment({
     sequences: Array.from({ length: requestedProducts }, (_, index) => catalog.nextProductSequence + index),
     scope: estimateScope,
     config: { departments: catalog.departments, assortmentPlan: generationRows },
     seed: estimateSeed,
   }) : [];
+  let designPlan = [] as ReturnType<typeof allocateDesignMix>;
+  let designError: string | null = null;
+  try { designPlan = allocateDesignMix(rawEstimatePlan, catalog.designMix, estimateSeed); }
+  catch (error) { designError = error instanceof Error ? error.message : "Design targets cannot be met for this scope"; }
+  const patternCount = roundDesignTarget(requestedProducts, catalog.designMix.patternPercentage);
+  const embellishmentCount = roundDesignTarget(requestedProducts, catalog.designMix.embellishmentPercentage);
+  const combinedCount = designPlan.filter((item) => item.design?.patternCode != null && item.design.embellishmentCodes.length > 0).length;
   const generationEstimate = estimateAssortmentOutput({
-    plan: estimatePlan,
+    plan: designPlan,
     colorVariantCount,
     categorySizeCounts: catalog.categorySizeCounts,
   });
@@ -107,16 +115,17 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
       </div>}
       {step === 2 && <div className="space-y-5">
         <Card title="Request summary" description={scopeType === "ALL" ? "All catalogue" : scopeType === "DEPARTMENT" ? `Department: ${catalog.departments.find((item) => item.key === departmentKey)?.label ?? departmentKey}` : `Category: ${category}`}>
+          {designError ? <NoticeBox variant="error" title="Design targets cannot be fulfilled">{designError}</NoticeBox> : <p className="mb-4 text-sm">{requestedProducts} products · {patternCount} patterned · {embellishmentCount} embellished · {combinedCount} containing both</p>}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{[["Parent products", estimate.products], ["Color styles", estimate.styles], ["Images", estimate.images], ["Size rows", estimate.sizeRows], ["Attributed LiteLLM calls", estimate.liteLlmCalls]].map(([label, value]) => <div key={label} className="rounded-xl border border-white/70 bg-white/30 p-3"><p className="text-xl font-bold">{value}</p><p className="text-xs text-[#1a1a1a]/55">{label}</p></div>)}</div>
           <p className="mt-4 text-xs text-[#1a1a1a]/55">This step generates catalogue information only. Image generation is a separate manual step after these products are ready.</p>
         </Card>
         {scopeType === "ALL" && <Card title="Configured catalogue mix" description="The job will create exactly these base-product quotas."><div className="space-y-2">{Object.entries(groupedMix).map(([department, rows]) => <div key={department}><p className="font-semibold">{catalog.departments.find((item) => item.key === department)?.label ?? department}</p><ul className="ml-4 list-disc text-sm text-[#1a1a1a]/65">{rows.map((row) => <li key={`${department}:${row.category}:${row.subcategory}`}>{row.category} · {row.subcategory}: {row.productCount}</li>)}</ul></div>)}</div></Card>}
         {isLarge && <NoticeBox variant="warning" title="Large generation job"><FormCheckbox id="confirm-large-catalog-job" label={`I confirm ${estimate.products} products, ${estimate.styles} styles, no images, and ${estimate.liteLlmCalls} attributed LiteLLM calls`} checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} helpText="The job is queued for background processing." /></NoticeBox>}
       </div>}
-      {error && <div className="mt-5"><NoticeBox variant="error">{error}</NoticeBox></div>}
+        {error && <div className="mt-5"><NoticeBox variant="error">{error}</NoticeBox></div>}
       <div className="mt-6 flex justify-between gap-3">
         <Button variant="ghost" onClick={step === 0 ? onClose : () => setStep((value) => value - 1)} disabled={loading}>{step === 0 ? "Cancel" : "Back"}</Button>
-        {step < 2 ? <Button onClick={() => setStep((value) => value + 1)} disabled={(step === 0 && !canContinueScope) || (step === 1 && (requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob))}>Continue</Button> : <Button onClick={() => void submit()} loading={loading} disabled={requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob || (isLarge && !confirmed)}>Generate catalogue information</Button>}
+        {step < 2 ? <Button onClick={() => setStep((value) => value + 1)} disabled={(step === 0 && !canContinueScope) || (step === 1 && (requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob))}>Continue</Button> : <Button onClick={() => void submit()} loading={loading} disabled={requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob || Boolean(designError) || (isLarge && !confirmed)}>Generate catalogue information</Button>}
       </div>
     </Modal>
   );

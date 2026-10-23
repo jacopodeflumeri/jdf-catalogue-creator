@@ -26,5 +26,7 @@ export function mergeSeedCatalogConfig(
     else mixRows[index] = row;
   }
 
-  return parseCatalogProfileConfig({ ...defaults, departments, assortmentPlan: mixRows });
+  // Design Mix is operator-owned state. Keep its vocabularies, percentages,
+  // compatibility rules (including intentional removals), and overlap policy.
+  return parseCatalogProfileConfig({ ...defaults, ...current, departments, assortmentPlan: mixRows });
 }

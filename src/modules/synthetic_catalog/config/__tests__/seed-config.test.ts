@@ -18,6 +18,8 @@ describe("catalog seed taxonomy merge", () => {
     existing.assortmentPlan = [...profile.config.assortmentPlan, {
       departmentKey: "CHILDREN_BABY", category: "babywear", subcategory: "onesies", productCount: 4, outfitSlot: "ONE_PIECE",
     }];
+    const parsedExisting = mergeSeedCatalogConfig(profile.config, existing);
+    existing.designMix = { ...parsedExisting.designMix, patternPercentage: 37, patterns: parsedExisting.designMix.patterns.filter((item) => item.code !== "ANIMAL") };
 
     const reseeded = mergeSeedCatalogConfig(profile.config, existing);
 
@@ -32,6 +34,8 @@ describe("catalog seed taxonomy merge", () => {
       outfitSlot: "ONE_PIECE",
     }));
     expect(reseeded.materials).toEqual(profile.config.materials);
+    expect(reseeded.designMix.patternPercentage).toBe(37);
+    expect(reseeded.designMix.patterns.some((item) => item.code === "ANIMAL")).toBe(false);
     expect(mergeSeedCatalogConfig(profile.config, reseeded)).toEqual(reseeded);
   });
 });
