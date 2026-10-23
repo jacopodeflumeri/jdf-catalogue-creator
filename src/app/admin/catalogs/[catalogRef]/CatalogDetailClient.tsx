@@ -37,6 +37,7 @@ import CatalogStatusBadge from "../CatalogStatusBadge";
 import DownloadCsvButton, { DownloadValidationReportButton } from "../DownloadCsvButton";
 import ProductTable from "./ProductTable";
 import CatalogueMixEditor from "./CatalogueMixEditor";
+import DesignMixEditor from "./DesignMixEditor";
 
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 
@@ -144,6 +145,7 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
       <ul className="mt-6 grid gap-3 text-sm md:grid-cols-2">{detail.catalog.departments.map((item) => <li key={item.key} className="rounded-xl border border-white/60 bg-white/35 px-4 py-3">{item.label} · {item.key} · code {item.code} · weight {item.generationWeight}</li>)}</ul>
     </Card>
     <CatalogueMixEditor detail={detail} canEdit={canEdit} onSaved={onSaved} />
+    <DesignMixEditor detail={detail} canEdit={canEdit} onSaved={onSaved} />
     </div>
   );
 }

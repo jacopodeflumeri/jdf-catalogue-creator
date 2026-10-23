@@ -146,6 +146,7 @@ export interface CatalogDetailView {
     categorySizeCounts: Record<string, number>;
     subcategories: Record<string, string[]>;
     assortmentPlan: Array<{ id: string; departmentKey: string | null; category: string; subcategory: string; productCount: number; outfitSlot: string | null }>;
+    designMix: import("../config/profiles").CatalogDesignMix;
   };
   counts: {
     products: number;

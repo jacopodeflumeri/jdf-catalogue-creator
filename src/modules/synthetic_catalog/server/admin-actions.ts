@@ -307,6 +307,25 @@ export async function saveCatalogMixAction(input: unknown): Promise<CatalogActio
   }
 }
 
+export async function saveCatalogDesignMixAction(input: unknown): Promise<CatalogActionResult> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const catalogId = positiveIdSchema.parse((input as { catalogId?: unknown })?.catalogId);
+    const designMix = (input as { designMix?: unknown })?.designMix;
+    const catalog = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${catalogId} FOR UPDATE`;
+      const existing = await tx.syntheticCatalog.findUniqueOrThrow({ where: { id: catalogId } });
+      const current = parseCatalogProfileConfig(existing.config);
+      const updated = parseCatalogProfileConfig({ ...current, designMix });
+      await tx.syntheticCatalog.update({ where: { id: catalogId }, data: { config: JSON.parse(JSON.stringify(updated)) as Prisma.InputJsonValue } });
+      return existing;
+    });
+    await writeAuditLog({ ...sessionAuditActor(session), action: "catalog_design_mix_updated", entityType: "synthetic_catalog", entityId: catalog.id, message: `Updated design mix for ${catalog.name}`, data: { designMix } });
+    revalidateCatalog(catalog.slug);
+    return { ok: true };
+  } catch (error) { return errorResult(error); }
+}
+
 async function setCatalogProductArchived(input: unknown, archived: boolean): Promise<CatalogActionResult> {
   const session = await requireAdmin({ requireEditorAccess: true });
   try {

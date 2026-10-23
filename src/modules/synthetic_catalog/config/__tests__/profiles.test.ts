@@ -1,6 +1,19 @@
 import { CATALOG_PROFILES, parseCatalogProfileConfig } from "../profiles";
 
 describe("catalog profile configuration", () => {
+  it("defaults legacy catalogues to a safe zero design mix", () => {
+    const legacy = { ...CATALOG_PROFILES[0]!.config } as Record<string, unknown>;
+    delete legacy.designMix;
+    const parsed = parseCatalogProfileConfig(legacy);
+    expect(parsed.designMix.patternPercentage).toBe(0);
+    expect(parsed.designMix.embellishmentPercentage).toBe(0);
+    expect(parsed.designMix.patterns.map((item) => item.code)).toContain("STRIPED");
+  });
+
+  it("rejects configurations that require overlap when combined designs are disabled", () => {
+    const config = CATALOG_PROFILES[0]!.config;
+    expect(() => parseCatalogProfileConfig({ ...config, designMix: { patternPercentage: 60, embellishmentPercentage: 50, allowCombined: false, maxCombinedPercentage: 0, patterns: [{ code: "STRIPED", label: "Striped" }], embellishments: [{ code: "EMBROIDERY", label: "Embroidery" }], rules: [] } })).toThrow(/require overlap/);
+  });
   it("defines exactly the four required profiles", () => {
     expect(CATALOG_PROFILES.map((profile) => profile.slug)).toEqual([
       "premium-apparel",

@@ -19,6 +19,17 @@ export interface CatalogProfileConfig {
   seasons: readonly string[];
   namingTone: string;
   visualDirection: string;
+  designMix: CatalogDesignMix;
+}
+
+export interface CatalogDesignMix {
+  patternPercentage: number;
+  embellishmentPercentage: number;
+  allowCombined: boolean;
+  maxCombinedPercentage: number;
+  patterns: Array<{ code: string; label: string }>;
+  embellishments: Array<{ code: string; label: string }>;
+  rules: Array<{ catalogMixRowId: string; allowedPatternCodes: string[]; allowedEmbellishmentCodes: string[] }>;
 }
 
 export interface CatalogMixRow {
@@ -30,7 +41,7 @@ export interface CatalogMixRow {
   outfitSlot: OutfitSlot | null;
 }
 
-interface CatalogProfileConfigInput extends Omit<CatalogProfileConfig, "assortmentPlan"> {
+interface CatalogProfileConfigInput extends Omit<CatalogProfileConfig, "assortmentPlan" | "designMix"> {
   assortmentPlan: readonly {
     id?: string;
     departmentKey: string | null;
@@ -269,7 +280,52 @@ const catalogProfileConfigSchema = z.object({
   seasons: z.array(z.string().min(1)).min(1),
   namingTone: z.string().min(1),
   visualDirection: z.string().min(1),
+  designMix: z.object({
+    patternPercentage: z.number().int().min(0).max(100),
+    embellishmentPercentage: z.number().int().min(0).max(100),
+    allowCombined: z.boolean(),
+    maxCombinedPercentage: z.number().int().min(0).max(100),
+    patterns: z.array(z.object({ code: z.string().min(1), label: z.string().trim().min(1).max(80) })),
+    embellishments: z.array(z.object({ code: z.string().min(1), label: z.string().trim().min(1).max(80) })),
+    rules: z.array(z.object({ catalogMixRowId: z.string().min(1), allowedPatternCodes: z.array(z.string()), allowedEmbellishmentCodes: z.array(z.string()) })),
+  }).optional(),
 });
+
+export const DEFAULT_PATTERN_VOCABULARY = ["STRIPED", "CHECKED", "FLORAL", "GEOMETRIC", "ABSTRACT", "ANIMAL", "POLKA_DOT", "COLOR_BLOCKED"] as const;
+export const DEFAULT_EMBELLISHMENT_VOCABULARY = ["EMBROIDERY", "SEQUINS", "BEADING", "STUDS", "APPLIQUE", "CONTRAST_STITCHING", "LACE_TRIM", "METALLIC_HARDWARE"] as const;
+
+function normalizeDesignMix(value: CatalogDesignMix | undefined, mixRows: readonly CatalogMixRow[]): CatalogDesignMix {
+  const source = value ?? {
+    patternPercentage: 0, embellishmentPercentage: 0, allowCombined: false, maxCombinedPercentage: 0,
+    patterns: DEFAULT_PATTERN_VOCABULARY.map((code) => ({ code, label: code.toLocaleLowerCase().replaceAll("_", " ").replace(/\\b\\w/g, (c) => c.toLocaleUpperCase()) })),
+    embellishments: DEFAULT_EMBELLISHMENT_VOCABULARY.map((code) => ({ code, label: code.toLocaleLowerCase().replaceAll("_", " ").replace(/\\b\\w/g, (c) => c.toLocaleUpperCase()) })),
+    rules: [],
+  };
+  const normalizeVocabulary = (items: Array<{ code: string; label: string }>, name: string) => {
+    const result = items.map((item) => ({ code: item.code.trim().toLocaleUpperCase().replaceAll("-", "_").replaceAll(" ", "_"), label: item.label.trim() }));
+    if (result.some((item) => !/^[A-Z][A-Z0-9_]{0,39}$/.test(item.code)) || new Set(result.map((item) => item.code)).size !== result.length) throw new Error(`${name} vocabulary codes must be normalized and unique`);
+    return result;
+  };
+  const patterns = normalizeVocabulary(source.patterns, "Pattern");
+  const embellishments = normalizeVocabulary(source.embellishments, "Embellishment");
+  const patternCodes = new Set(patterns.map((item) => item.code));
+  const embellishmentCodes = new Set(embellishments.map((item) => item.code));
+  const rowIds = new Set(mixRows.map((row) => row.id));
+  const seenRules = new Set<string>();
+  const rules = source.rules.map((rule) => {
+    if (!rowIds.has(rule.catalogMixRowId)) throw new Error(`Design compatibility rule references unknown Catalogue Mix row '${rule.catalogMixRowId}'`);
+    if (seenRules.has(rule.catalogMixRowId)) throw new Error(`Design compatibility rules must be unique by Catalogue Mix row`);
+    seenRules.add(rule.catalogMixRowId);
+    const allowedPatternCodes = [...new Set(rule.allowedPatternCodes.map((code) => code.toLocaleUpperCase()))];
+    const allowedEmbellishmentCodes = [...new Set(rule.allowedEmbellishmentCodes.map((code) => code.toLocaleUpperCase()))];
+    if (allowedPatternCodes.some((code) => !patternCodes.has(code)) || allowedEmbellishmentCodes.some((code) => !embellishmentCodes.has(code))) throw new Error(`Design compatibility rule for '${rule.catalogMixRowId}' references an unknown vocabulary code`);
+    return { catalogMixRowId: rule.catalogMixRowId, allowedPatternCodes, allowedEmbellishmentCodes };
+  });
+  const result = { ...source, patterns, embellishments, rules };
+  if (!result.allowCombined && result.patternPercentage + result.embellishmentPercentage > 100) throw new Error("Pattern and embellishment percentages require overlap, but combined designs are disabled");
+  if (!result.allowCombined && result.maxCombinedPercentage !== 0) throw new Error("Maximum combined percentage must be zero when combined designs are disabled");
+  return result;
+}
 
 export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig {
   const parsed = catalogProfileConfigSchema.parse(value);
@@ -338,8 +394,8 @@ export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig 
     }
   }
 
-  const canonicalConfig = Object.fromEntries(Object.entries(config).filter(([key]) => key !== "categories" && key !== "subcategories"));
-  return { ...canonicalConfig, assortmentPlan: normalizedAssortmentPlan } as unknown as CatalogProfileConfig;
+  const canonicalConfig = Object.fromEntries(Object.entries(config).filter(([key]) => key !== "categories" && key !== "subcategories" && key !== "designMix"));
+  return { ...canonicalConfig, assortmentPlan: normalizedAssortmentPlan, designMix: normalizeDesignMix(parsed.designMix, normalizedAssortmentPlan) } as unknown as CatalogProfileConfig;
 }
 
 function legacyMixId(index: number, departmentKey: string | null, category: string, subcategory: string): string {

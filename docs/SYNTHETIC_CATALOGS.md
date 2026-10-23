@@ -225,6 +225,20 @@ useful `SKIPPED` reason when no valid recipe exists.
 
 ## Identifier hierarchy
 
+### Design Mix
+
+Catalogue Settings includes Design Mix percentages for patterned and embellished
+products, whether the two attributes may overlap, an overlap ceiling, controlled
+pattern and embellishment vocabularies, and per Catalogue Mix row compatibility
+rules. Vocabulary codes are uppercase stable machine identifiers; labels are
+editor-facing text. `SOLID` is represented by a null pattern. Existing configs
+without Design Mix safely parse as zero percent for both targets. When a row has
+no explicit compatibility rule, category defaults permit patterns for apparel
+categories and embellishments for categories suited to decorative construction;
+bags and unrelated accessories are not implicitly eligible. An explicit rule
+can narrow or exclude either attribute. Settings writes require editor access and
+are audited; seeding preserves the saved Design Mix.
+
 Identifiers are deterministic and globally unique:
 
 - Product: `{PREFIX}-{W|M}-{SEQUENCE}`, for example `PRE-W-000042`

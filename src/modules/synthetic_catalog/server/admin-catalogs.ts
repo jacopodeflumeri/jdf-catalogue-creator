@@ -221,6 +221,7 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
       categories: catalogCategories(config),
       categorySizeCounts: Object.fromEntries(catalogCategories(config).map((category) => [category, sizesForCategory(config, category).length])),
       assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
+      designMix: config.designMix,
       ...generationLimits,
       latestJob: catalog.jobs[0] ? jobView(catalog.jobs[0]) : null,
     };
@@ -270,6 +271,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       categorySizeCounts: Object.fromEntries(catalogCategories(config).map((category) => [category, sizesForCategory(config, category).length])),
       subcategories: catalogSubcategories(config),
       assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
+      designMix: config.designMix,
       ...generationLimits,
     },
     counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages, readyCoreImages: readyImages, failedCoreImages: failedImages, pendingCoreImages },
