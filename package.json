@@ -29,7 +29,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1121.0",
     "@notionhq/client": "^5.26.0",
     "@prisma/adapter-pg": "^7.10.0",
-    "@prisma/client": "^7.10.0",
+    "@prisma/client": "^7.10.1",
     "dompurify": "^3.4.14",
     "dotenv": "^17.4.2",
     "echarts": "^6",
@@ -42,7 +42,7 @@
     "prisma": "7.10.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "ssh2-sftp-client": "^12.1.1",
     "tsx": "^4.23.13",
     "zod": "^4.5.4"
@@ -69,6 +69,6 @@
     "typescript": "^5"
   },
   "overrides": {
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.5"
   }
 }
