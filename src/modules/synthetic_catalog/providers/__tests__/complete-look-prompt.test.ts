@@ -14,8 +14,10 @@ describe("Complete the Look prompt", () => {
     expect(prompt.indexOf("Image 1:")).toBeLessThan(prompt.indexOf("Image 2:"));
     expect(prompt.indexOf("Image 2:")).toBeLessThan(prompt.indexOf("Image 3:"));
     expect(prompt).toContain("one adult fictional model");
-    expect(prompt).toContain("No real brands");
+    expect(prompt).toContain("No real-world brands");
     expect(prompt).toContain("exact assigned pattern and embellishments");
     expect(prompt).toContain("FLORAL");
+    expect(prompt).toContain("Preserve existing fictional brand-logo repeats");
+    expect(prompt).toContain("never replace an ordinary pattern with a logo pattern");
   });
 });

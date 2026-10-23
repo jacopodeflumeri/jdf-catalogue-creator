@@ -12,6 +12,26 @@ const mix = {
 };
 
 describe("deterministic design mix allocation", () => {
+  it("keeps the complete ordinary vocabulary and treats logo repeat as one balanced optional code", () => {
+    const expected = ["STRIPED", "CHECKED", "FLORAL", "GEOMETRIC", "ABSTRACT", "ANIMAL", "POLKA_DOT", "COLOR_BLOCKED", "BRAND_LOGO_REPEAT"];
+    expect(config.designMix.patterns.map((item) => item.code)).toEqual(expected);
+    const plan = planAssortment({ sequences: Array.from({ length: 20 }, (_, i) => i + 1), config, seed: "vocabulary" });
+    const planned = allocateDesignMix(plan, { ...config.designMix, patternPercentage: 100, embellishmentPercentage: 0 }, "vocabulary");
+    const counts = new Map<string, number>();
+    for (const product of planned) counts.set(product.design!.patternCode!, (counts.get(product.design!.patternCode!) ?? 0) + 1);
+    expect(counts.get("BRAND_LOGO_REPEAT")).toBeGreaterThan(0);
+    expect(Math.max(...counts.values()) - Math.min(...counts.values())).toBeLessThanOrEqual(1);
+    expect(allocateDesignMix(plan, { ...config.designMix, patternPercentage: 100, embellishmentPercentage: 0 }, "vocabulary")).toEqual(planned);
+  });
+
+  it("honors row-level inclusion and exclusion of the logo pattern", () => {
+    const plan = planAssortment({ sequences: Array.from({ length: 20 }, (_, i) => i + 1), config, seed: "rules" });
+    const rules = rows.map((row, index) => ({ catalogMixRowId: row.id, allowedPatternCodes: index === 0 ? ["BRAND_LOGO_REPEAT", "STRIPED"] : ["STRIPED"], allowedEmbellishmentCodes: [] }));
+    const planned = allocateDesignMix(plan, { ...config.designMix, rules, patternPercentage: 100, embellishmentPercentage: 0 }, "rules");
+    expect(planned.some((p) => p.design?.patternCode === "BRAND_LOGO_REPEAT")).toBe(true);
+    expect(planned.filter((p) => p.design?.patternCode === "BRAND_LOGO_REPEAT").every((p) => p.mixRowId === rows[0]!.id)).toBe(true);
+  });
+
   it("uses half-up integer rounding", () => {
     expect(roundDesignTarget(5, 50)).toBe(3);
     expect(roundDesignTarget(5, 49)).toBe(2);

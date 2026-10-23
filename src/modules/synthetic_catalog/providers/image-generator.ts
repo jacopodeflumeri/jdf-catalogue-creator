@@ -7,7 +7,7 @@ export type CatalogImageRoleValue = (typeof REQUIRED_CORE_IMAGE_ROLES)[number] |
 export interface ImageReference {
   data: Buffer;
   mimeType: string;
-  assetId: number;
+  assetId?: number;
   description?: string;
 }
 
@@ -18,6 +18,7 @@ export interface CatalogImageGenerationInput {
   reference?: ImageReference;
   references?: ImageReference[];
   regeneration?: boolean;
+  requireReferences?: boolean;
 }
 
 export interface GeneratedCatalogImage {

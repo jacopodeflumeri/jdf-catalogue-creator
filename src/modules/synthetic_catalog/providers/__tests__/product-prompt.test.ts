@@ -41,4 +41,14 @@ describe("buildProductPrompt", () => {
     expect(user.responseShape.design.patternCode).toContain("plannedDesign.patternCode");
     expect(prompt.system).toContain("Do not add patterns or embellishments");
   });
+
+  it("permits only the current fictional logo for an explicitly assigned logo repeat", () => {
+    const profile = CATALOG_PROFILES[0]!;
+    const plan = { sequence: 10, seed: "logo", department: "Women", category: "dresses", subcategory: "midi dresses", design: { patternCode: "BRAND_LOGO_REPEAT", embellishmentCodes: [] } };
+    const prompt = buildProductPrompt({ model: profile.defaultTextModel, catalog: { slug: profile.slug, segment: profile.segment, brandName: profile.brandName, config: profile.config }, plan });
+    expect(prompt.system).toContain("Aureline");
+    expect(prompt.system).toContain("repeated textile or surface motif");
+    expect(prompt.system).toContain("invented lettering");
+    expect(JSON.parse(prompt.user).plannedDesign.patternCode).toBe("BRAND_LOGO_REPEAT");
+  });
 });

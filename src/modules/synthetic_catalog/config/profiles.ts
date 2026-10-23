@@ -7,7 +7,7 @@ export const CATALOG_IMAGE_MODEL_OPTIONS = [
   "openai/gpt-image-1.5",
 ] as const;
 
-export const DEFAULT_PATTERN_VOCABULARY = ["STRIPED", "CHECKED", "FLORAL", "GEOMETRIC", "ABSTRACT", "ANIMAL", "POLKA_DOT", "COLOR_BLOCKED"] as const;
+export const DEFAULT_PATTERN_VOCABULARY = ["STRIPED", "CHECKED", "FLORAL", "GEOMETRIC", "ABSTRACT", "ANIMAL", "POLKA_DOT", "COLOR_BLOCKED", "BRAND_LOGO_REPEAT"] as const;
 export const DEFAULT_EMBELLISHMENT_VOCABULARY = ["EMBROIDERY", "SEQUINS", "BEADING", "STUDS", "APPLIQUE", "CONTRAST_STITCHING", "LACE_TRIM", "METALLIC_HARDWARE"] as const;
 
 export interface CatalogProfileConfig {
@@ -300,7 +300,7 @@ const catalogProfileConfigSchema = z.object({
 });
 
 function profileDesignMix(patternPercentage: number, embellishmentPercentage: number, maxCombinedPercentage: number): CatalogDesignMix {
-  const label = (code: string) => code.toLocaleLowerCase().replaceAll("_", " ").replace(/\b\w/g, (character) => character.toLocaleUpperCase());
+  const label = (code: string) => code === "BRAND_LOGO_REPEAT" ? "Brand logo repeat" : code.toLocaleLowerCase().replaceAll("_", " ").replace(/\b\w/g, (character) => character.toLocaleUpperCase());
   return {
     patternPercentage, embellishmentPercentage, allowCombined: true, maxCombinedPercentage,
     patterns: DEFAULT_PATTERN_VOCABULARY.map((code) => ({ code, label: label(code) })),
@@ -311,7 +311,7 @@ function profileDesignMix(patternPercentage: number, embellishmentPercentage: nu
 function normalizeDesignMix(value: CatalogDesignMix | undefined, mixRows: readonly CatalogMixRow[]): CatalogDesignMix {
   const source = value ?? {
     patternPercentage: 0, embellishmentPercentage: 0, allowCombined: false, maxCombinedPercentage: 0,
-    patterns: DEFAULT_PATTERN_VOCABULARY.map((code) => ({ code, label: code.toLocaleLowerCase().replaceAll("_", " ").replace(/\b\w/g, (c) => c.toLocaleUpperCase()) })),
+    patterns: DEFAULT_PATTERN_VOCABULARY.map((code) => ({ code, label: code === "BRAND_LOGO_REPEAT" ? "Brand logo repeat" : code.toLocaleLowerCase().replaceAll("_", " ").replace(/\b\w/g, (c) => c.toLocaleUpperCase()) })),
     embellishments: DEFAULT_EMBELLISHMENT_VOCABULARY.map((code) => ({ code, label: code.toLocaleLowerCase().replaceAll("_", " ").replace(/\b\w/g, (c) => c.toLocaleUpperCase()) })),
     rules: [],
   };

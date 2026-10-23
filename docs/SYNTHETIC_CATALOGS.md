@@ -23,6 +23,8 @@ stable slug mapping: `premium-apparel` → `/img/aureline.png`, `fast-fashion` �
 → `/img/kinetiq-form.png`. These static files live in `public/img` and are
 included in the application image. Lookup uses the catalogue slug, never
 editable brand text; unavailable images fall back to the visible brand name.
+The supplied Activewear image wordmark reads `KINETIQ`, while the configured
+catalogue brand remains `Kinetic Form`; neither value is auto-renamed.
 The admin sidebar also links directly to Premium, Fast Fashion, Luxury, and
 Activewear using their stable profile slugs.
 `/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
@@ -689,3 +691,38 @@ delete stored assets as a recovery mechanism.
   retry, regeneration, and deletion requests must write audit records using the
   entity types registered in `src/modules/audit/entity-types.ts`. The Phase 4
   worker-facing services intentionally have no session or actor context.
+
+## Catalogue brand-logo pattern
+
+The full pattern vocabulary is `STRIPED`, `CHECKED`, `FLORAL`, `GEOMETRIC`,
+`ABSTRACT`, `ANIMAL`, `POLKA_DOT`, `COLOR_BLOCKED`, and
+`BRAND_LOGO_REPEAT`. Logo repeat is one optional pattern code. It does not
+become the default, alter the patterned-product percentage, or replace ordinary
+patterns. Deterministic planning chooses from the exact codes permitted by each
+Catalogue Mix row and balances their use across the batch. Rows can exclude the
+logo while allowing ordinary patterns, allow the logo with selected ordinary
+patterns, or prohibit all patterns. Products outside the exact pattern target
+remain solid, and retries retain their frozen assignments.
+
+The existing compatibility editor exposes `Brand logo repeat`. Built-in
+eligibility applies only to plausible clothing, bags, caps, accessories,
+scarves, socks, and textiles; row compatibility remains administrator
+controlled. Migration `20261023120000_catalogue_brand_logo_pattern` appends the
+new choice idempotently to existing vocabulary arrays without changing
+percentages, other patterns, embellishments, or compatibility rules.
+
+The static slug mapping is `premium-apparel` → `/img/aureline.png`,
+`fast-fashion` → `/img/loopline.png`, `luxury-fashion` →
+`/img/maison-veyra.png`, and `activewear` → `/img/kinetiq-form.png`. For a
+planned logo repeat, only that catalogue's supplied fictional logo is allowed,
+as a restrained repeated textile or surface motif. FRONT receives the
+catalogue logo reference only. BACK and ON_MODEL receive the authoritative
+FRONT product image first, then the catalogue logo. This exact reference set
+requires editing through LiteLLM; unsupported reference processing fails
+visibly and uses normal task retries without prompt-only fallback. Ordinary
+patterns get no logo reference. Real-world, unassigned, invented, altered, or
+other-catalogue logos remain prohibited.
+
+Complete the Look preserves fictional logo repeats and ordinary patterns
+already visible in product references. It adds no logo to an unassigned item
+and never replaces an ordinary pattern with a logo pattern.

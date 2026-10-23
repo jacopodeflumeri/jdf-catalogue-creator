@@ -1,4 +1,7 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { prisma } from "@/lib/prisma/client";
+import { getCatalogBrandLogoPath } from "../config/brand-assets";
 import { parseCatalogProfileConfig } from "../config/profiles";
 import {
   CATALOG_IMAGE_ROLES,
@@ -10,6 +13,17 @@ import { buildCatalogImagePrompt } from "../providers/image-prompt";
 import { buildCompleteLookPrompt } from "../providers/complete-look-prompt";
 import type { GeneratedAssetStorage } from "../storage/generated-asset-storage";
 import { CatalogJobCancelledError } from "./job-cancellation";
+
+export async function loadCatalogLogoReference(catalogSlug: string, projectRoot = process.cwd()): Promise<ImageReference> {
+  const logoPath = getCatalogBrandLogoPath(catalogSlug);
+  if (!logoPath) throw new Error(`No approved catalogue logo is configured for '${catalogSlug}'`);
+  const publicRoot = path.resolve(projectRoot, "public");
+  const resolved = path.resolve(publicRoot, `.${logoPath}`);
+  const relative = path.relative(path.join(publicRoot, "img"), resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Catalogue logo resolved outside public/img");
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- slug is resolved only through the fixed map above and confined to public/img.
+  return { data: await readFile(resolved), mimeType: "image/png", description: "current catalogue's supplied fictional brand logo" };
+}
 
 export async function ensureStyleImageAssets(styleId: number) {
   await prisma.$transaction(
@@ -31,17 +45,21 @@ async function getReference(
   styleId: number,
   role: CatalogImageRoleValue,
   storage: GeneratedAssetStorage,
-): Promise<ImageReference | undefined> {
-  if (role === "FRONT") return undefined;
-  const front = await prisma.syntheticImageAsset.findUnique({
-    where: { styleId_role: { styleId, role: "FRONT" } },
-  });
-  if (!front?.storageKey || !front.mimeType) return undefined;
-  return {
-    data: await storage.get(front.storageKey),
-    mimeType: front.mimeType,
-    assetId: front.id,
-  };
+  catalogSlug: string,
+  logoPattern: boolean,
+): Promise<ImageReference[]> {
+  const references: ImageReference[] = [];
+  if (role !== "FRONT") {
+    const front = await prisma.syntheticImageAsset.findUnique({
+      where: { styleId_role: { styleId, role: "FRONT" } },
+    });
+    if (front?.storageKey && front.mimeType) references.push({ data: await storage.get(front.storageKey), mimeType: front.mimeType, assetId: front.id, description: "authoritative FRONT product image" });
+    else if (logoPattern) throw new Error("Brand logo repeat BACK and ON_MODEL images require the authoritative FRONT image first");
+  }
+  if (logoPattern) {
+    references.push(await loadCatalogLogoReference(catalogSlug));
+  }
+  return references;
 }
 
 export async function generateStyleImage(input: {
@@ -67,7 +85,19 @@ export async function generateStyleImage(input: {
     },
   });
   const profile = input.catalogSnapshot ? null : parseCatalogProfileConfig(asset.style.product.catalog.config);
-  const reference = await getReference(input.styleId, input.role, input.storage);
+  const visualSpec = asset.style.visualSpec && typeof asset.style.visualSpec === "object" ? asset.style.visualSpec as { patternCode?: unknown } : {};
+  const patternCode = typeof visualSpec.patternCode === "string" ? visualSpec.patternCode : null;
+  const logoPattern = patternCode === "BRAND_LOGO_REPEAT";
+  let references: ImageReference[];
+  try {
+    references = await getReference(input.styleId, input.role, input.storage, asset.style.product.catalog.slug, logoPattern);
+  } catch (error) {
+    if (logoPattern) {
+      const message = error instanceof Error ? error.message : "Required catalogue logo reference could not be loaded";
+      await prisma.syntheticImageAsset.update({ where: { id: asset.id }, data: { status: "FAILED", errorMessage: message.slice(0, 2000) } });
+    }
+    throw error;
+  }
   const prompt = buildCatalogImagePrompt({
     role: input.role,
     catalog: {
@@ -89,7 +119,9 @@ export async function generateStyleImage(input: {
       colorCode: asset.style.colorCode,
       visualSpec: asset.style.visualSpec,
     },
-    hasFrontReference: Boolean(reference),
+    hasFrontReference: references.length > 0,
+    patternCode,
+    referenceOrder: logoPattern ? (input.role === "FRONT" ? ["catalogue logo reference"] : ["authoritative FRONT product image", "catalogue logo reference"]) : undefined,
   });
 
   await prisma.syntheticImageAsset.update({
@@ -109,7 +141,8 @@ export async function generateStyleImage(input: {
       model: input.model,
       role: input.role,
       prompt,
-      reference,
+      references,
+      requireReferences: logoPattern,
       regeneration: input.regeneration,
     });
     await input.assertActive?.();
@@ -130,7 +163,7 @@ export async function generateStyleImage(input: {
         mimeType: stored.mimeType,
         width: stored.width,
         height: stored.height,
-        referenceAssetId: generated.usedReference ? reference?.assetId : null,
+        referenceAssetId: generated.usedReference ? references[0]?.assetId ?? null : null,
         errorMessage: null,
         generatedAt: new Date(),
       },

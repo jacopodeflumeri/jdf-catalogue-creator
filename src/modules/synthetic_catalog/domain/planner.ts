@@ -55,12 +55,13 @@ function designRule(rowId: string | undefined, mix: CatalogDesignMix, category: 
   if (explicit) return explicit;
   const normalized = category.toLocaleLowerCase();
   const patternFriendly = /dress|shirt|top|knit|denim|trouser|legging|short|jacket|coat|skirt|blouse/.test(normalized);
+  const logoPatternFriendly = /dress|shirt|top|knit|denim|trouser|legging|short|jacket|coat|skirt|blouse|bag|cap|accessor|scarf|sock|textile/.test(normalized);
   const embellishmentCodes = /trouser|denim|legging|short/.test(normalized) ? ["CONTRAST_STITCHING"]
     : /jacket|coat|outerwear/.test(normalized) ? ["CONTRAST_STITCHING", "APPLIQUE", "METALLIC_HARDWARE", "STUDS", "EMBROIDERY"]
       : /dress|shirt|top|knit|skirt|blouse|eveningwear/.test(normalized) ? ["EMBROIDERY", "SEQUINS", "BEADING", "APPLIQUE", "CONTRAST_STITCHING", "LACE_TRIM"]
         : [];
   return {
-    allowedPatternCodes: patternFriendly ? mix.patterns.map((item) => item.code) : [],
+    allowedPatternCodes: mix.patterns.filter((item) => item.code !== "BRAND_LOGO_REPEAT" ? patternFriendly : logoPatternFriendly).map((item) => item.code),
     allowedEmbellishmentCodes: embellishmentCodes.filter((code) => mix.embellishments.some((item) => item.code === code)),
   };
 }

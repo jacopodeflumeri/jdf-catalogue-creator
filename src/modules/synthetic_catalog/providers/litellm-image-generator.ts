@@ -81,6 +81,8 @@ export class LiteLLMImageGenerator implements CatalogImageGenerator {
     };
 
     const references = input.references ?? (input.reference ? [input.reference] : []);
+    if (input.requireReferences && references.length === 0) throw new Error("This image assignment requires reference-image editing, but no references were supplied");
+    if (input.requireReferences && !this.referencesEnabled) throw new Error("This image assignment requires reference-image editing, which is disabled");
     if (references.length > 0 && this.referencesEnabled) {
       try {
         const sources = references.map(({ data, mimeType }) => ({ data, mimeType }));
@@ -89,7 +91,7 @@ export class LiteLLMImageGenerator implements CatalogImageGenerator {
         );
         return { ...result, usedReference: true };
       } catch (error) {
-        if (!isReferenceImageUnsupportedError(error) || input.role === "COMPLETE_LOOK") throw error;
+        if (!isReferenceImageUnsupportedError(error) || input.role === "COMPLETE_LOOK" || input.requireReferences) throw error;
       }
     }
 

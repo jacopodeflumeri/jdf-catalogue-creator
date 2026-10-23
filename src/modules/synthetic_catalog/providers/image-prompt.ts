@@ -22,6 +22,8 @@ export interface CatalogImagePromptInput {
     visualSpec: unknown;
   };
   hasFrontReference: boolean;
+  patternCode?: string | null;
+  referenceOrder?: string[];
 }
 
 const ROLE_DIRECTION: Record<CatalogImageRoleValue, string[]> = {
@@ -48,6 +50,7 @@ const ROLE_DIRECTION: Record<CatalogImageRoleValue, string[]> = {
 };
 
 export function buildCatalogImagePrompt(input: CatalogImagePromptInput): string {
+  const logoPattern = input.patternCode === "BRAND_LOGO_REPEAT";
   const referenceDirection = input.hasFrontReference
     ? "The supplied image is the authoritative front reference. Preserve the same fictional item, proportions, fabric, color, and details; do not redesign it."
     : "No reference image is available. Follow the structured product specification exactly and keep the item visually consistent with the requested catalog set.";
@@ -56,13 +59,15 @@ export function buildCatalogImagePrompt(input: CatalogImagePromptInput): string 
     "Create one photorealistic ecommerce fashion image for an entirely fictional internal synthetic catalog.",
     `Image role: ${input.role}.`,
     ...ROLE_DIRECTION[input.role],
-    referenceDirection,
+    logoPattern
+      ? `This is an exact-logo repeat assignment. Ordered references: ${(input.referenceOrder ?? []).map((item, index) => `${index + 1}. ${item}`).join("; ")}. Use the supplied catalogue logo geometry unchanged as a restrained repeating textile/surface motif, with consistent scale and spacing and realistic fabric deformation. Preserve continuity across FRONT, BACK, and ON_MODEL. No standalone logo, chest badge, caption, watermark, invented text, replacement symbol, altered symbol, or additional logo. Colour treatment may adapt only while the supplied logo geometry remains recognizable and unchanged.`
+      : referenceDirection,
     `Fictional brand: ${input.catalog.brandName}; segment: ${input.catalog.segment}; visual direction: ${input.catalog.visualDirection}.`,
     `Product: ${input.product.name}; ${input.product.department} / ${input.product.category} / ${input.product.subcategory}; material: ${input.product.material}; season: ${input.product.season}.`,
     `Style ID: ${input.style.externalId}; exact color: ${input.style.colorName} (${input.style.colorCode}).`,
     `Construction specification: ${JSON.stringify(input.style.visualSpec ?? {})}.`,
     `Design continuity: preserve the exact assigned pattern and embellishments and their construction/placement details from the specification across every view. Do not simplify, replace, or add unassigned decoration.`,
-    "Do not include any logo, trademark, brand text, caption, watermark, border, collage, or extra product.",
+    logoPattern ? "Do not include any real-world logo, trademark, arbitrary brand text, caption, watermark, border, collage, or extra product." : "Do not include any logo, trademark, brand text, caption, watermark, border, collage, or extra product.",
     "Do not imitate a real brand, celebrity, identifiable model, or recognizable campaign.",
     "Portrait orientation, high fidelity, realistic fabric texture, production-ready catalog photography.",
   ].join(" ");

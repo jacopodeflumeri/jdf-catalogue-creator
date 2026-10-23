@@ -38,6 +38,16 @@ describe("catalog image prompts", () => {
     expect(prompt).toContain("Do not simplify, replace, or add unassigned decoration");
   });
 
+  it("uses the exact logo motif only for the assigned repeat pattern and explains reference order", () => {
+    const prompt = buildCatalogImagePrompt({ ...input("BACK", true), patternCode: "BRAND_LOGO_REPEAT", referenceOrder: ["authoritative FRONT product image", "catalogue logo reference"] });
+    expect(prompt).toContain("1. authoritative FRONT product image; 2. catalogue logo reference");
+    expect(prompt).toContain("repeating textile/surface motif");
+    expect(prompt).toContain("No standalone logo");
+    const ordinary = buildCatalogImagePrompt({ ...input("FRONT"), patternCode: "STRIPED" });
+    expect(ordinary).toContain("Do not include any logo");
+    expect(ordinary).not.toContain("catalogue logo reference");
+  });
+
   it("treats the front as authoritative for back and on-model images", () => {
     for (const role of ["BACK", "ON_MODEL"] as const) {
       const prompt = buildCatalogImagePrompt(input(role, true));

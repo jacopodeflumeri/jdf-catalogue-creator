@@ -101,4 +101,16 @@ describe("LiteLLMImageGenerator", () => {
     ]);
     expect(generate).not.toHaveBeenCalled();
   });
+
+  it("never falls back to prompt-only generation when references are mandatory", async () => {
+    const unsupported = Object.assign(new Error("image editing is not supported"), { code: "unsupported_operation" });
+    const edit = jest.fn().mockRejectedValue(unsupported);
+    const generate = jest.fn().mockResolvedValue(result);
+    await expect(new LiteLLMImageGenerator({ edit, generate }).generateImage({
+      model: "openai/gpt-image-2", role: "FRONT", prompt: "exact logo motif", requireReferences: true,
+      references: [{ data: Buffer.from("logo"), mimeType: "image/png", description: "catalogue logo" }],
+    })).rejects.toBe(unsupported);
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ feature: "synthetic-catalog-image-front" }), { data: Buffer.from("logo"), mimeType: "image/png" });
+    expect(generate).not.toHaveBeenCalled();
+  });
 });

@@ -7,6 +7,7 @@ export interface ProductPrompt {
 
 export function buildProductPrompt(input: ProductGenerationInput): ProductPrompt {
   const { catalog, plan } = input;
+  const hasLogoPattern = plan.design?.patternCode === "BRAND_LOGO_REPEAT";
   return {
     system: [
       "You generate fictional fashion product creative for an internal synthetic catalog.",
@@ -14,7 +15,9 @@ export function buildProductPrompt(input: ProductGenerationInput): ProductPrompt
       "Never imitate a real brand, logo, trademark, celebrity, or identifiable campaign.",
       "The application owns IDs, prices, sale rules, sizes, stock, availability, URLs, and distribution; do not return those fields.",
       "Use only the supplied material, color, and season vocabularies.",
-      "Do not add patterns or embellishments that are not explicitly assigned. Do not add logos, trademarks, brand motifs, or recognizable real-brand signatures.",
+      hasLogoPattern
+        ? `The only permitted logo is the current catalogue's supplied fictional ${catalog.brandName} logo, described in the product design as a tasteful repeated textile or surface motif. Do not add other logos, invented lettering, altered symbols, trademarks, or real-brand signatures.`
+        : "Do not add patterns or embellishments that are not explicitly assigned. Do not add logos, trademarks, brand motifs, or recognizable real-brand signatures.",
       "Incorporate the assigned design naturally into the product name, description, construction, placement, and details.",
     ].join(" "),
     user: JSON.stringify(
