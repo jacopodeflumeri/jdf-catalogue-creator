@@ -25,6 +25,21 @@ describe("LiteLLMImageGenerator", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it("keeps the role feature namespace and regeneration suffix on reference edits", async () => {
+    const edit = jest.fn().mockResolvedValue(result);
+    const generator = new LiteLLMImageGenerator({ edit, generate: jest.fn() });
+    for (const role of ["FRONT", "BACK", "ON_MODEL"] as const) {
+      await generator.generateImage({
+        model: "openai/gpt-image-2", role, prompt: "regenerate exact role", regeneration: true,
+        reference: { data: Buffer.from("ref"), mimeType: "image/webp", assetId: 19 },
+      });
+      expect(edit).toHaveBeenLastCalledWith(
+        expect.objectContaining({ feature: `synthetic-catalog-image-${role.toLowerCase().replace("_", "-")}-regeneration` }),
+        { data: Buffer.from("ref"), mimeType: "image/webp" },
+      );
+    }
+  });
+
   it("falls back through the proxy generation endpoint only when edits are unsupported", async () => {
     const unsupported = Object.assign(new Error("image editing is not supported"), {
       code: "unsupported_operation",

@@ -2,15 +2,15 @@
 
 const generate = jest.fn();
 const edit = jest.fn();
-const buildBillingParams = jest.fn(() => ({
-  user: "internal:internal:test-app:image",
-  metadata: { spend_logs_metadata: { app: "test-app", feature: "image" } },
+const mockBuildBillingParams = jest.fn(({ feature }: { feature: string }) => ({
+  user: `internal:internal:test-app:${feature}`,
+  metadata: { spend_logs_metadata: { app: "test-app", feature } },
 }));
 const recordLLMUsage = jest.fn();
 
 jest.mock("../client", () => ({
   getLLMClient: () => ({ images: { generate, edit } }),
-  buildBillingParams: (...args: unknown[]) => buildBillingParams(...args),
+  buildBillingParams: (...args: unknown[]) => mockBuildBillingParams(...args as [{ feature: string }]),
 }));
 
 jest.mock("../usage-recorder", () => ({
@@ -45,7 +45,7 @@ describe("LiteLLM image helpers", () => {
       mimeType: "image/webp",
       revisedPrompt: undefined,
     });
-    expect(buildBillingParams).toHaveBeenCalledWith({
+    expect(mockBuildBillingParams).toHaveBeenCalledWith({
       feature: "synthetic-catalog-image-front",
       accountId: undefined,
       brandId: undefined,
@@ -95,7 +95,7 @@ describe("LiteLLM image helpers", () => {
         headers: {
           "x-litellm-spend-logs-metadata": JSON.stringify({
             app: "test-app",
-            feature: "image",
+            feature: "synthetic-catalog-image-back",
           }),
         },
       },

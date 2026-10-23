@@ -4,6 +4,9 @@ const mockFindUniqueOrThrow = jest.fn();
 const mockUpdate = jest.fn();
 const mockTaskUpdateMany = jest.fn();
 const mockQueryRaw = jest.fn();
+const mockStyleFindMany = jest.fn();
+const mockLookFindMany = jest.fn();
+const mockLookUpdateMany = jest.fn();
 
 jest.mock("@/modules/auth/server", () => ({ requireAdmin: (...args: unknown[]) => mockRequireAdmin(...args) }));
 jest.mock("@/modules/audit", () => ({
@@ -16,6 +19,8 @@ jest.mock("@/lib/prisma/client", () => ({
     $transaction: async (operation: (tx: unknown) => unknown) => operation({
       $queryRaw: mockQueryRaw,
       syntheticProduct: { findUniqueOrThrow: mockFindUniqueOrThrow, update: mockUpdate },
+      syntheticStyle: { findMany: mockStyleFindMany },
+      syntheticCompleteLook: { findMany: mockLookFindMany, updateMany: mockLookUpdateMany },
       catalogGenerationTask: { updateMany: mockTaskUpdateMany },
     }),
   },
@@ -30,6 +35,9 @@ describe("catalog product archive actions", () => {
     mockFindUniqueOrThrow.mockResolvedValue({ id: 24, catalogId: 3, externalId: "unused", archivedAt: null, catalog: { name: "Catalog", slug: "catalog" } });
     mockUpdate.mockResolvedValue({});
     mockTaskUpdateMany.mockResolvedValue({ count: 2 });
+    mockStyleFindMany.mockResolvedValue([{ id: 301 }, { id: 302 }]);
+    mockLookFindMany.mockResolvedValue([{ id: 401, imageAssetId: 501 }]);
+    mockLookUpdateMany.mockResolvedValue({ count: 1 });
     mockWriteAuditLog.mockResolvedValue(undefined);
   });
 
@@ -38,7 +46,12 @@ describe("catalog product archive actions", () => {
     expect(mockRequireAdmin).toHaveBeenCalledWith({ requireEditorAccess: true });
     expect(mockQueryRaw).toHaveBeenCalledTimes(1);
     expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 24 }, data: expect.objectContaining({ archivedByMappTeamId: 7 }) }));
+    expect(mockUpdate.mock.calls[0]![0].data.archivedAt).toEqual(expect.any(Date));
     expect(mockTaskUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { productId: 24, status: "QUEUED" }, data: expect.objectContaining({ status: "CANCELLED", lockedAt: null, lockedBy: null }) }));
+    expect(mockStyleFindMany).toHaveBeenCalledWith({ where: { productId: 24 }, select: { id: true } });
+    expect(mockLookFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { OR: [{ anchorStyleId: { in: [301, 302] } }, { items: { some: { companionStyleId: { in: [301, 302] } } } }] } }));
+    expect(mockLookUpdateMany).toHaveBeenCalledWith({ where: { id: { in: [401] } }, data: { status: "STALE", errorMessage: "An anchor or companion product was archived." } });
+    expect(mockTaskUpdateMany).toHaveBeenCalledWith({ where: { imageAssetId: { in: [501] }, status: "QUEUED" }, data: { status: "CANCELLED", finishedAt: expect.any(Date), lockedAt: null, lockedBy: null } });
     expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "catalog_product_archived", entityType: "synthetic_product", entityId: 24 }));
   });
 
