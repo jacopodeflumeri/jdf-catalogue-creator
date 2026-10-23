@@ -102,6 +102,12 @@ catalogues remain readable; editors can correct those rows in Settings.
 Categories absent from the mix remain visible as taxonomy that needs an explicit row, and are never
 assigned to departments by a generated cross-product.
 
+The Catalogue Mix editor assigns a client-only stable identity when each row
+enters editor state. That identity is used for React reconciliation and is
+removed before saving; editable category and subcategory text never serves as a
+row key. This keeps focus and row state stable while typing or removing a
+neighboring row.
+
 The detail client polls persisted state every three seconds only while a job is
 queued or running. Product batches use `CATALOG_MAX_PRODUCTS_PER_JOB` (default
 100, hard safety ceiling 500), enforced independently in the form, server action,
