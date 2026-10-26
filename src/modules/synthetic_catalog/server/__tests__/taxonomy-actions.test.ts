@@ -34,11 +34,15 @@ describe("catalog taxonomy mutation action", () => {
   });
 
   it("requires editor access, updates atomically, and records a taxonomy audit event", async () => {
-    const result = await addCatalogTaxonomyAction({ type: "DEPARTMENT", catalogId: 1, label: "Kids", code: "K", generationWeight: 0.2 });
+    const result = await addCatalogTaxonomyAction({ type: "DEPARTMENT", catalogId: 1, label: "Kids", code: "K" });
     expect(result).toEqual({ ok: true });
     expect(mockRequireAdmin).toHaveBeenCalledWith({ requireEditorAccess: true });
     expect(mockQueryRaw).toHaveBeenCalledTimes(1);
     expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1 } }));
+    const saved = mockUpdate.mock.calls[0]![0] as { data: { config: Record<string, unknown> & { departments: unknown[] } } };
+    expect(saved.data.config.departments).toContainEqual({ key: "KIDS", label: "Kids", code: "K" });
+    expect(saved.data.config).not.toHaveProperty("departmentWeights");
+    expect(JSON.stringify(saved.data.config)).not.toContain("generationWeight");
     expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       action: "taxonomy_added",
       entityType: "synthetic_catalog",
@@ -49,9 +53,26 @@ describe("catalog taxonomy mutation action", () => {
 
   it("rejects viewers before any department write", async () => {
     mockRequireAdmin.mockRejectedValue(new Error("Editor access required"));
-    await expect(addCatalogTaxonomyAction({ type: "DEPARTMENT", catalogId: 1, label: "Kids", code: "K", generationWeight: 0.2 })).rejects.toThrow("Editor access required");
+    await expect(addCatalogTaxonomyAction({ type: "DEPARTMENT", catalogId: 1, label: "Kids", code: "K" })).rejects.toThrow("Editor access required");
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockWriteAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("persists a weight-free config when updating legacy catalogue JSON", async () => {
+    const legacyConfig = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+    legacyConfig.departments = [
+      { key: "WOMEN", label: "Women", code: "W", generationWeight: 0.55 },
+      { key: "MEN", label: "Men", code: "M", generationWeight: 0.45 },
+    ];
+    legacyConfig.departmentWeights = { women: 0.55, men: 0.45 };
+    mockFindUniqueOrThrow.mockResolvedValueOnce({ id: 1, slug: "premium-apparel", name: "Premium", config: legacyConfig });
+
+    const result = await addCatalogTaxonomyAction({ type: "DEPARTMENT", catalogId: 1, label: "Kids", code: "K" });
+
+    expect(result).toEqual({ ok: true });
+    const saved = mockUpdate.mock.calls[0]![0] as { data: { config: Record<string, unknown> } };
+    expect(saved.data.config).not.toHaveProperty("departmentWeights");
+    expect(JSON.stringify(saved.data.config)).not.toContain("generationWeight");
   });
 
   it("saves the canonical mix without a second taxonomy structure and records an audit event", async () => {

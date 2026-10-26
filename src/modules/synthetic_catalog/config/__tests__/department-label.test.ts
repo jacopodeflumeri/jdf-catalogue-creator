@@ -6,7 +6,7 @@ describe("configured department labels", () => {
     const config = parseCatalogProfileConfig({
       ...CATALOG_PROFILES[0].config,
       departments: [...CATALOG_PROFILES[0].config.departments, {
-        key: "CHILDREN_BABY", label: "Children & Baby", code: "CB", generationWeight: 0.1,
+        key: "CHILDREN_BABY", label: "Children & Baby", code: "CB",
       }],
     });
 

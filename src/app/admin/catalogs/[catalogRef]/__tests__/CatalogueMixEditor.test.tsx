@@ -13,7 +13,7 @@ import DesignMixEditor from "../DesignMixEditor";
 const detail = {
   catalog: {
     id: 1,
-    departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 1 }],
+    departments: [{ key: "WOMEN", label: "Women", code: "W" }],
     assortmentPlan: [
       { id: "mix-coats", departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 2, outfitSlot: "OUTERWEAR" },
       { id: "mix-shirts", departmentKey: "WOMEN", category: "shirts", subcategory: "poplin shirts", productCount: 3, outfitSlot: "TOP" },

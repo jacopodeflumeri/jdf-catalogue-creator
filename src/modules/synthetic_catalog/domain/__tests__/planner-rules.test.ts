@@ -30,6 +30,7 @@ describe("assortment planner", () => {
       config,
       seed: "men-only",
     });
+    expect(plan).toHaveLength(3);
     expect(plan.every((item) => item.department === "MEN")).toBe(true);
     expect(plan.every((item) => item.category !== "dresses")).toBe(true);
   });
@@ -68,22 +69,22 @@ describe("assortment planner", () => {
     expect(planned.every((item) => item.category !== "babywear")).toBe(true);
   });
 
-  it("uses weighted largest remainders for small scoped jobs", () => {
-    const weightedConfig = {
+  it("distributes category requests across subcategories by Catalogue Mix row quotas", () => {
+    const quotaConfig = {
       ...config,
       departments: [
-        { key: "WOMEN", label: "Women", code: "W", generationWeight: 0.05 },
-        { key: "MEN", label: "Men", code: "M", generationWeight: 0.05 },
-        { key: "KIDS", label: "Kids", code: "K", generationWeight: 0.9 },
+        { key: "WOMEN", label: "Women", code: "W" },
+        { key: "MEN", label: "Men", code: "M" },
+        { key: "KIDS", label: "Kids", code: "K" },
       ],
       assortmentPlan: [
         { departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 1 },
-        { departmentKey: "MEN", category: "coats", subcategory: "wool coats", productCount: 1 },
-        { departmentKey: "KIDS", category: "coats", subcategory: "wool coats", productCount: 18 },
+        { departmentKey: "MEN", category: "coats", subcategory: "trench coats", productCount: 1 },
+        { departmentKey: "KIDS", category: "coats", subcategory: "rain coats", productCount: 18 },
       ],
     };
-    const planned = planAssortment({ sequences: [1], scope: { type: "CATEGORY", category: "coats" }, config: weightedConfig, seed: "one-product" });
-    expect(planned[0]!.department).toBe("KIDS");
+    const planned = planAssortment({ sequences: [1], scope: { type: "CATEGORY", category: "coats" }, config: quotaConfig, seed: "one-product" });
+    expect(planned[0]!.subcategory).toBe("rain coats");
   });
 
   it("rejects missing scope rows and noncanonical ALL counts", () => {

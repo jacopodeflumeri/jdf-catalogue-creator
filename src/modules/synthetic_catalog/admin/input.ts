@@ -47,7 +47,7 @@ export const catalogSettingsInputSchema = z.object({
 });
 
 export const catalogTaxonomyInputSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("DEPARTMENT"), catalogId: z.number().int().positive(), label: z.string().trim().min(1).max(80), code: z.string().trim().min(1).max(6), generationWeight: z.number().positive() }),
+  z.object({ type: z.literal("DEPARTMENT"), catalogId: z.number().int().positive(), label: z.string().trim().min(1).max(80), code: z.string().trim().min(1).max(6) }),
 ]);
 
 export const catalogMixInputSchema = z.object({

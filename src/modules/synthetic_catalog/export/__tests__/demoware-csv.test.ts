@@ -168,7 +168,7 @@ describe("Demoware CSV export", () => {
     });
     const config = {
       ...CATALOG_PROFILES[0].config,
-      departments: [...CATALOG_PROFILES[0].config.departments, { key: "KIDS", label: "Kids", code: "K", generationWeight: 0.2 }],
+      departments: [...CATALOG_PROFILES[0].config.departments, { key: "KIDS", label: "Kids", code: "K" }],
       assortmentPlan: [...CATALOG_PROFILES[0].config.assortmentPlan, { id: "kids-coats", departmentKey: "KIDS", category: "coats", subcategory: "wool coats", productCount: 1, outfitSlot: "OUTERWEAR" as const }],
     };
     const result = buildDemowareCsv(source([item], config), "https://catalogs.example.test");

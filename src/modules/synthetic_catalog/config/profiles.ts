@@ -14,7 +14,7 @@ export interface CatalogProfileConfig {
   priceRangeEur: { min: number; max: number };
   saleProbability: number;
   stockRange: { min: number; max: number };
-  departments: readonly { key: string; label: string; code: string; generationWeight: number }[];
+  departments: readonly { key: string; label: string; code: string }[];
   assortmentPlan: readonly CatalogMixRow[];
   materials: readonly string[];
   colors: readonly { name: string; code: string; hex: string }[];
@@ -105,7 +105,7 @@ export const CATALOG_PROFILES = [
       priceRangeEur: { min: 90, max: 420 },
       saleProbability: 0.18,
       stockRange: { min: 0, max: 45 },
-      departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 0.58 }, { key: "MEN", label: "Men", code: "M", generationWeight: 0.42 }],
+      departments: [{ key: "WOMEN", label: "Women", code: "W" }, { key: "MEN", label: "Men", code: "M" }],
       assortmentPlan: [
         { departmentKey: "WOMEN", category: "dresses", subcategory: "midi dresses", productCount: 5, outfitSlot: "ONE_PIECE" },
         { departmentKey: "WOMEN", category: "coats", subcategory: "wool coats", productCount: 5, outfitSlot: "OUTERWEAR" },
@@ -144,7 +144,7 @@ export const CATALOG_PROFILES = [
       priceRangeEur: { min: 12, max: 85 },
       saleProbability: 0.42,
       stockRange: { min: 0, max: 180 },
-      departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 0.64 }, { key: "MEN", label: "Men", code: "M", generationWeight: 0.36 }],
+      departments: [{ key: "WOMEN", label: "Women", code: "W" }, { key: "MEN", label: "Men", code: "M" }],
       assortmentPlan: [
         { departmentKey: "WOMEN", category: "dresses", subcategory: "mini dresses", productCount: 5, outfitSlot: "ONE_PIECE" },
         { departmentKey: "WOMEN", category: "denim", subcategory: "straight jeans", productCount: 5, outfitSlot: "BOTTOM" },
@@ -183,7 +183,7 @@ export const CATALOG_PROFILES = [
       priceRangeEur: { min: 480, max: 4200 },
       saleProbability: 0.06,
       stockRange: { min: 0, max: 12 },
-      departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 0.55 }, { key: "MEN", label: "Men", code: "M", generationWeight: 0.45 }],
+      departments: [{ key: "WOMEN", label: "Women", code: "W" }, { key: "MEN", label: "Men", code: "M" }],
       assortmentPlan: [
         { departmentKey: "WOMEN", category: "eveningwear", subcategory: "column dresses", productCount: 5, outfitSlot: "ONE_PIECE" },
         { departmentKey: "WOMEN", category: "tailoring", subcategory: "single-breasted jackets", productCount: 5, outfitSlot: "OUTERWEAR" },
@@ -222,7 +222,7 @@ export const CATALOG_PROFILES = [
       priceRangeEur: { min: 28, max: 190 },
       saleProbability: 0.22,
       stockRange: { min: 0, max: 95 },
-      departments: [{ key: "WOMEN", label: "Women", code: "W", generationWeight: 0.52 }, { key: "MEN", label: "Men", code: "M", generationWeight: 0.48 }],
+      departments: [{ key: "WOMEN", label: "Women", code: "W" }, { key: "MEN", label: "Men", code: "M" }],
       assortmentPlan: [
         { departmentKey: "WOMEN", category: "sports bras", subcategory: "medium-support bras", productCount: 5, outfitSlot: "TOP" },
         { departmentKey: "WOMEN", category: "leggings", subcategory: "full-length leggings", productCount: 5, outfitSlot: "BOTTOM" },
@@ -255,7 +255,6 @@ const departmentSchema = z.object({
   key: z.string().regex(/^[A-Z][A-Z0-9_]{0,39}$/),
   label: z.string().trim().min(1).max(80),
   code: z.string().regex(/^[A-Z0-9]{1,6}$/),
-  generationWeight: z.number().positive(),
 });
 
 const catalogProfileConfigSchema = z.object({
@@ -263,7 +262,7 @@ const catalogProfileConfigSchema = z.object({
   saleProbability: z.number().min(0).max(1),
   stockRange: z.object({ min: z.number().int().min(0), max: z.number().int().min(0) }),
   departments: z.array(departmentSchema).min(1).optional(),
-  departmentWeights: z.object({ women: z.number().min(0), men: z.number().min(0) }).optional(),
+  departmentWeights: z.object({ women: z.number(), men: z.number() }).optional(),
   categories: z.array(z.string().min(1)).optional(),
   subcategories: z.record(z.string(), z.array(z.string().min(1))).optional(),
   assortmentPlan: z.array(z.object({
@@ -349,9 +348,9 @@ export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig 
     ...parsed,
     assortmentPlan: parsed.assortmentPlan ?? [],
     departments: parsed.departments ?? (legacy ? [
-      { key: "WOMEN", label: "Women", code: "W", generationWeight: legacy.women },
-      { key: "MEN", label: "Men", code: "M", generationWeight: legacy.men },
-    ].filter((d) => d.generationWeight > 0) : []),
+      { key: "WOMEN", label: "Women", code: "W" },
+      { key: "MEN", label: "Men", code: "M" },
+    ] : []),
   } as CatalogProfileConfig;
   if (config.priceRangeEur.max < config.priceRangeEur.min) {
     throw new Error("Catalog price range maximum must be greater than or equal to its minimum");
@@ -359,9 +358,7 @@ export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig 
   if (config.stockRange.max < config.stockRange.min) {
     throw new Error("Catalog stock range maximum must be greater than or equal to its minimum");
   }
-  if (config.departments.reduce((sum, department) => sum + department.generationWeight, 0) <= 0) {
-    throw new Error("Catalog department weights must have a positive total");
-  }
+  if (config.departments.length === 0) throw new Error("Catalog must have at least one department");
   const keys = config.departments.map((d) => d.key.toLocaleUpperCase());
   const codes = config.departments.map((d) => d.code.toLocaleUpperCase());
   if (new Set(keys).size !== keys.length) throw new Error("Catalog department keys must be unique");
@@ -409,7 +406,7 @@ export function parseCatalogProfileConfig(value: unknown): CatalogProfileConfig 
     }
   }
 
-  const canonicalConfig = Object.fromEntries(Object.entries(config).filter(([key]) => key !== "categories" && key !== "subcategories" && key !== "designMix"));
+  const canonicalConfig = Object.fromEntries(Object.entries(config).filter(([key]) => key !== "categories" && key !== "subcategories" && key !== "departmentWeights" && key !== "designMix"));
   return { ...canonicalConfig, assortmentPlan: normalizedAssortmentPlan, designMix: normalizeDesignMix(parsed.designMix, normalizedAssortmentPlan) } as unknown as CatalogProfileConfig;
 }
 

@@ -14,14 +14,13 @@ export function normalizeDepartmentKey(label: string): string {
 
 export function addCatalogDepartment(
   config: CatalogProfileConfig,
-  input: { label: string; code: string; generationWeight: number },
+  input: { label: string; code: string },
 ): CatalogProfileConfig {
   const label = normalizeTaxonomyText(input.label, "Department label");
   const key = normalizeDepartmentKey(label);
   const code = input.code.trim().toUpperCase();
   if (!/^[A-Z0-9]{1,6}$/.test(code)) throw new Error("Department code must be 1–6 uppercase letters or digits");
-  if (!Number.isFinite(input.generationWeight) || input.generationWeight <= 0) throw new Error("Generation weight must be positive");
   if (config.departments.some((item) => item.key.toUpperCase() === key)) throw new Error("Department already exists");
   if (config.departments.some((item) => item.code.toUpperCase() === code)) throw new Error("Department code already exists");
-  return { ...config, departments: [...config.departments, { key, label, code, generationWeight: input.generationWeight }] };
+  return { ...config, departments: [...config.departments, { key, label, code }] };
 }

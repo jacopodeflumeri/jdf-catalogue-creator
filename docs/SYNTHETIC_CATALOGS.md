@@ -114,9 +114,9 @@ changing their saved pairing. Complete the Look does not change core-image
 readiness or block ordinary Catalogue CSV readiness.
 Size-row estimates use the exact planned mix rows, category-specific size rule,
 and next product sequence used when the job is queued.
-Editors can add departments from Settings. Departments retain stable keys,
-labels, product ID codes, and generation weights. Viewers see them without
-mutation controls; department writes are validated, transactional, and audited.
+Editors can add departments from Settings using a label and product ID code.
+Departments retain stable keys, labels, and product ID codes. Viewers see them
+without mutation controls; department writes are validated, transactional, and audited.
 Categories and subcategories are edited in Catalogue Mix only.
 
 Settings also includes the editable Catalogue Mix table. Each canonical row is
@@ -229,20 +229,30 @@ Existing mix rows are retained and profile defaults are added only for missing
 tuples. Keep the seed idempotent and update
 existing profiles by `slug`; never reset `nextProductSequence` during an update.
 
-Department configuration is now stored as `{ key, label, code, generationWeight }`
-entries. Existing JSON with `departmentWeights` is normalized at read time to
-Women (`W`) and Men (`M`), preserving existing IDs and historical products.
+Department configuration is stored as `{ key, label, code }` entries.
 Department codes are unique, uppercase alphanumeric values of up to six
 characters. Product records and filters keep the stable department key; the
 admin table and product detail page display the configured department label.
 
 The catalogue mix, rather than independent department/category lists, controls
-generation combinations. ALL creates exactly the sum of row quotas. Department
-and category scopes filter to matching rows and distribute the requested count
+generation combinations and is the authoritative quantity configuration. ALL
+creates exactly each Catalogue Mix row's `productCount`. Department and
+category scopes filter to matching rows and distribute the requested count
 deterministically in proportion to each row's `productCount`. A scoped request
 with no matching rows is rejected before queueing. The complete mix is included
 in each queued task's frozen config snapshot, so later settings edits only affect
 new jobs.
+
+### 2026-10-26 — Remove department generation weights
+
+Department weights no longer affect planning or generation; Catalogue Mix row
+`productCount` values are the sole quantity configuration. At read time, the
+config normalizer accepts legacy `departments[].generationWeight` and strips it
+from canonical departments. It also accepts legacy top-level `departmentWeights`
+when department metadata is absent, creating Women (`W`) and Men (`M`) entries
+without retaining the numeric values. This keeps existing JSON readable while
+future settings writes persist the canonical weight-free structure. No database
+migration is needed because the configuration is stored as JSON.
 
 The `20261022150000_catalogue_mix_defaults` migration upgrades the four existing
 profile configs with explicit, reviewed rows when `assortmentPlan` is absent.

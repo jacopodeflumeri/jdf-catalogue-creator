@@ -38,6 +38,8 @@ describe("catalog profile configuration", () => {
   it("has complete generation defaults for every profile", () => {
     for (const profile of CATALOG_PROFILES) {
       const parsed = parseCatalogProfileConfig(profile.config);
+      expect(profile.config.departments.every((department) => Object.keys(department).sort().join(",") === "code,key,label")).toBe(true);
+      expect(parsed.departments.every((department) => Object.keys(department).sort().join(",") === "code,key,label")).toBe(true);
       expect(parsed.assortmentPlan.length).toBeGreaterThan(0);
       expect(parsed.assortmentPlan.every((row) => Boolean(row.id))).toBe(true);
       expect(parsed).not.toHaveProperty("categories");
@@ -48,14 +50,30 @@ describe("catalog profile configuration", () => {
     }
   });
 
-  it("normalizes legacy department weights while preserving Women and Men IDs", () => {
+  it("strips per-department generation weights while preserving department metadata", () => {
     const legacy = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
-    legacy.departmentWeights = { women: 0.58, men: 0.42 };
-    delete legacy.departments;
-    expect(parseCatalogProfileConfig(legacy).departments).toEqual([
-      { key: "WOMEN", label: "Women", code: "W", generationWeight: 0.58 },
-      { key: "MEN", label: "Men", code: "M", generationWeight: 0.42 },
+    legacy.departments = [
+      { key: "WOMEN", label: "Women", code: "W", generationWeight: 0 },
+      { key: "MEN", label: "Men", code: "M", generationWeight: 0 },
+    ];
+    const parsed = parseCatalogProfileConfig(legacy);
+    expect(parsed.departments).toEqual([
+      { key: "WOMEN", label: "Women", code: "W" },
+      { key: "MEN", label: "Men", code: "M" },
     ]);
+  });
+
+  it("normalizes legacy departmentWeights without retaining their numeric values", () => {
+    const legacy = JSON.parse(JSON.stringify(CATALOG_PROFILES[0].config)) as Record<string, unknown>;
+    legacy.departmentWeights = { women: 0, men: 0 };
+    delete legacy.departments;
+    const parsed = parseCatalogProfileConfig(legacy);
+    expect(parsed.departments).toEqual([
+      { key: "WOMEN", label: "Women", code: "W" },
+      { key: "MEN", label: "Men", code: "M" },
+    ]);
+    expect(parsed).not.toHaveProperty("departmentWeights");
+    expect(JSON.stringify(parsed)).not.toContain("generationWeight");
   });
 
   it("folds legacy taxonomy-only combinations into unassigned mix rows", () => {

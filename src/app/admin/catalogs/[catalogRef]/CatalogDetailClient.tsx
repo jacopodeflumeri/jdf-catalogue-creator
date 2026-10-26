@@ -83,7 +83,6 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [departmentLabel, setDepartmentLabel] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
-  const [departmentWeight, setDepartmentWeight] = useState("0.1");
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -131,18 +130,17 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
         {canEdit && <div className="flex justify-end"><Button type="submit" loading={busy}><Icon type="save" size="sm" /> Save settings</Button></div>}
       </form>
     </Card>
-    <Card title="Departments" description="Departments keep stable keys, labels, product ID codes, and generation settings.">
+    <Card title="Departments" description="Departments keep stable keys, labels, and product ID codes.">
       {canEdit ? <div className="grid gap-6 xl:grid-cols-3">
-        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "DEPARTMENT", catalogId: detail.catalog.id, label: departmentLabel, code: departmentCode, generationWeight: Number(departmentWeight) }); }}>
+        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "DEPARTMENT", catalogId: detail.catalog.id, label: departmentLabel, code: departmentCode }); }}>
           <h4 className="font-semibold">Add department</h4>
           <FormInput id="tax-department-label" label="Label" value={departmentLabel} disabled={!canEdit} onChange={(event) => setDepartmentLabel(event.target.value)} />
           <FormInput id="tax-department-code" label="Product ID code" value={departmentCode} disabled={!canEdit} onChange={(event) => setDepartmentCode(event.target.value)} helpText="1–6 uppercase letters or digits." />
-          <FormInput id="tax-department-weight" label="Generation weight" type="number" min="0.01" step="0.01" value={departmentWeight} disabled={!canEdit} onChange={(event) => setDepartmentWeight(event.target.value)} />
           {canEdit && <Button type="submit" loading={busy}>Add department</Button>}
         </form>
       </div> : <p className="text-sm text-[#1a1a1a]/55">You have read-only access to catalog taxonomy.</p>}
       {message && <div className="mt-4"><NoticeBox variant={message.kind}>{message.text}</NoticeBox></div>}
-      <ul className="mt-6 grid gap-3 text-sm md:grid-cols-2">{detail.catalog.departments.map((item) => <li key={item.key} className="rounded-xl border border-white/60 bg-white/35 px-4 py-3">{item.label} · {item.key} · code {item.code} · weight {item.generationWeight}</li>)}</ul>
+      <ul className="mt-6 grid gap-3 text-sm md:grid-cols-2">{detail.catalog.departments.map((item) => <li key={item.key} className="rounded-xl border border-white/60 bg-white/35 px-4 py-3">{item.label} · {item.key} · code {item.code}</li>)}</ul>
     </Card>
     <CatalogueMixEditor detail={detail} canEdit={canEdit} onSaved={onSaved} />
     <DesignMixEditor detail={detail} canEdit={canEdit} onSaved={onSaved} />

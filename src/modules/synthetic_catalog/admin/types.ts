@@ -144,7 +144,7 @@ export interface CatalogDetailView {
     estimatedSizesPerProduct: number;
     maxProductsPerJob: number;
     largeJobThreshold: number;
-    departments: Array<{ key: string; label: string; code: string; generationWeight: number }>;
+    departments: Array<{ key: string; label: string; code: string }>;
     categories: string[];
     categorySizeCounts: Record<string, number>;
     subcategories: Record<string, string[]>;

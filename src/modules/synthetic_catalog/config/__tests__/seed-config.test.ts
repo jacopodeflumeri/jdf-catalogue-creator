@@ -8,7 +8,7 @@ describe("catalog seed taxonomy merge", () => {
     const existing = JSON.parse(JSON.stringify(profile.config)) as Record<string, unknown>;
     existing.departments = [
       ...profile.config.departments,
-      { key: "CHILDREN_BABY", label: "Children & Baby", code: "CB", generationWeight: 0.2 },
+      { key: "CHILDREN_BABY", label: "Children & Baby", code: "CB" },
     ];
     existing.categories = ["coats", "babywear"];
     existing.subcategories = {
@@ -23,7 +23,7 @@ describe("catalog seed taxonomy merge", () => {
 
     const reseeded = mergeSeedCatalogConfig(profile.config, existing);
 
-    expect(reseeded.departments).toContainEqual({ key: "CHILDREN_BABY", label: "Children & Baby", code: "CB", generationWeight: 0.2 });
+    expect(reseeded.departments).toContainEqual({ key: "CHILDREN_BABY", label: "Children & Baby", code: "CB" });
     expect(catalogCategories(reseeded)).toContain("babywear");
     expect(catalogSubcategories(reseeded).coats).toContain("raincoats");
     expect(catalogSubcategories(reseeded).babywear).toEqual(["onesies"]);

@@ -2,6 +2,7 @@ import {
   addProductsInputSchema,
   catalogMixInputSchema,
   catalogSettingsInputSchema,
+  catalogTaxonomyInputSchema,
 } from "../input";
 
 describe("catalog admin input", () => {
@@ -27,6 +28,11 @@ describe("catalog admin input", () => {
     expect(catalogSettingsInputSchema.parse(valid)).toEqual(valid);
     expect(() => catalogSettingsInputSchema.parse({ ...valid, defaultImageModel: "gpt-image-2" }))
       .toThrow();
+  });
+
+  it("requires only a label and product ID code when adding a department", () => {
+    const department = { type: "DEPARTMENT" as const, catalogId: 1, label: "Kids", code: "K" };
+    expect(catalogTaxonomyInputSchema.parse(department)).toEqual(department);
   });
 
   it("accepts visible unassigned mix rows only with zero quota and no outfit slot", () => {
