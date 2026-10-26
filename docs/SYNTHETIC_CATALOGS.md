@@ -518,6 +518,12 @@ The `public/` prefix is deliberate: synthetic media must be fetchable by
 Demoware without an interactive app session, while the admin application itself
 remains internal-only.
 
+Admin image components render these stable redirect URLs with Next Image's
+`unoptimized` option. The browser must request `/api/catalog-assets/{publicId}`
+directly so the route can issue its presigned-S3 redirect; sending that internal
+redirect route through `/_next/image` fails in production. This applies to core
+images and Complete the Look images alike.
+
 ## Key files
 
 - `prisma/schema.prisma`
