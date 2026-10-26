@@ -1,21 +1,23 @@
 import { prisma } from "@/lib/prisma/client";
 import { parseCatalogProfileConfig } from "../config/profiles";
 import {
-  buildDemowareCsv,
-  DEMOWARE_CSV_COLUMNS,
+  buildUpcCsv,
+  UPC_CSV_COLUMNS,
   type CatalogCsvExport,
   type CatalogExportSource,
   type CatalogExportSummary,
-} from "../export/demoware-csv";
+} from "../export/upc-csv";
 
 export interface CatalogValidationReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   generatedAt: string;
   catalog: { id: number; slug: string; name: string };
   contract: {
-    format: "demoware-csv";
+    format: "upc-csv";
     columns: number;
-    imageOrder: ["FRONT", "BACK", "ON_MODEL"];
+    imageColumn: "images";
+    imageOrder: ["FRONT", "BACK", "COMPLETE_LOOK"];
+    availability: "boolean";
     requiredImageRoles: ["FRONT", "BACK"];
   };
   checks: {
@@ -109,14 +111,14 @@ export async function createCatalogCsvExport(
   if (!source) return null;
   return {
     catalog: { id: source.id, slug: source.slug, name: source.name },
-    ...buildDemowareCsv(source, appUrl),
+    ...buildUpcCsv(source, appUrl),
   };
 }
 
 export async function getCatalogExportSummary(reference: string): Promise<CatalogExportSummary | null> {
   const source = await loadCatalogExportSource(reference);
   if (!source) return null;
-  return buildDemowareCsv(source, "http://localhost").summary;
+  return buildUpcCsv(source, "http://localhost").summary;
 }
 
 export async function createCatalogValidationReport(
@@ -127,13 +129,15 @@ export async function createCatalogValidationReport(
   if (!result) return null;
   const { summary } = result;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: generatedAt.toISOString(),
     catalog: result.catalog,
     contract: {
-      format: "demoware-csv",
-      columns: DEMOWARE_CSV_COLUMNS.length,
-      imageOrder: ["FRONT", "BACK", "ON_MODEL"],
+      format: "upc-csv",
+      columns: UPC_CSV_COLUMNS.length,
+      imageColumn: "images",
+      imageOrder: ["FRONT", "BACK", "COMPLETE_LOOK"],
+      availability: "boolean",
       requiredImageRoles: ["FRONT", "BACK"],
     },
     checks: {

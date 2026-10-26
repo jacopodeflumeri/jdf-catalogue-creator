@@ -8,7 +8,7 @@ import {
   truncateAllTables,
 } from "@test/utils/db";
 import { CATALOG_PROFILES } from "../../config/profiles";
-import { createCatalogCsvExport } from "../catalog-export";
+import { createCatalogCsvExport, createCatalogValidationReport } from "../catalog-export";
 import { getCatalogDetail, getCatalogOverview } from "../admin-catalogs";
 
 function json(value: unknown): Prisma.InputJsonValue {
@@ -20,7 +20,7 @@ describe("catalog export persistence", () => {
   beforeEach(() => truncateAllTables());
   afterAll(() => disconnectPrisma());
 
-  it("loads persisted relations and repeats role-ordered style images across variants", async () => {
+  it("loads persisted relations and repeats ordered image arrays across variants", async () => {
     const profile = CATALOG_PROFILES[0];
     const catalog = await prisma.syntheticCatalog.create({
       data: {
@@ -80,12 +80,22 @@ describe("catalog export persistence", () => {
       productsExported: 1,
       stylesExported: 1,
       variantsExported: 2,
-      imagesReferenced: 3,
+      imagesReferenced: 2,
       incompleteProductsExcluded: 0,
     }));
     expect(result?.csv.match(/00000000-0000-4000-8000-000000000001/g)).toHaveLength(2);
     expect(result?.csv.match(/00000000-0000-4000-8000-000000000002/g)).toHaveLength(2);
-    expect(result?.csv.match(/00000000-0000-4000-8000-000000000003/g)).toHaveLength(2);
+    expect(result?.csv).not.toContain("00000000-0000-4000-8000-000000000003");
+    const report = await createCatalogValidationReport(profile.slug);
+    expect(report?.schemaVersion).toBe(2);
+    expect(report?.contract).toEqual({
+      format: "upc-csv",
+      columns: 24,
+      imageColumn: "images",
+      imageOrder: ["FRONT", "BACK", "COMPLETE_LOOK"],
+      availability: "boolean",
+      requiredImageRoles: ["FRONT", "BACK"],
+    });
 
     await prisma.syntheticProduct.update({ where: { id: product.id }, data: { archivedAt: new Date(), archivedByMappTeamId: null } });
     const activeDetail = await getCatalogDetail(profile.slug);

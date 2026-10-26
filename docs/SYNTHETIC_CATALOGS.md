@@ -10,7 +10,7 @@ Phases 1–8 provide the data model, four stable catalog profiles, identifier
 rules, deterministic generation domain, resumable job state machine, real
 LiteLLM text and image generation, persistent generated-image storage, and an
 independent database-backed worker, the internal admin workflow used to operate
-them, validated Catalogue CSV export, configurable spend guards, full readiness
+them, validated UPC-compatible CSV export, configurable spend guards, full readiness
 reporting, and operational recovery guidance.
 
 ## Admin workflow
@@ -111,7 +111,7 @@ Archiving an anchor hides its look. Archiving any companion marks affected looks
 STALE and cancels queued image work. Restoring the product leaves those looks
 stale until an editor runs Step 3 again. FAILED looks can be regenerated without
 changing their saved pairing. Complete the Look does not change core-image
-readiness or block ordinary Catalogue CSV readiness.
+readiness or block ordinary UPC CSV readiness.
 Size-row estimates use the exact planned mix rows, category-specific size rule,
 and next product sequence used when the job is queued.
 Editors can add departments from Settings using a label and product ID code.
@@ -159,61 +159,65 @@ image selector is restricted to the app's reviewed image-capable model list;
 already queued jobs retain their recorded model names for attribution and
 repeatability.
 
-## Catalogue CSV export
+## UPC-compatible CSV export
 
-The UI calls this the Catalogue CSV; its persisted adapter and schema remain the
-Demoware-compatible integration contract. The catalog list and each detail
-workspace expose an authenticated CSV download.
-The download route is
-`/api/admin/catalogs/{slug}/export.csv`; viewer-level internal admins may export,
-and each successful export is audited as `exported_csv`. The route returns
-UTF-8 `text/csv`, RFC 4180 quoting and CRLF rows, disables caching, and uses a
-stable filename derived from the catalog slug.
+The catalog list and workspace provide a downloadable UPC-compatible CSV for
+catalogues; this is a file-format compatibility export, not a direct UPC API
+integration. The authenticated route remains
+`/api/admin/catalogs/{slug}/export.csv`. Viewer-level internal admins may
+download it, and successful exports retain the `exported_csv` audit event. The
+route returns UTF-8 `text/csv`, RFC 4180 quoting and CRLF rows, disables caching,
+and uses a stable filename derived from the catalog slug.
 
-The adapter reads persisted catalog records and emits one row per variant in a
-fixed 27-column order. The original 23 fields keep their order; Complete the
-Look fields and then Design Mix fields are appended. Every style of a parent product gets its own size rows,
-style ID, color, and image URLs. IDs and SKUs are never regenerated during
-export. Front and back assets map to `image_url_1` and `image_url_2`. The legacy
-`image_url_3` column remains in place for contract compatibility and contains an
-existing READY `ON_MODEL` asset when one exists; it is blank for newly generated
-styles. The same stable opaque URLs repeat across every size row in a style. URL values use
-`APP_URL`; deployed environments must set it to the HTTPS hostname Demoware can
-reach. Text beginning with `=`, `+`, `-`, or `@` is prefixed with an apostrophe
-to prevent spreadsheet formula execution when an operator opens the file. The
-Complete the Look columns are `complete_look_image_url` and `companion_products`; the URL is
-the stable asset endpoint only for a READY non-stale look, and companion product
-IDs are semicolon-separated in persisted outfit order. For example:
-`PRE-W-000010;PRE-W-000011`. Without a usable look, both cells are blank and
-this optional data does not affect core export readiness.
-The last two columns are `pattern` and `embellishments`. Empty design values are
-exported as blank cells. Multiple embellishment codes use a semicolon separator
-in the saved deterministic assignment order.
+The adapter reads persisted records and emits one row per size variant in this
+fixed order: `product_id`, `style_id`, `variant_id`, `sku`, `brand`, `name`,
+`description`, `department`, `category`, `subcategory`, `price`, `sale_price`,
+`currency`, `color`, `size`, `material`, `season`, `stock`, `availability`,
+`images`, `product_url`, `companion_products`, `pattern`, `embellishments`.
+Identifiers and SKUs are never regenerated during export. Availability is the
+lowercase boolean text `true` when the canonical variant availability is
+`IN_STOCK`, and `false` when it is `OUT_OF_STOCK`; validation still requires
+stock and canonical availability to agree.
 
-Department validation uses the catalog's configured department keys and exports
-the configured label, preserving the existing `Women` and `Men` values. Only
-products whose product and every style are `READY` pass export validation. The
-validator also checks required values, identifier uniqueness and parentage,
-profile taxonomy and category-specific sizes, positive prices, sale-price
+`images` contains a JSON array serialized as one correctly escaped CSV field.
+Its deterministic order is FRONT first, BACK second, then the READY Complete the
+Look image third when available and valid. Missing optional images are omitted;
+the array never uses blank or null placeholders. Legacy `ON_MODEL` images are
+not exported. FRONT and BACK remain required and must each be READY with a
+storage key, supported MIME type, and at least 512px dimensions. The same image
+array repeats for every size row in a style. `imagesReferenced` counts the URLs
+in those arrays once per exported style.
+
+Complete the Look is included only when its persisted state and image are READY,
+it has non-archived companions, and the image has a public ID and storage key.
+Failed, skipped, stale, missing, or archived-companion looks are omitted from
+both `images` and `companion_products`. Companion product IDs remain
+semicolon-separated in saved outfit order, for example
+`PRE-W-000010;PRE-W-000011`. An unusable optional look does not affect core
+readiness. The product URL and image URLs use `APP_URL`; deployed environments
+must set it to the app's HTTPS hostname. Text beginning with `=`, `+`, `-`, or
+`@` is prefixed with an apostrophe to prevent spreadsheet formula execution.
+`pattern` and `embellishments` remain the final columns; multiple embellishment
+codes use a semicolon separator in deterministic assignment order.
+
+Department validation uses configured department keys and exports configured
+labels. Only products whose product and every style are `READY` pass export
+validation. The validator checks required values, identifier uniqueness and
+parentage, taxonomy and category-specific sizes, positive prices, sale-price
 ordering, EUR currency, non-negative stock and matching availability, plus
-exactly one ready front and one ready back image with stored keys, allowed MIME metadata, and minimum
-512px dimensions. The storage adapter already decodes every generated source
-with Sharp before it can be persisted as WebP, so an image with READY metadata
-has passed decode and non-empty-byte validation at write time.
+exactly one ready FRONT and BACK image. The storage adapter decodes generated
+sources with Sharp before persistence, so READY images have already passed
+decode and non-empty-byte validation.
 
 The Export tab shows products, styles, variant rows, referenced images, excluded
-products, and the first validation issues before download. The companion
+products, and validation issues before download. The companion
 `/api/admin/catalogs/{slug}/validation-report.json` download contains the full
-issue list, readiness checks, schema version, generation timestamp, and the
-ordered image slots plus an explicit `requiredImageRoles: ["FRONT", "BACK"]`
-contract; `ON_MODEL` is the legacy optional third slot. A catalog is
-`readyForImport` only when it contains
-at least one product and variant row, every product is exportable, and there are
-no validation issues. A catalog with no
-exportable variants returns HTTP 422 instead of a misleading header-only file.
-The optional ZIP archive is not implemented: hosted image URLs are the intended
-Demoware contract and avoid duplicating persisted media.
-
+issue list, readiness checks, schema version, generation timestamp, the
+`images` column and its FRONT/BACK/COMPLETE_LOOK ordering, plus the required
+`["FRONT", "BACK"]` roles. A catalog is ready only when it contains at least one
+product and variant row, every product is exportable, and there are no
+validation issues. A catalog with no exportable variants returns HTTP 422
+instead of a header-only file.
 ## Catalog profiles
 
 The four profiles are defined in
@@ -510,13 +514,13 @@ cannot detect that it is absent.
 Generated images are normalized to WebP and stored at deterministic validated
 keys such as
 `public/catalogs/premium-apparel/PRE-W-000001-IVY/front.webp`. The bucket stays
-private. CSV-safe URLs use the stable opaque route
+private. Export URLs use the stable opaque route
 `/api/catalog-assets/{publicId}`, which resolves only one persisted generated
 asset, calls the framework's `authorizeS3Read()`, and redirects to a fresh
 short-lived presigned URL. There is no object listing or caller-controlled key.
 The `public/` prefix is deliberate: synthetic media must be fetchable by
-Demoware without an interactive app session, while the admin application itself
-remains internal-only.
+the external product-catalogue consumer without an interactive app session,
+while the admin application itself remains internal-only.
 
 Admin image components render these stable redirect URLs with Next Image's
 `unoptimized` option. The browser must request `/api/catalog-assets/{publicId}`
@@ -544,7 +548,7 @@ images and Complete the Look images alike.
 - `src/modules/synthetic_catalog/server/admin-catalogs.ts`
 - `src/modules/synthetic_catalog/server/admin-actions.ts`
 - `src/modules/synthetic_catalog/server/catalog-export.ts`
-- `src/modules/synthetic_catalog/export/demoware-csv.ts`
+- `src/modules/synthetic_catalog/export/upc-csv.ts`
 - `src/app/admin/catalogs/page.tsx`
 - `src/app/admin/catalogs/[catalogRef]/page.tsx`
 - `src/modules/synthetic_catalog/storage/generated-asset-storage.ts`
@@ -644,16 +648,18 @@ persisted job still records the exact models used.
 ### 2026-10-21 — Export is a strict persisted-data adapter
 
 The CSV never serializes an LLM response or partially generated record. One
-pure adapter validates database-shaped input and emits the fixed Demoware
-contract, while the server layer only loads relations and the authenticated
-route handles download/audit concerns. Failed validation excludes the whole
-product so Demoware never receives only some sizes or images for a style.
+pure adapter validates database-shaped input and emits a fixed CSV contract,
+while the server layer only loads relations and the authenticated route handles
+download/audit concerns. Failed validation excludes the whole product so an
+export never contains only some sizes or required images for a style.
 
-No Demoware importer implementation, private staging endpoint, or exact schema
-was available in this repository or public documentation. Phase 7 therefore
-uses the explicit schema approved in the project plan. An actual staging import
-remains an external integration check once Demoware access and the current
-importer are supplied; it is not represented as completed by unit tests.
+### 2026-10-26 — UPC-compatible downloadable CSV
+
+The downloadable schema uses UPC-compatible boolean availability and a JSON
+`images` array ordered FRONT, BACK, then a valid READY Complete the Look image.
+The CSV remains a file-format compatibility export; it does not enable the UPC
+capability or call a UPC API. This keeps export independent of UPC credentials
+and preserves the existing authenticated download and audit flow.
 
 ### 2026-10-26 — Product quantities are uncapped
 
@@ -682,7 +688,7 @@ Products can be archived and restored by editors. Archiving records the actor
 and timestamp, cancels that product's queued tasks, and leaves completed data
 intact. Running work may finish, but it does not clear the archive marker.
 Restoring only clears the archive marker; it does not requeue cancelled tasks.
-Overview counts, active product counts, and Catalogue CSV validation/export
+Overview counts, active product counts, and UPC CSV validation/export
 exclude archived products. The Products tab defaults to Active and offers an
 Archived filter for restore. The table omits Season and Stock to keep product
 identity, style count, price, and aggregate image state visible at desktop width.
@@ -721,10 +727,10 @@ taxonomy choices flicker or disappear.
    failed/unsuitable image from its image tile; do not restart successful work.
 5. Human-review FRONT and BACK for product consistency and absence of logos/text,
    then review the model-worn Complete the Look output from Step 3. Download the validation report; it
-   must say `readyForImport: true` before downloading the CSV.
-6. With the current Demoware staging importer contract and access supplied,
-   import each small CSV, verify the two required image URLs are fetchable, then run the
-   Labeller. Record manual approval outside the application.
+   must say `readyForImport: true` before downloading the UPC-compatible CSV.
+6. Verify the required image URLs are fetchable and record manual approval
+   outside the application. The downloadable format does not perform an API
+   upload or import.
 7. Only after all four samples are manually approved may an operator queue larger
    batches. The application does not automatically expand a sample into a full
    four-catalog generation run.
@@ -745,8 +751,8 @@ delete stored assets as a recovery mechanism.
   attempt policy is changed at the same time.
 - Before adding media routes, use the S3 prefix registry and `authorizeS3Read()`.
 - Do not write direct S3/CDN URLs to catalog exports; use the opaque asset route.
-- Do not change CSV column names or image role ordering without validating the
-  current Demoware importer. `image_url_1` must remain the front/primary image.
+- Do not change the UPC CSV columns or `images` ordering without updating its
+  export tests and this document. FRONT must remain the first image.
 - Keep deployed `APP_URL` aligned with the externally reachable HTTPS hostname;
   it is the origin written into exported image and product URLs.
 - Do not send nested `metadata` as a multipart image-edit form field; use the
@@ -756,7 +762,7 @@ delete stored assets as a recovery mechanism.
 - Do not treat the large-job confirmation threshold as a product ceiling; it is
   a spend and operations warning that requires explicit acknowledgement.
 - Do not start full four-catalog generation until one sample from every profile
-  has passed human image review and Demoware staging validation.
+  has passed human image review and exported-image URL validation.
 - Archived products are soft-hidden. Their styles, variants, images, tasks, and
   usage history remain stored; active overview counts and CSV validation/export
   omit them. Restore does not restart cancelled queued product work.

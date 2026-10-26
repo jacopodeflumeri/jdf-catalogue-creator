@@ -15,7 +15,7 @@ describe("catalog validation report route", () => {
     jest.clearAllMocks();
     mockSession.mockResolvedValue({ user: { role: "admin" } });
     mockReport.mockResolvedValue({
-      schemaVersion: 1,
+      schemaVersion: 2,
       generatedAt: "2026-10-21T10:00:00.000Z",
       catalog: { id: 4, slug: "premium-apparel", name: "Premium Apparel" },
       checks: { hasProducts: true },
@@ -42,7 +42,7 @@ describe("catalog validation report route", () => {
       'attachment; filename="premium-apparel-validation-report.json"',
     );
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(await response.json()).toEqual(expect.objectContaining({ schemaVersion: 1 }));
+    expect(await response.json()).toEqual(expect.objectContaining({ schemaVersion: 2 }));
   });
 
   it("returns not found for an unknown catalog", async () => {

@@ -31,7 +31,7 @@ import {
   retryCatalogGenerationJobAction,
   updateCatalogSettingsAction,
 } from "@/modules/synthetic_catalog/server/admin-actions";
-import type { CatalogExportSummary } from "@/modules/synthetic_catalog/export/demoware-csv";
+import type { CatalogExportSummary } from "@/modules/synthetic_catalog/export/upc-csv";
 import AddProductsModal from "../AddProductsModal";
 import CatalogStatusBadge from "../CatalogStatusBadge";
 import DownloadCsvButton, { DownloadValidationReportButton } from "../DownloadCsvButton";
@@ -338,8 +338,8 @@ export default function CatalogDetailClient({
       content: exportSummary ? (
         <div className="mt-6 space-y-6">
           <Card
-            title="Catalogue CSV"
-            description="One row per variant, with front/back URLs and optional Complete the Look data."
+            title="UPC CSV"
+            description="One row per variant, boolean availability, and an ordered image list with the front image first."
             headerActions={
               <div className="flex gap-2">
                 <DownloadValidationReportButton catalogSlug={detail.catalog.slug} />
@@ -378,7 +378,7 @@ export default function CatalogDetailClient({
               {exportSummary.issues.length > 10 && <p className="mt-2">Plus {exportSummary.issues.length - 10} more validation issue(s).</p>}
             </NoticeBox>
           ) : (
-            <NoticeBox variant="success" title="Ready for export">All persisted products pass the Catalogue CSV export checks.</NoticeBox>
+            <NoticeBox variant="success" title="Ready for export">All persisted products pass the UPC CSV export checks.</NoticeBox>
           )}
         </div>
       ) : (

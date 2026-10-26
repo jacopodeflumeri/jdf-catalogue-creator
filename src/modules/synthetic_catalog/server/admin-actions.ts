@@ -28,7 +28,7 @@ import {
 import { getCatalogExportSummary } from "./catalog-export";
 import { createCoreImagesJob, getCoreImagesPreflight } from "./core-image-jobs";
 import { createCompleteLookJob, getCompleteLookPreflight } from "./complete-look-jobs";
-import type { CatalogExportSummary } from "../export/demoware-csv";
+import type { CatalogExportSummary } from "../export/upc-csv";
 
 function adminId(session: Awaited<ReturnType<typeof requireAdmin>>): number | undefined {
   const parsed = Number(session.user.adminId);

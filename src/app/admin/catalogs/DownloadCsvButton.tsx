@@ -58,7 +58,7 @@ function DownloadCatalogFileButton({
   return (
     <Button variant="secondary" size={size} onClick={() => void download()} disabled={disabled} loading={loading}>
       <Icon type="download" size="sm" />
-      {kind === "csv" ? "Download CSV" : "Validation report"}
+      {kind === "csv" ? "Download UPC CSV" : "Validation report"}
     </Button>
   );
 }

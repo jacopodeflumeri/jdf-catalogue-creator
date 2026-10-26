@@ -2,7 +2,7 @@ import { createCsvRow } from "@/lib/utils/csv";
 import type { CatalogProfileConfig } from "../config/profiles";
 import { sizesForCategory } from "../domain/rules";
 
-export const DEMOWARE_CSV_COLUMNS = [
+export const UPC_CSV_COLUMNS = [
   "product_id",
   "style_id",
   "variant_id",
@@ -22,11 +22,8 @@ export const DEMOWARE_CSV_COLUMNS = [
   "season",
   "stock",
   "availability",
-  "image_url_1",
-  "image_url_2",
-  "image_url_3",
+  "images",
   "product_url",
-  "complete_look_image_url",
   "companion_products",
   "pattern",
   "embellishments",
@@ -118,7 +115,6 @@ export interface CatalogCsvExport {
 }
 
 const REQUIRED_IMAGE_ROLES: readonly ExportImageRole[] = ["FRONT", "BACK"];
-const CSV_IMAGE_ROLES: readonly ExportImageRole[] = ["FRONT", "BACK", "ON_MODEL"];
 const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/webp", "image/png", "image/jpeg"]);
 
 function countValues(values: string[]): Map<string, number> {
@@ -204,6 +200,9 @@ function productIssues(
         add("image_dimensions", `Style ${style.externalId} ${role.toLowerCase()} image is below ${MIN_EXPORT_IMAGE_DIMENSION}px`);
       }
     }
+    if (new Set(coreImages.map((image) => image.publicId)).size !== coreImages.length) {
+      add("image_duplicate", `Style ${style.externalId} has duplicate core image values`);
+    }
 
     for (const variant of style.variants) {
       if (!hasText(variant.externalId) || !hasText(variant.sku) || !hasText(variant.size)) {
@@ -223,7 +222,7 @@ function productIssues(
   return issues;
 }
 
-export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): CatalogCsvExport {
+export function buildUpcCsv(source: CatalogExportSource, appUrl: string): CatalogCsvExport {
   const allStyles = source.products.flatMap((product) => product.styles);
   const allVariants = allStyles.flatMap((style) => style.variants);
   const duplicates = {
@@ -240,7 +239,7 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
     if (currentIssues.length === 0) exportable.push(product);
   }
 
-  const rows: string[] = [createCsvRow([...DEMOWARE_CSV_COLUMNS])];
+  const rows: string[] = [createCsvRow([...UPC_CSV_COLUMNS])];
   let stylesExported = 0;
   let imagesReferenced = 0;
   for (const product of exportable) {
@@ -248,17 +247,42 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
     for (const style of product.styles) {
       stylesExported += 1;
       const images = new Map(style.images.map((image) => [image.role, image]));
-      const imageUrls = CSV_IMAGE_ROLES.map((role) => {
-        const image = images.get(role);
-        return image?.status === "READY" && image.storageKey
-          ? absoluteUrl(`/api/catalog-assets/${image.publicId}`, appUrl)
-          : "";
+      const imageUrls = REQUIRED_IMAGE_ROLES.map((role) => {
+        const image = images.get(role)!;
+        return absoluteUrl(`/api/catalog-assets/${image.publicId}`, appUrl);
       });
-      imagesReferenced += imageUrls.filter(Boolean).length;
       const look = style.completeLook;
-      const lookUsable = look?.status === "READY" && look.imageAsset?.status === "READY" && Boolean(look.imageAsset.storageKey) && look.items.every((item) => !item.archived);
-      const completeLookUrl = lookUsable ? absoluteUrl(`/api/catalog-assets/${look!.imageAsset!.publicId}`, appUrl) : "";
-      const companionProducts = lookUsable ? look!.items.map((item) => item.productExternalId).filter((id) => id !== product.externalId).join(";") : "";
+      const companionIds = look?.items.map((item) => item.productExternalId) ?? [];
+      let lookUsable = Boolean(
+        look?.status === "READY" &&
+        look.imageAsset?.status === "READY" &&
+        look.imageAsset.publicId &&
+        look.imageAsset.storageKey &&
+        look.items.length > 0 &&
+        look.items.every((item) => !item.archived && hasText(item.productExternalId) && item.productExternalId !== product.externalId) &&
+        new Set(companionIds).size === companionIds.length,
+      );
+      if (lookUsable) {
+        const lookUrl = absoluteUrl(`/api/catalog-assets/${look!.imageAsset!.publicId}`, appUrl);
+        if (imageUrls.includes(lookUrl)) lookUsable = false;
+        else imageUrls.push(lookUrl);
+      }
+      const companionProducts = lookUsable ? companionIds.join(";") : "";
+      const imagesValue = JSON.stringify(imageUrls);
+      // Keep the serialized contract self-checking so malformed values cannot silently
+      // become downloadable if this adapter is changed later.
+      const parsedImages: unknown = JSON.parse(imagesValue);
+      if (
+        !Array.isArray(parsedImages) ||
+        parsedImages.some((url) => typeof url !== "string" || !hasText(url)) ||
+        new Set(parsedImages).size !== parsedImages.length ||
+        parsedImages[0] !== imageUrls[0] ||
+        parsedImages[1] !== imageUrls[1] ||
+        parsedImages.length !== (lookUsable && imageUrls.length === 3 ? 3 : 2)
+      ) {
+        throw new Error(`Invalid UPC image list for style ${style.externalId}`);
+      }
+      imagesReferenced += parsedImages.length;
       for (const variant of style.variants) {
         rows.push(
           createCsvRow([
@@ -280,10 +304,9 @@ export function buildDemowareCsv(source: CatalogExportSource, appUrl: string): C
             product.material,
             product.season,
             String(variant.stock),
-            variant.availability === "IN_STOCK" ? "in_stock" : "out_of_stock",
-            ...imageUrls,
+            variant.availability === "IN_STOCK" ? "true" : "false",
+            imagesValue,
             absoluteUrl(product.productUrl ?? `/catalogs/${source.slug}/products/${product.externalId}`, appUrl),
-            completeLookUrl,
             companionProducts,
             product.patternCode ?? "",
             [...(product.embellishmentCodes ?? [])].join(";"),
