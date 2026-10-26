@@ -42,6 +42,15 @@ catalogue. Information readiness is independent of image readiness. It reports c
 thumbnail uses the first available FRONT image. Image status is computed from
 the two required core roles, independently of product/style information
 readiness; a core-image failure in any color is shown as `FAILED`.
+Department, category, and subcategory options come only from persisted products
+in the selected product-state scope. Department choices use stored department
+keys and product display labels; category options narrow to the selected
+department, and subcategories narrow to the selected department and category.
+Configured Catalogue Mix rows do not create filter choices until a product
+exists. Image status narrows rows but does not change taxonomy choices. An
+upstream user selection clears only dependent values that no longer exist in
+that product scope. Explicit unavailable URL values remain visible as
+unavailable and match no products rather than widening to All.
 Selecting a row opens `/admin/catalogs/{slug}/products/{externalId}`, where all
 color styles, their IDs, size/SKU inventory, and two required core images are
 shown, followed by an optional Complete the Look image and ordered companion
@@ -650,6 +659,15 @@ zero-quota unassigned rows. This preserves the old vocabulary without
 fabricating a department or altering existing All Catalogue generation totals.
 Departments remain a separate settings list because their keys, labels, ID
 codes, and generation weights have independent identity and use.
+
+### 2026-10-26 — Product tables expose only represented taxonomy
+
+Table filter choices are derived from persisted products and the selected
+active/archive scope, not from Catalogue Mix configuration. This prevents an
+empty planned combination from appearing as a usable filter and lets archived
+products remain discoverable in the Archived view. Image status is deliberately
+excluded from option derivation so filtering image readiness does not make
+taxonomy choices flicker or disappear.
 
 ## Operations and sample approval runbook
 

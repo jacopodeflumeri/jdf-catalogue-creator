@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import FormSelect from "@/components/ui/form/FormSelect";
@@ -14,7 +14,7 @@ import CatalogStatusBadge from "../CatalogStatusBadge";
 import { useConfirm } from "@/components/providers/ConfirmProvider";
 import NoticeBox from "@/components/ui/NoticeBox";
 import { archiveCatalogProductAction, restoreCatalogProductAction } from "@/modules/synthetic_catalog/server/admin-actions";
-import { buildProductHref, canonicalFilterQuery, DEFAULT_PRODUCT_FILTERS, filtersFromSearch, PRODUCT_FILTER_SESSION_PREFIX, resolveInitialProductFilters, serializeProductFilters, type ProductFilters } from "@/modules/synthetic_catalog/admin/product-filters";
+import { buildProductHref, DEFAULT_PRODUCT_FILTERS, filtersFromSearch, getProductTaxonomyOptions, inProductStateScope, readFilterSession, reconcileProductFilters, resolveInitialProductFilters, serializeProductFilters, type ProductFilters, writeFilterSession } from "@/modules/synthetic_catalog/admin/product-filters";
 
 function formatMoney(value: string, currency: string): string {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(value));
@@ -49,65 +49,44 @@ export default function ProductTable({
   const recordState = filters.productState;
   const [pendingProductId, setPendingProductId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const productsRef = useRef(products);
 
-  const sessionKey = `${PRODUCT_FILTER_SESSION_PREFIX}${catalogSlug}`;
   function commitFilters(next: ProductFilters, mode: "push" | "replace" = "push") {
     setFilters(next);
     const current = new URL(window.location.href);
     current.search = serializeProductFilters(next, current.searchParams).toString();
     window.history[mode === "push" ? "pushState" : "replaceState"]({}, "", `${current.pathname}${current.search}${current.hash}`);
-    const cacheQuery = canonicalFilterQuery(next);
     try {
-      if (cacheQuery) window.sessionStorage.setItem(sessionKey, cacheQuery);
-      else window.sessionStorage.removeItem(sessionKey);
+      writeFilterSession(window.sessionStorage, catalogSlug, next);
     } catch { /* The URL remains the canonical state when storage is unavailable. */ }
   }
 
   useEffect(() => {
     let next = filtersFromSearch(initialSearch);
     try {
-      const cached = window.sessionStorage.getItem(sessionKey);
-      if (cached) next = resolveInitialProductFilters(initialSearch, cached);
+      const cached = readFilterSession(window.sessionStorage, catalogSlug);
+      if (cached) next = resolveInitialProductFilters(initialSearch, cached, productsRef.current);
     } catch { /* Storage can be unavailable in restricted browser contexts. */ }
     const current = new URL(window.location.href);
     current.search = serializeProductFilters(next, current.searchParams).toString();
     window.history.replaceState({}, "", `${current.pathname}${current.search}${current.hash}`);
-    // Hydrate the URL/session-backed state after the server-rendered defaults.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilters(next);
-    const query = canonicalFilterQuery(next);
     try {
-      if (query) window.sessionStorage.setItem(sessionKey, query);
-      else window.sessionStorage.removeItem(sessionKey);
+      writeFilterSession(window.sessionStorage, catalogSlug, next);
     } catch { /* The URL remains the canonical state when storage is unavailable. */ }
-  }, [initialSearch, sessionKey]);
+  }, [catalogSlug, initialSearch]);
 
   useEffect(() => {
-    function restoreFromHistory() { setFilters(filtersFromSearch(window.location.search)); }
+    function restoreFromHistory() {
+      const next = filtersFromSearch(window.location.search);
+      setFilters(next);
+      try { writeFilterSession(window.sessionStorage, catalogSlug, next); } catch { /* History remains authoritative when storage is unavailable. */ }
+    }
     window.addEventListener("popstate", restoreFromHistory);
     return () => window.removeEventListener("popstate", restoreFromHistory);
-  }, []);
+  }, [catalogSlug]);
 
-  const departments = useMemo(
-    () => Array.from(new Map(products.map((product) => [product.departmentKey, product.department])).entries())
-      .sort(([a], [b]) => a.localeCompare(b)),
-    [products],
-  );
-  const categories = useMemo(
-    () => Array.from(new Set(products.map((product) => product.category))).sort(),
-    [products],
-  );
-  const subcategories = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          products
-            .filter((product) => category === "all" || product.category === category)
-            .map((product) => product.subcategory),
-        ),
-      ).sort(),
-    [category, products],
-  );
+  const { departments, categories, subcategories } = useMemo(() => getProductTaxonomyOptions(products, filters), [filters, products]);
   const filtered = useMemo(
     () =>
       products.filter(
@@ -115,7 +94,7 @@ export default function ProductTable({
           (department === "all" || product.departmentKey === department) &&
           (category === "all" || product.category === category) &&
           (subcategory === "all" || product.subcategory === subcategory) &&
-          (recordState === "all" || (recordState === "ACTIVE" ? product.archivedAt == null : product.archivedAt != null)) &&
+          inProductStateScope(product, recordState) &&
           (status === "all" || getProductImageStatus(product) === status),
       ),
     [category, department, products, recordState, status, subcategory],
@@ -162,17 +141,18 @@ export default function ProductTable({
     <div className="mt-6 space-y-4">
       <div className="glass-card rounded-2xl p-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6 xl:items-end">
-          <FormSelect label="Department" value={department} onChange={(event) => commitFilters({ ...filters, department: event.target.value })} options={[{ value: "all", label: "All departments" }, ...departments.map(([key, label]) => ({ value: key, label }))]} />
-          <FormSelect label="Category" value={category} onChange={(event) => commitFilters({ ...filters, category: event.target.value, subcategory: "all" })} options={[{ value: "all", label: "All categories" }, ...categories.map((value) => ({ value, label: titleCase(value) }))]} />
-          <FormSelect label="Subcategory" value={subcategory} onChange={(event) => commitFilters({ ...filters, subcategory: event.target.value })} options={[{ value: "all", label: "All subcategories" }, ...subcategories.map((value) => ({ value, label: titleCase(value) }))]} />
+          <FormSelect label="Department" value={department} onChange={(event) => commitFilters(reconcileProductFilters(products, { ...filters, department: event.target.value }))} options={[{ value: "all", label: "All departments" }, ...(department !== "all" && !departments.some(([key]) => key === department) ? [{ value: department, label: `Unavailable: ${department}` }] : []), ...departments.map(([key, label]) => ({ value: key, label }))]} />
+          <FormSelect label="Category" value={category} onChange={(event) => commitFilters(reconcileProductFilters(products, { ...filters, category: event.target.value }))} options={[{ value: "all", label: "All categories" }, ...(category !== "all" && !categories.includes(category) ? [{ value: category, label: `Unavailable: ${titleCase(category)}` }] : []), ...categories.map((value) => ({ value, label: titleCase(value) }))]} />
+          <FormSelect label="Subcategory" value={subcategory} onChange={(event) => commitFilters(reconcileProductFilters(products, { ...filters, subcategory: event.target.value }))} options={[{ value: "all", label: "All subcategories" }, ...(subcategory !== "all" && !subcategories.includes(subcategory) ? [{ value: subcategory, label: `Unavailable: ${titleCase(subcategory)}` }] : []), ...subcategories.map((value) => ({ value, label: titleCase(value) }))]} />
           <FormSelect label="Image status" value={status} onChange={(event) => commitFilters({ ...filters, imageStatus: event.target.value })} options={[
             { value: "all", label: "All statuses" },
+            ...(status !== "all" && !["READY", "FAILED", "GENERATING", "MISSING"].includes(status) ? [{ value: status, label: `Unavailable: ${status}` }] : []),
             { value: "READY", label: "Ready" },
             { value: "FAILED", label: "Failed" },
             { value: "GENERATING", label: "Generating" },
             { value: "MISSING", label: "Missing" },
           ]} />
-          <FormSelect label="Products" value={recordState} onChange={(event) => commitFilters({ ...filters, productState: event.target.value })} options={[{ value: "ACTIVE", label: "Active" }, { value: "ARCHIVED", label: "Archived" }, { value: "all", label: "Active and archived" }]} />
+          <FormSelect label="Products" value={recordState} onChange={(event) => commitFilters(reconcileProductFilters(products, { ...filters, productState: event.target.value }))} options={[...(recordState !== "ACTIVE" && recordState !== "ARCHIVED" && recordState !== "all" ? [{ value: recordState, label: `Unavailable: ${recordState}` }] : []), { value: "ACTIVE", label: "Active" }, { value: "ARCHIVED", label: "Archived" }, { value: "all", label: "Active and archived" }]} />
           <div className="flex items-center justify-between gap-3 pb-0.5 xl:justify-end">
             <p className="text-sm text-[#1a1a1a]/55">{filtered.length} of {products.length} products</p>
             {hasFilters && <Button variant="ghost" size="sm" onClick={resetFilters}>Clear</Button>}
