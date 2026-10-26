@@ -21,6 +21,8 @@ import { reserveProductSequenceRange } from "./sequence-reservation";
 import { selectStyleColors, snapshotGenerationSettings } from "../domain/colors";
 import { assertCatalogJobActive, CatalogJobCancelledError } from "./job-cancellation";
 
+const GENERATION_TASK_INSERT_BATCH_SIZE = 300;
+
 export interface CreateGenerationJobInput {
   catalogId: number;
   requestedProducts?: number;
@@ -78,36 +80,42 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   });
   const plan = allocateDesignMix(assortment, config.designMix, seed);
 
-  return prisma.catalogGenerationJob.create({
-    data: {
-      catalogId: catalog.id,
-      createdByMappTeamId: input.createdByMappTeamId,
-      // New wizard submissions are explicitly information-only. Legacy job
-      // types remain readable for existing history and are never reinterpreted.
-      jobType: "CATALOG_INFO",
-      requestedProducts,
-      departmentMode,
-      scopeType: scope.type,
-      scopeValue: scope.type === "DEPARTMENT" ? scope.departmentKey : scope.type === "CATEGORY" ? scope.category : null,
-      colorVariantCount,
-      textModel: input.textModel ?? catalog.defaultTextModel,
-      imageModel: input.imageModel ?? catalog.defaultImageModel,
-      stage: "PRODUCTS",
-      tasks: {
-        create: plan.map((item) => ({
-          taskType: "GENERATE_PRODUCT",
-          dedupeKey: `product:${item.sequence}`,
-          payload: asInputJson({
-            plan: { ...item, departmentCode: config.departments.find((department) => department.key.toLocaleLowerCase() === item.department.toLocaleLowerCase())!.code },
-            colorVariantCount,
-            configSnapshot: snapshotGenerationSettings(config),
-            brandName: catalog.brandName,
-            segment: catalog.segment,
-          }),
-        })),
+  return prisma.$transaction(async (tx) => {
+    const job = await tx.catalogGenerationJob.create({
+      data: {
+        catalogId: catalog.id,
+        createdByMappTeamId: input.createdByMappTeamId,
+        // New wizard submissions are explicitly information-only. Legacy job
+        // types remain readable for existing history and are never reinterpreted.
+        jobType: "CATALOG_INFO",
+        requestedProducts,
+        departmentMode,
+        scopeType: scope.type,
+        scopeValue: scope.type === "DEPARTMENT" ? scope.departmentKey : scope.type === "CATEGORY" ? scope.category : null,
+        colorVariantCount,
+        textModel: input.textModel ?? catalog.defaultTextModel,
+        imageModel: input.imageModel ?? catalog.defaultImageModel,
+        stage: "PRODUCTS",
       },
-    },
-    include: { tasks: { orderBy: { id: "asc" } } },
+    });
+    const taskRows = plan.map((item) => ({
+      jobId: job.id,
+      taskType: "GENERATE_PRODUCT" as const,
+      dedupeKey: `product:${item.sequence}`,
+      payload: asInputJson({
+        plan: { ...item, departmentCode: config.departments.find((department) => department.key.toLocaleLowerCase() === item.department.toLocaleLowerCase())!.code },
+        colorVariantCount,
+        configSnapshot: snapshotGenerationSettings(config),
+        brandName: catalog.brandName,
+        segment: catalog.segment,
+      }),
+    }));
+    for (let offset = 0; offset < taskRows.length; offset += GENERATION_TASK_INSERT_BATCH_SIZE) {
+      await tx.catalogGenerationTask.createMany({
+        data: taskRows.slice(offset, offset + GENERATION_TASK_INSERT_BATCH_SIZE),
+      });
+    }
+    return job;
   });
 }
 
@@ -273,10 +281,7 @@ export async function refreshGenerationJobState(jobId: number) {
     const failed = failedProducts + failedImages + failedValidation;
 
     if (job.status === "CANCELLED") {
-      return tx.catalogGenerationJob.findUniqueOrThrow({
-        where: { id: jobId },
-        include: { tasks: { orderBy: { id: "asc" } } },
-      });
+      return tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId }, include: { tasks: { orderBy: { id: "asc" } } } });
     }
 
     const nextStatus =
@@ -380,10 +385,7 @@ export async function runGenerationJob(
     where: { id: jobId },
   });
   if (existingJob.status === "COMPLETED" || existingJob.status === "CANCELLED") {
-    return prisma.catalogGenerationJob.findUniqueOrThrow({
-      where: { id: jobId },
-      include: { tasks: { orderBy: { id: "asc" } } },
-    });
+    return prisma.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId }, include: { tasks: { orderBy: { id: "asc" } } } });
   }
   assertJobTransition(existingJob.status, "RUNNING");
   if (options.maxTasks != null && (!Number.isSafeInteger(options.maxTasks) || options.maxTasks < 1)) {
@@ -399,6 +401,7 @@ export async function runGenerationJob(
       finishedAt: null,
       errorMessage: null,
     },
+    include: { tasks: { orderBy: { id: "asc" } } },
   });
   const tasks = await prisma.catalogGenerationTask.findMany({
     where: { jobId, taskType: "GENERATE_PRODUCT", status: "QUEUED" },
@@ -490,7 +493,6 @@ export async function resumeGenerationJob(jobId: number) {
       finishedAt: null,
       errorMessage: null,
     },
-    include: { tasks: { orderBy: { id: "asc" } } },
   });
   return updated;
 }

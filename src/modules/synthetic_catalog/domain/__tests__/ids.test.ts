@@ -42,8 +42,11 @@ describe("synthetic catalog identifiers", () => {
     ).toThrow("positive safe integer");
   });
 
-  it("creates bounded contiguous reservation ranges", () => {
+  it("creates contiguous ranges above 1,000 and rejects invalid or overflowing ranges", () => {
     expect(productSequenceRange(7, 4)).toEqual([7, 8, 9, 10]);
-    expect(() => productSequenceRange(1, 0)).toThrow("between 1 and 1000");
+    expect(productSequenceRange(1, 1_001)).toHaveLength(1_001);
+    expect(() => productSequenceRange(1, 0)).toThrow("positive safe integer");
+    expect(() => productSequenceRange(2_147_483_647, 1)).toThrow("capacity exhausted");
+    expect(() => productSequenceRange(1, Number.MAX_SAFE_INTEGER + 1)).toThrow("positive safe integer");
   });
 });

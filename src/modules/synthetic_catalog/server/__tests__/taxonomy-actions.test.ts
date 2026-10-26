@@ -76,7 +76,7 @@ describe("catalog taxonomy mutation action", () => {
   });
 
   it("saves the canonical mix without a second taxonomy structure and records an audit event", async () => {
-    const row = { id: "new-row", departmentKey: "WOMEN", category: "new apparel", subcategory: "longline tops", productCount: 7, outfitSlot: "TOP" };
+    const row = { id: "new-row", departmentKey: "WOMEN", category: "new apparel", subcategory: "longline tops", productCount: 1_500, outfitSlot: "TOP" };
     const result = await saveCatalogMixAction({ catalogId: 1, rows: [...parseCatalogProfileConfig(CATALOG_PROFILES[0].config).assortmentPlan, row] });
     expect(result).toEqual({ ok: true });
     expect(mockRequireAdmin).toHaveBeenCalledWith({ requireEditorAccess: true });

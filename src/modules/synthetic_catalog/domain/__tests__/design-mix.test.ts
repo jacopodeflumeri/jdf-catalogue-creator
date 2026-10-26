@@ -57,6 +57,16 @@ describe("deterministic design mix allocation", () => {
     expect(allocateDesignMix(plan, mix, "different")).not.toEqual(first);
   });
 
+  it("keeps Design Mix targets exact and deterministic for a large plan", () => {
+    const plan = planAssortment({ sequences: Array.from({ length: 1_500 }, (_, i) => i + 1), scope: { type: "DEPARTMENT", departmentKey: "WOMEN" }, config, seed: "large-design-mix" });
+    const planned = allocateDesignMix(plan, mix, "large-design-mix");
+    expect(planned).toHaveLength(1_500);
+    expect(planned.filter((item) => item.design?.patternCode != null)).toHaveLength(750);
+    expect(planned.filter((item) => item.design?.embellishmentCodes.length)).toHaveLength(375);
+    expect(planned.filter((item) => item.design?.patternCode && item.design.embellishmentCodes.length)).toHaveLength(0);
+    expect(allocateDesignMix(plan, mix, "large-design-mix")).toEqual(planned);
+  });
+
   it("spreads full patterned quotas across the planned mix rows", () => {
     const plan = planAssortment({ sequences: Array.from({ length: 20 }, (_, i) => i + 1), config, seed: "rows" });
     const planned = allocateDesignMix(plan, { ...mix, patternPercentage: 100, embellishmentPercentage: 0 }, "rows");

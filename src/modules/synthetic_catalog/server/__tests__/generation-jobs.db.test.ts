@@ -49,7 +49,7 @@ describe("catalog generation jobs", () => {
     const job = await createGenerationJob({ catalogId: catalog.id, scope: { type: "ALL" }, colorVariantCount: 2, seed: "all-catalogue-mix" });
     const expectedTotal = CATALOG_PROFILES[0]!.config.assortmentPlan.reduce((total, row) => total + row.productCount, 0);
     expect(job.requestedProducts).toBe(expectedTotal);
-    expect(job.tasks).toHaveLength(expectedTotal);
+    expect("tasks" in job).toBe(false);
 
     const changedConfig = {
       ...CATALOG_PROFILES[0]!.config,
@@ -58,6 +58,7 @@ describe("catalog generation jobs", () => {
     };
     await prisma.syntheticCatalog.update({ where: { id: catalog.id }, data: { config: json(changedConfig) } });
     const tasks = await prisma.catalogGenerationTask.findMany({ where: { jobId: job.id } });
+    expect(tasks).toHaveLength(expectedTotal);
     const queuedPlans = tasks.map((task) => {
       const payload = task.payload as { plan: { department: string; category: string; subcategory: string; design: { patternCode: string | null; embellishmentCodes: string[] } }; configSnapshot: { assortmentPlan: typeof changedConfig.assortmentPlan; designMix: { patternPercentage: number; patterns: Array<{ code: string }> } } };
       return { row: payload.plan, mix: payload.configSnapshot.assortmentPlan, design: payload.plan.design, designMix: payload.configSnapshot.designMix };
@@ -67,6 +68,22 @@ describe("catalog generation jobs", () => {
     expect(queuedPlans.every(({ design, designMix }) => design.patternCode == null || designMix.patterns.some((item) => item.code === design.patternCode))).toBe(true);
     expect(queuedPlans.map(({ row }) => row)).toEqual(expect.arrayContaining(CATALOG_PROFILES[0]!.config.assortmentPlan.filter((row) => row.departmentKey != null).map((row) => expect.objectContaining(row))));
     expect(tasks).toHaveLength(expectedTotal);
+  });
+
+  it("inserts a large deterministic plan in bounded batches with one task per sequence", async () => {
+    const catalog = await createTestCatalog();
+    const job = await createGenerationJob({
+      catalogId: catalog.id,
+      requestedProducts: 1_105,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
+      seed: "large-batched-job",
+    });
+    const tasks = await prisma.catalogGenerationTask.findMany({ where: { jobId: job.id }, orderBy: { dedupeKey: "asc" } });
+    expect(tasks).toHaveLength(1_105);
+    expect(new Set(tasks.map((task) => task.dedupeKey)).size).toBe(1_105);
+    expect(tasks.every((task) => task.status === "QUEUED")).toBe(true);
+    expect((tasks[0]!.payload as { configSnapshot: unknown }).configSnapshot).toEqual(expect.any(Object));
+    expect(tasks[0]!.dedupeKey).toMatch(/^product:\d+$/);
   });
 
   it("appends mocked products from concurrent reservations without ID collisions", async () => {
@@ -131,11 +148,7 @@ describe("catalog generation jobs", () => {
     const partial = await runGenerationJob(job.id, trackingProvider, { maxTasks: 1 });
     expect(partial.status).toBe("RUNNING");
     expect(partial.completedProducts).toBe(1);
-    expect(
-      partial.tasks.filter(
-        (task) => task.taskType === "GENERATE_PRODUCT" && task.status === "QUEUED",
-      ),
-    ).toHaveLength(2);
+    expect(await prisma.catalogGenerationTask.count({ where: { jobId: job.id, taskType: "GENERATE_PRODUCT", status: "QUEUED" } })).toBe(2);
 
     const finished = await runGenerationJob(job.id, trackingProvider);
     expect(finished.status).toBe("RUNNING");

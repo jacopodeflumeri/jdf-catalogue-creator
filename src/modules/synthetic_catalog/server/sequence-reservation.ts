@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma/client";
-import { productSequenceRange } from "../domain/ids";
+import { POSTGRES_INT_MAX, productSequenceRange } from "../domain/ids";
 
 export interface ReservedProductSequenceRange {
   first: number;
@@ -17,13 +17,23 @@ export async function reserveProductSequenceRange(
 ): Promise<ReservedProductSequenceRange> {
   productSequenceRange(1, count);
 
-  const catalog = await prisma.syntheticCatalog.update({
-    where: { id: catalogId },
-    data: { nextProductSequence: { increment: count } },
-    select: { nextProductSequence: true },
-  });
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${catalogId} FOR UPDATE`;
+    const catalog = await tx.syntheticCatalog.findUniqueOrThrow({
+      where: { id: catalogId },
+      select: { nextProductSequence: true },
+    });
+    if (count > POSTGRES_INT_MAX - catalog.nextProductSequence) {
+      throw new Error(`Product sequence capacity exhausted: PostgreSQL Int supports values through ${POSTGRES_INT_MAX}`);
+    }
+    const updated = await tx.syntheticCatalog.update({
+      where: { id: catalogId },
+      data: { nextProductSequence: { increment: count } },
+      select: { nextProductSequence: true },
+    });
 
-  const first = catalog.nextProductSequence - count;
-  const sequences = productSequenceRange(first, count);
-  return { first, last: sequences.at(-1)!, sequences };
+    const first = updated.nextProductSequence - count;
+    const sequences = productSequenceRange(first, count);
+    return { first, last: sequences.at(-1)!, sequences };
+  });
 }

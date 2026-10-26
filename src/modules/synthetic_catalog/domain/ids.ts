@@ -2,6 +2,7 @@ export type CatalogDepartmentCode = string;
 
 const PRODUCT_PREFIX_PATTERN = /^[A-Z]{3}$/;
 const PRODUCT_ID_PATTERN = /^[A-Z]{3}-[A-Z0-9]{1,6}-\d{6,}$/;
+export const POSTGRES_INT_MAX = 2_147_483_647;
 
 function assertNonEmptyCode(value: string, label: string): void {
   if (!value) {
@@ -59,8 +60,11 @@ export function productSequenceRange(first: number, count: number): number[] {
   if (!Number.isSafeInteger(first) || first < 1) {
     throw new Error("First product sequence must be a positive safe integer");
   }
-  if (!Number.isSafeInteger(count) || count < 1 || count > 1000) {
-    throw new Error("Sequence reservation count must be between 1 and 1000");
+  if (!Number.isSafeInteger(count) || count < 1) {
+    throw new Error("Sequence reservation count must be a positive safe integer");
+  }
+  if (first > POSTGRES_INT_MAX || count > POSTGRES_INT_MAX - first) {
+    throw new Error(`Product sequence capacity exhausted: PostgreSQL Int supports values through ${POSTGRES_INT_MAX}`);
   }
   return Array.from({ length: count }, (_, index) => first + index);
 }

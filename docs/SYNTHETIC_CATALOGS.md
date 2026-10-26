@@ -655,6 +655,17 @@ confirmation without imposing a ceiling. Positive safe-integer validation and
 PostgreSQL `Int` sequence capacity remain technical constraints. Existing
 `CATALOG_MAX_PRODUCTS_PER_JOB` environment values are ignored.
 
+### 2026-10-26 — Large plans are stored in one atomic job
+
+The complete product sequence range is reserved atomically before planning;
+sequence gaps remain valid if later work fails. The queued job and its task
+records are then inserted in one database transaction, with task records sent
+to PostgreSQL in internal batches of 300. A worker can only observe the job
+after every planned task commits. The job creation API returns job metadata and
+does not hydrate the created task collection. The sequence counter remains a
+PostgreSQL `Int`; requests that would overflow it receive a technical capacity
+error.
+
 ### 2026-10-22 — Product archiving is reversible
 
 Products can be archived and restored by editors. Archiving records the actor
