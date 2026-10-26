@@ -1,38 +1,27 @@
 import {
   DEFAULT_LARGE_JOB_THRESHOLD,
-  DEFAULT_MAX_PRODUCTS_PER_JOB,
-  getCatalogGenerationLimits,
+  getCatalogGenerationSettings,
 } from "../generation-limits";
 
-describe("catalog generation limits", () => {
-  it("uses conservative defaults", () => {
-    expect(getCatalogGenerationLimits({})).toEqual({
-      maxProductsPerJob: DEFAULT_MAX_PRODUCTS_PER_JOB,
-      largeJobThreshold: DEFAULT_LARGE_JOB_THRESHOLD,
-    });
+describe("catalog generation settings", () => {
+  it("uses a warning threshold of 25 by default", () => {
+    expect(getCatalogGenerationSettings({})).toEqual({ largeJobThreshold: DEFAULT_LARGE_JOB_THRESHOLD });
   });
 
-  it("accepts environment-specific limits", () => {
-    expect(
-      getCatalogGenerationLimits({
-        CATALOG_MAX_PRODUCTS_PER_JOB: "40",
-        CATALOG_LARGE_JOB_THRESHOLD: "10",
-      }),
-    ).toEqual({ maxProductsPerJob: 40, largeJobThreshold: 10 });
+  it("accepts a warning threshold independently of any product maximum", () => {
+    expect(getCatalogGenerationSettings({ CATALOG_LARGE_JOB_THRESHOLD: "10000" }))
+      .toEqual({ largeJobThreshold: 10000 });
   });
 
-  it("rejects unsafe or inconsistent limits", () => {
-    expect(() =>
-      getCatalogGenerationLimits({ CATALOG_MAX_PRODUCTS_PER_JOB: "501" }),
-    ).toThrow("safety ceiling");
-    expect(() =>
-      getCatalogGenerationLimits({
-        CATALOG_MAX_PRODUCTS_PER_JOB: "10",
-        CATALOG_LARGE_JOB_THRESHOLD: "11",
-      }),
-    ).toThrow("cannot exceed");
-    expect(() =>
-      getCatalogGenerationLimits({ CATALOG_MAX_PRODUCTS_PER_JOB: "many" }),
-    ).toThrow("positive integer");
+  it("ignores the obsolete product maximum setting", () => {
+    expect(getCatalogGenerationSettings({ CATALOG_MAX_PRODUCTS_PER_JOB: "100" } as never))
+      .toEqual({ largeJobThreshold: DEFAULT_LARGE_JOB_THRESHOLD });
+  });
+
+  it("rejects invalid warning thresholds", () => {
+    expect(() => getCatalogGenerationSettings({ CATALOG_LARGE_JOB_THRESHOLD: "many" }))
+      .toThrow("positive safe integer");
+    expect(() => getCatalogGenerationSettings({ CATALOG_LARGE_JOB_THRESHOLD: "0" }))
+      .toThrow("positive safe integer");
   });
 });

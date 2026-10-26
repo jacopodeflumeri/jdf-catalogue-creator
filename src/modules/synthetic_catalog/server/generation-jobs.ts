@@ -18,7 +18,6 @@ import {
   type ProductGenerator,
 } from "../providers/product-generator";
 import { reserveProductSequenceRange } from "./sequence-reservation";
-import { getCatalogGenerationLimits } from "../config/generation-limits";
 import { selectStyleColors, snapshotGenerationSettings } from "../domain/colors";
 import { assertCatalogJobActive, CatalogJobCancelledError } from "./job-cancellation";
 
@@ -39,9 +38,8 @@ function asInputJson(value: unknown): Prisma.InputJsonValue {
 }
 
 function validateRequestedProducts(count: number): void {
-  const { maxProductsPerJob } = getCatalogGenerationLimits();
-  if (!Number.isSafeInteger(count) || count < 1 || count > maxProductsPerJob) {
-    throw new Error(`Requested products must be between 1 and ${maxProductsPerJob}`);
+  if (!Number.isSafeInteger(count) || count < 1) {
+    throw new Error("Requested products must be a positive safe integer");
   }
 }
 

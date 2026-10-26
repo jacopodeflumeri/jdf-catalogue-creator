@@ -143,9 +143,13 @@ key, so category and subcategory edits keep focus and removing a neighboring
 row does not move another row's state.
 
 The detail client polls persisted state every three seconds only while a job is
-queued or running. Product batches use `CATALOG_MAX_PRODUCTS_PER_JOB` (default
-100, hard safety ceiling 500), enforced independently in the form, server action,
-and job service. Catalog model values are
+queued or running. There is no application-level product-count maximum:
+Catalogue Mix defines the All Catalogue total, while Department and Category
+requests accept any positive safe integer. `CATALOG_LARGE_JOB_THRESHOLD`
+(default 25) controls an explicit spend and operations warning only; confirming
+the warning never rejects a job. The obsolete `CATALOG_MAX_PRODUCTS_PER_JOB`
+setting is ignored if it remains in an environment. PostgreSQL `Int` sequence
+capacity is the remaining technical boundary. Catalog model values are
 stored as LiteLLM `provider/model` names and are applied only to new jobs. The
 image selector is restricted to the app's reviewed image-capable model list;
 already queued jobs retain their recorded model names for attribution and
@@ -641,13 +645,15 @@ uses the explicit schema approved in the project plan. An actual staging import
 remains an external integration check once Demoware access and the current
 importer are supplied; it is not represented as completed by unit tests.
 
-### 2026-10-21 — Generation caps fail closed
+### 2026-10-26 — Product quantities are uncapped
 
-The per-job limit is environment-configurable but cannot exceed 500 products.
-Invalid or inconsistent values fail startup/request validation instead of
-silently authorizing more LiteLLM calls. Large jobs require a second explicit UI
-confirmation and the enforced values are returned with each catalog view so the
-browser and server cannot drift.
+Catalogue Mix remains the source of truth for All Catalogue quantities, and
+scoped requests accept any positive safe integer. The former configurable and
+hard-coded product-count caps were arbitrary operational safeguards that could
+block reviewed work; `CATALOG_LARGE_JOB_THRESHOLD` now prompts explicit
+confirmation without imposing a ceiling. Positive safe-integer validation and
+PostgreSQL `Int` sequence capacity remain technical constraints. Existing
+`CATALOG_MAX_PRODUCTS_PER_JOB` environment values are ignored.
 
 ### 2026-10-22 — Product archiving is reversible
 
@@ -684,9 +690,9 @@ taxonomy choices flicker or disappear.
 1. Confirm the web and worker containers are healthy and that the catalog worker
    is polling. Inspect the `catalog-worker` CloudWatch stream for structured
    task failures; never paste LiteLLM keys or request headers into tickets.
-2. Keep `CATALOG_MAX_PRODUCTS_PER_JOB=100` and
-   `CATALOG_LARGE_JOB_THRESHOLD=25` unless the expected spend and operational
-   window have been reviewed. A change requires a normal app deployment.
+2. Review expected spend and the operational window for large requests.
+   `CATALOG_LARGE_JOB_THRESHOLD=25` controls the confirmation warning only and
+   can be adjusted independently of the accepted product quantity.
 3. Queue a one-product sample in each profile: Premium, Fast Fashion, Luxury,
    and Activewear. This produces four attributed LiteLLM calls per profile.
 4. Wait for each job to reach a terminal state. For failures, read the persisted
@@ -726,8 +732,8 @@ delete stored assets as a recovery mechanism.
   LiteLLM spend-metadata header implemented by `llmEditImage()`.
 - Do not call generation providers from catalog server actions. Enqueue a task
   and let the worker execute it.
-- Do not raise generation limits merely to bypass the large-job confirmation;
-  the 500-product hard ceiling is a spend-safety boundary.
+- Do not treat the large-job confirmation threshold as a product ceiling; it is
+  a spend and operations warning that requires explicit acknowledgement.
 - Do not start full four-catalog generation until one sample from every profile
   has passed human image review and Demoware staging validation.
 - Archived products are soft-hidden. Their styles, variants, images, tasks, and

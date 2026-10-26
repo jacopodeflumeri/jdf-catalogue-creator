@@ -1,9 +1,5 @@
 import { z } from "zod";
 import { CATALOG_IMAGE_MODEL_OPTIONS } from "../config/profiles";
-import {
-  DEFAULT_MAX_PRODUCTS_PER_JOB,
-  getCatalogGenerationLimits,
-} from "../config/generation-limits";
 import type { GenerationScope } from "../domain/planner";
 
 export const generationScopeSchema = z.discriminatedUnion("type", [
@@ -12,10 +8,9 @@ export const generationScopeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("CATEGORY"), category: z.string().trim().min(1).max(120) }),
 ]);
 
-export function createAddProductsInputSchema(maxProductsPerJob: number) {
-  return z.object({
+export const addProductsInputSchema = z.object({
     catalogId: z.number().int().positive(),
-    requestedProducts: z.number().int().min(1).max(maxProductsPerJob).optional(),
+    requestedProducts: z.number().safe().int().min(1).optional(),
     scope: generationScopeSchema,
     colorVariantCount: z.union([z.literal(2), z.literal(3)]).default(2),
     seed: z.string().trim().min(1).max(200).optional(),
@@ -27,13 +22,9 @@ export function createAddProductsInputSchema(maxProductsPerJob: number) {
       context.addIssue({ code: "custom", path: ["requestedProducts"], message: "Choose a product count for this scope" });
     }
   });
-}
-
-export const addProductsInputSchema = createAddProductsInputSchema(DEFAULT_MAX_PRODUCTS_PER_JOB);
 
 export function parseAddProductsInput(input: unknown) {
-  const { maxProductsPerJob } = getCatalogGenerationLimits();
-  return createAddProductsInputSchema(maxProductsPerJob).parse(input);
+  return addProductsInputSchema.parse(input);
 }
 
 export type ParsedGenerationScope = GenerationScope;
@@ -57,7 +48,7 @@ export const catalogMixInputSchema = z.object({
     departmentKey: z.string().trim().min(1).max(40).nullable(),
     category: z.string().trim().min(1).max(120),
     subcategory: z.string().trim().min(1).max(120),
-    productCount: z.number().int().nonnegative(),
+    productCount: z.number().safe().int().nonnegative(),
     outfitSlot: z.enum(["TOP", "BOTTOM", "ONE_PIECE", "OUTERWEAR", "FOOTWEAR", "BAG", "ACCESSORY"]).nullable(),
   })).min(1).max(500),
 }).superRefine(({ rows }, context) => {

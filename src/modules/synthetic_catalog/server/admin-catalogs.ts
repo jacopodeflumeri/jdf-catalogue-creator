@@ -2,7 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
 import { catalogCategories, catalogSubcategories, parseCatalogProfileConfig } from "../config/profiles";
 import { configuredDepartmentLabel } from "../config/department-label";
-import { getCatalogGenerationLimits } from "../config/generation-limits";
+import { getCatalogGenerationSettings } from "../config/generation-limits";
 import { sizesForCategory } from "../domain/rules";
 import { REQUIRED_CORE_IMAGE_ROLES } from "../providers/image-generator";
 import type {
@@ -183,7 +183,7 @@ const jobInclude = {
 } satisfies Prisma.CatalogGenerationJobInclude;
 
 export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
-  const generationLimits = getCatalogGenerationLimits();
+  const generationSettings = getCatalogGenerationSettings();
   const catalogs = await prisma.syntheticCatalog.findMany({
     where: { active: true },
     orderBy: { id: "asc" },
@@ -227,14 +227,14 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
       categorySizeCounts: Object.fromEntries(catalogCategories(config).map((category) => [category, sizesForCategory(config, category).length])),
       assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
       designMix: config.designMix,
-      ...generationLimits,
+      ...generationSettings,
       latestJob: catalog.jobs[0] ? jobView(catalog.jobs[0]) : null,
     };
   });
 }
 
 export async function getCatalogDetail(reference: string): Promise<CatalogDetailView | null> {
-  const generationLimits = getCatalogGenerationLimits();
+  const generationSettings = getCatalogGenerationSettings();
   const numericId = /^\d+$/.test(reference) ? Number(reference) : null;
   const catalog = await prisma.syntheticCatalog.findFirst({
     where: numericId == null ? { slug: reference } : { id: numericId },
@@ -277,7 +277,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
       subcategories: catalogSubcategories(config),
       assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
       designMix: config.designMix,
-      ...generationLimits,
+      ...generationSettings,
     },
     counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages, readyCoreImages: readyImages, failedCoreImages: failedImages, pendingCoreImages },
     products: catalog.products.map((product) => productView(product, config)),

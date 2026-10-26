@@ -26,7 +26,6 @@ import {
   getCatalogProductDetail,
 } from "./admin-catalogs";
 import { getCatalogExportSummary } from "./catalog-export";
-import { getCatalogGenerationLimits } from "../config/generation-limits";
 import { createCoreImagesJob, getCoreImagesPreflight } from "./core-image-jobs";
 import { createCompleteLookJob, getCompleteLookPreflight } from "./complete-look-jobs";
 import type { CatalogExportSummary } from "../export/demoware-csv";
@@ -272,10 +271,9 @@ export async function saveCatalogMixAction(input: unknown): Promise<CatalogActio
   const session = await requireAdmin({ requireEditorAccess: true });
   try {
     const values = catalogMixInputSchema.parse(input);
-    const { maxProductsPerJob } = getCatalogGenerationLimits();
     const totalProducts = values.rows.reduce((total, row) => total + (row.departmentKey == null ? 0 : row.productCount), 0);
-    if (!Number.isSafeInteger(totalProducts) || totalProducts < 1 || totalProducts > maxProductsPerJob) {
-      throw new Error(`Catalogue mix total must be between 1 and ${maxProductsPerJob} products`);
+    if (!Number.isSafeInteger(totalProducts) || totalProducts < 1) {
+      throw new Error("Catalogue mix total must be a positive safe integer");
     }
     const result = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${values.catalogId} FOR UPDATE`;

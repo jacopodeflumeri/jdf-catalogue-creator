@@ -17,6 +17,25 @@ describe("catalog admin input", () => {
       .toThrow();
   });
 
+  it("accepts large positive safe integers and rejects invalid quantities", () => {
+    for (const requestedProducts of [101, 500, 1_500, 10_000]) {
+      expect(addProductsInputSchema.parse({ catalogId: 1, requestedProducts, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" } }).requestedProducts)
+        .toBe(requestedProducts);
+    }
+    for (const requestedProducts of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => addProductsInputSchema.parse({ catalogId: 1, requestedProducts, scope: { type: "DEPARTMENT", departmentKey: "WOMEN" } }))
+        .toThrow();
+    }
+  });
+
+  it("allows Catalogue Mix totals above former limits while requiring valid row counts", () => {
+    const row = { id: "mix-1", departmentKey: "WOMEN", category: "coats", subcategory: "wool", productCount: 1_500, outfitSlot: "OUTERWEAR" as const };
+    expect(catalogMixInputSchema.parse({ catalogId: 1, rows: [row] }).rows[0]?.productCount).toBe(1_500);
+    for (const productCount of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => catalogMixInputSchema.parse({ catalogId: 1, rows: [{ ...row, productCount }] })).toThrow();
+    }
+  });
+
   it("accepts only explicit LiteLLM provider/model names", () => {
     const valid = {
       catalogId: 1,

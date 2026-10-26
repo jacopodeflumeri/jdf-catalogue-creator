@@ -24,7 +24,6 @@ interface AddProductsModalProps {
     categories: string[];
     assortmentPlan: Array<{ id: string; departmentKey: string | null; category: string; subcategory: string; productCount: number; outfitSlot: string | null }>;
     designMix: import("@/modules/synthetic_catalog/config/profiles").CatalogDesignMix;
-    maxProductsPerJob: number;
     largeJobThreshold: number;
   } | null;
   onClose: () => void;
@@ -120,7 +119,7 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
         </Card>
       </div>}
       {step === 1 && <div className="space-y-5">
-        {scopeType === "ALL" ? <Card title={`Catalogue mix · ${configuredProductCount} products`} description="All Catalogue uses the product counts configured in Settings. This number cannot be changed in the wizard." /> : <FormInput id="catalog-product-count" label="Number of products" type="number" min={1} max={catalog.maxProductsPerJob} value={count} onChange={(event) => setCount(Number(event.target.value))} helpText={`Products are parent records. Maximum ${catalog.maxProductsPerJob} products per job.`} />}
+        {scopeType === "ALL" ? <Card title={`Catalogue mix · ${configuredProductCount} products`} description="All Catalogue uses the product counts configured in Settings. This number cannot be changed in the wizard." /> : <FormInput id="catalog-product-count" label="Number of products" type="number" min={1} step={1} value={count} onChange={(event) => setCount(Number(event.target.value))} />}
         <FormSelect id="catalog-color-variants" label="Color variants per product" value={String(colorVariantCount)} onChange={(event) => setColorVariantCount(Number(event.target.value) as 2 | 3)} options={[{ value: "2", label: "2 colors" }, { value: "3", label: "3 colors" }]} helpText="One text call creates product copy shared by all styles. This step creates sizes and stock, but no images." />
       </div>}
       {step === 2 && <div className="space-y-5">
@@ -135,7 +134,7 @@ export default function AddProductsModal({ catalog, onClose, onCreated }: AddPro
         {error && <div className="mt-5"><NoticeBox variant="error">{error}</NoticeBox></div>}
       <div className="mt-6 flex justify-between gap-3">
         <Button variant="ghost" onClick={step === 0 ? onClose : () => setStep((value) => value - 1)} disabled={loading}>{step === 0 ? "Cancel" : "Back"}</Button>
-        {step < 2 ? <Button onClick={() => setStep((value) => value + 1)} disabled={(step === 0 && !canContinueScope) || (step === 1 && (requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob))}>Continue</Button> : <Button onClick={() => void submit()} loading={loading} disabled={requestedProducts < 1 || requestedProducts > catalog.maxProductsPerJob || Boolean(designError) || (isLarge && !confirmed)}>Generate catalogue information</Button>}
+        {step < 2 ? <Button onClick={() => setStep((value) => value + 1)} disabled={(step === 0 && !canContinueScope) || (step === 1 && (!Number.isSafeInteger(requestedProducts) || requestedProducts < 1))}>Continue</Button> : <Button onClick={() => void submit()} loading={loading} disabled={!Number.isSafeInteger(requestedProducts) || requestedProducts < 1 || Boolean(designError) || (isLarge && !confirmed)}>Generate catalogue information</Button>}
       </div>
     </Modal>
   );

@@ -15,7 +15,7 @@ describe("catalogue logo placements", () => {
       productCount: 0, styleCount: 0, variantCount: 0, readyImageCount: 0, failedImageCount: 0,
       estimatedSizesPerProduct: 5, departments: [], categories: [], categorySizeCounts: {}, assortmentPlan: [],
       designMix: { patternPercentage: 0, embellishmentPercentage: 0, allowCombined: false, maxCombinedPercentage: 0, patterns: [], embellishments: [], rules: [] },
-      maxProductsPerJob: 100, largeJobThreshold: 25, latestJob: null,
+      largeJobThreshold: 25, latestJob: null,
     }]} />);
     expect(screen.getByRole("img", { name: "Aureline logo" })).toBeInTheDocument();
     expect(screen.getByText("Premium Apparel")).toBeInTheDocument();

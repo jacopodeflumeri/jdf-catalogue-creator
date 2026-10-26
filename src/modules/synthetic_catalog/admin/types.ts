@@ -59,7 +59,6 @@ export interface CatalogOverviewView {
   categorySizeCounts: Record<string, number>;
   assortmentPlan: Array<{ id: string; departmentKey: string | null; category: string; subcategory: string; productCount: number; outfitSlot: string | null }>;
   designMix: import("../config/profiles").CatalogDesignMix;
-  maxProductsPerJob: number;
   largeJobThreshold: number;
   latestJob: CatalogJobView | null;
 }
@@ -142,7 +141,6 @@ export interface CatalogDetailView {
     defaultImageModel: string;
     visualDirection: string;
     estimatedSizesPerProduct: number;
-    maxProductsPerJob: number;
     largeJobThreshold: number;
     departments: Array<{ key: string; label: string; code: string }>;
     categories: string[];

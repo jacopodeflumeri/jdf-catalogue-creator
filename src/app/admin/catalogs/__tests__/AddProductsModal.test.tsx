@@ -30,7 +30,6 @@ const catalog = {
     embellishments: [],
     rules: [],
   },
-  maxProductsPerJob: 100,
   largeJobThreshold: 25,
 };
 
@@ -51,5 +50,18 @@ describe("AddProductsModal scope selection", () => {
 
     expect(screen.getByRole("combobox", { name: "Category" })).toHaveValue("coats");
     expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
+  });
+
+  it("has no product maximum and still requires confirmation at the warning threshold", async () => {
+    render(<AddProductsModal catalog={catalog} onClose={jest.fn()} onCreated={jest.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Choose department" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const countInput = screen.getByRole("spinbutton", { name: "Number of products" });
+    expect(countInput).not.toHaveAttribute("max");
+    expect(screen.queryByText(/maximum .* products per job/i)).not.toBeInTheDocument();
+    fireEvent.change(countInput, { target: { value: "25" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("checkbox", { name: /I confirm/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate catalogue information" })).toBeDisabled();
   });
 });
