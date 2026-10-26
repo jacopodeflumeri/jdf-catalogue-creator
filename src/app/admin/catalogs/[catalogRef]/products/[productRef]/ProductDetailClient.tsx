@@ -19,6 +19,7 @@ import {
   regenerateCatalogImageAction,
 } from "@/modules/synthetic_catalog/server/admin-actions";
 import CatalogStatusBadge from "../../../CatalogStatusBadge";
+import { sanitizeCatalogFrom } from "@/modules/synthetic_catalog/admin/product-filters";
 
 const ACTIVE_IMAGE_STATUSES = new Set(["QUEUED", "GENERATING"]);
 const IMAGE_ROLES = ["FRONT", "BACK"] as const;
@@ -96,9 +97,11 @@ function ImageTile({
 export default function ProductDetailClient({
   initialDetail,
   canEdit,
+  from,
 }: {
   initialDetail: CatalogProductDetailView;
   canEdit: boolean;
+  from: string | null;
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState(initialDetail);
@@ -138,7 +141,7 @@ export default function ProductDetailClient({
         title={product.name}
         description={`${catalog.name} / ${product.externalId}`}
         actions={
-          <Button variant="secondary" onClick={() => router.push(`/admin/catalogs/${catalog.slug}`)}>
+          <Button variant="secondary" onClick={() => router.push(sanitizeCatalogFrom(from, catalog.slug))}>
             <Icon type="arrow-left" size="sm" /> Back to catalog
           </Button>
         }

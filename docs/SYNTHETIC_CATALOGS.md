@@ -30,8 +30,15 @@ Activewear using their stable profile slugs.
 `/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
 the full persisted product list in a table, job history, retry controls, and
 generation settings. The product table can be filtered by department, category,
-subcategory, and aggregate required-core-image status (`READY`, `FAILED`, `GENERATING`, or
-`MISSING`). Information readiness is independent of image readiness. It reports color-style count and stock across every style; the
+subcategory, product archive state, and aggregate required-core-image status
+(`READY`, `FAILED`, `GENERATING`, or `MISSING`). Filter state is encoded in the
+catalogue URL, with defaults omitted, so reloads, bookmarks, and browser history
+reproduce the view. The current filter query is also cached in `sessionStorage`
+under a catalogue slug-specific key; opening that catalogue's bare URL in the
+same tab restores the cached selection, while explicit query parameters take
+precedence. Clear resets the URL and removes the catalogue's cache entry.
+Product links carry a sanitized `from` URL so the PDP returns to the filtered
+catalogue. Information readiness is independent of image readiness. It reports color-style count and stock across every style; the
 thumbnail uses the first available FRONT image. Image status is computed from
 the two required core roles, independently of product/style information
 readiness; a core-image failure in any color is shown as `FAILED`.

@@ -12,11 +12,13 @@ export const metadata: Metadata = {
 
 export default async function CatalogProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ catalogRef: string; productRef: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await requireAdmin({});
-  const { catalogRef, productRef } = await params;
+  const [{ catalogRef, productRef }, query] = await Promise.all([params, searchParams]);
   const detail = await getCatalogProductDetail(catalogRef, productRef);
   if (!detail) notFound();
 
@@ -24,5 +26,6 @@ export default async function CatalogProductPage({
   const canEdit =
     session.user.isSuperAdmin === true || accessLevel === "editor" || accessLevel === "admin";
 
-  return <ProductDetailClient initialDetail={detail} canEdit={canEdit} />;
+  const from = typeof query.from === "string" ? query.from : null;
+  return <ProductDetailClient initialDetail={detail} canEdit={canEdit} from={from} />;
 }

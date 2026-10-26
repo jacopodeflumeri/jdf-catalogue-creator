@@ -154,10 +154,12 @@ export default function CatalogDetailClient({
   initialDetail,
   initialExportSummary,
   canEdit,
+  initialSearch,
 }: {
   initialDetail: CatalogDetailView;
   initialExportSummary: CatalogExportSummary | null;
   canEdit: boolean;
+  initialSearch: string;
 }) {
   const router = useRouter();
   const { confirm } = useConfirm();
@@ -281,6 +283,7 @@ export default function CatalogDetailClient({
       content: (
         <ProductTable
           catalogSlug={detail.catalog.slug}
+          initialSearch={initialSearch}
           products={detail.products}
           canEdit={canEdit}
           onAddProducts={() => setShowAdd(true)}

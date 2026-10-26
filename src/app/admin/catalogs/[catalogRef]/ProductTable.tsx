@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import FormSelect from "@/components/ui/form/FormSelect";
@@ -14,6 +14,7 @@ import CatalogStatusBadge from "../CatalogStatusBadge";
 import { useConfirm } from "@/components/providers/ConfirmProvider";
 import NoticeBox from "@/components/ui/NoticeBox";
 import { archiveCatalogProductAction, restoreCatalogProductAction } from "@/modules/synthetic_catalog/server/admin-actions";
+import { buildProductHref, canonicalFilterQuery, DEFAULT_PRODUCT_FILTERS, filtersFromSearch, PRODUCT_FILTER_SESSION_PREFIX, resolveInitialProductFilters, serializeProductFilters, type ProductFilters } from "@/modules/synthetic_catalog/admin/product-filters";
 
 function formatMoney(value: string, currency: string): string {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(value));
@@ -25,12 +26,14 @@ function titleCase(value: string): string {
 
 export default function ProductTable({
   catalogSlug,
+  initialSearch,
   products,
   canEdit,
   onAddProducts,
   onArchiveChanged,
 }: {
   catalogSlug: string;
+  initialSearch: string;
   products: CatalogProductView[];
   canEdit: boolean;
   onAddProducts: () => void;
@@ -38,13 +41,52 @@ export default function ProductTable({
 }) {
   const router = useRouter();
   const { confirm } = useConfirm();
-  const [department, setDepartment] = useState("all");
-  const [category, setCategory] = useState("all");
-  const [subcategory, setSubcategory] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [recordState, setRecordState] = useState("ACTIVE");
+  const [filters, setFilters] = useState<ProductFilters>(() => filtersFromSearch(initialSearch));
+  const department = filters.department;
+  const category = filters.category;
+  const subcategory = filters.subcategory;
+  const status = filters.imageStatus;
+  const recordState = filters.productState;
   const [pendingProductId, setPendingProductId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  const sessionKey = `${PRODUCT_FILTER_SESSION_PREFIX}${catalogSlug}`;
+  function commitFilters(next: ProductFilters, mode: "push" | "replace" = "push") {
+    setFilters(next);
+    const current = new URL(window.location.href);
+    current.search = serializeProductFilters(next, current.searchParams).toString();
+    window.history[mode === "push" ? "pushState" : "replaceState"]({}, "", `${current.pathname}${current.search}${current.hash}`);
+    const cacheQuery = canonicalFilterQuery(next);
+    try {
+      if (cacheQuery) window.sessionStorage.setItem(sessionKey, cacheQuery);
+      else window.sessionStorage.removeItem(sessionKey);
+    } catch { /* The URL remains the canonical state when storage is unavailable. */ }
+  }
+
+  useEffect(() => {
+    let next = filtersFromSearch(initialSearch);
+    try {
+      const cached = window.sessionStorage.getItem(sessionKey);
+      if (cached) next = resolveInitialProductFilters(initialSearch, cached);
+    } catch { /* Storage can be unavailable in restricted browser contexts. */ }
+    const current = new URL(window.location.href);
+    current.search = serializeProductFilters(next, current.searchParams).toString();
+    window.history.replaceState({}, "", `${current.pathname}${current.search}${current.hash}`);
+    // Hydrate the URL/session-backed state after the server-rendered defaults.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFilters(next);
+    const query = canonicalFilterQuery(next);
+    try {
+      if (query) window.sessionStorage.setItem(sessionKey, query);
+      else window.sessionStorage.removeItem(sessionKey);
+    } catch { /* The URL remains the canonical state when storage is unavailable. */ }
+  }, [initialSearch, sessionKey]);
+
+  useEffect(() => {
+    function restoreFromHistory() { setFilters(filtersFromSearch(window.location.search)); }
+    window.addEventListener("popstate", restoreFromHistory);
+    return () => window.removeEventListener("popstate", restoreFromHistory);
+  }, []);
 
   const departments = useMemo(
     () => Array.from(new Map(products.map((product) => [product.departmentKey, product.department])).entries())
@@ -81,11 +123,7 @@ export default function ProductTable({
   const hasFilters = [department, category, subcategory, status].some((value) => value !== "all") || recordState !== "ACTIVE";
 
   function resetFilters() {
-    setDepartment("all");
-    setCategory("all");
-    setSubcategory("all");
-    setStatus("all");
-    setRecordState("ACTIVE");
+    commitFilters(DEFAULT_PRODUCT_FILTERS);
   }
 
   async function changeArchiveState(product: CatalogProductView) {
@@ -124,17 +162,17 @@ export default function ProductTable({
     <div className="mt-6 space-y-4">
       <div className="glass-card rounded-2xl p-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6 xl:items-end">
-          <FormSelect label="Department" value={department} onChange={(event) => setDepartment(event.target.value)} options={[{ value: "all", label: "All departments" }, ...departments.map(([key, label]) => ({ value: key, label }))]} />
-          <FormSelect label="Category" value={category} onChange={(event) => { setCategory(event.target.value); setSubcategory("all"); }} options={[{ value: "all", label: "All categories" }, ...categories.map((value) => ({ value, label: titleCase(value) }))]} />
-          <FormSelect label="Subcategory" value={subcategory} onChange={(event) => setSubcategory(event.target.value)} options={[{ value: "all", label: "All subcategories" }, ...subcategories.map((value) => ({ value, label: titleCase(value) }))]} />
-          <FormSelect label="Image status" value={status} onChange={(event) => setStatus(event.target.value)} options={[
+          <FormSelect label="Department" value={department} onChange={(event) => commitFilters({ ...filters, department: event.target.value })} options={[{ value: "all", label: "All departments" }, ...departments.map(([key, label]) => ({ value: key, label }))]} />
+          <FormSelect label="Category" value={category} onChange={(event) => commitFilters({ ...filters, category: event.target.value, subcategory: "all" })} options={[{ value: "all", label: "All categories" }, ...categories.map((value) => ({ value, label: titleCase(value) }))]} />
+          <FormSelect label="Subcategory" value={subcategory} onChange={(event) => commitFilters({ ...filters, subcategory: event.target.value })} options={[{ value: "all", label: "All subcategories" }, ...subcategories.map((value) => ({ value, label: titleCase(value) }))]} />
+          <FormSelect label="Image status" value={status} onChange={(event) => commitFilters({ ...filters, imageStatus: event.target.value })} options={[
             { value: "all", label: "All statuses" },
             { value: "READY", label: "Ready" },
             { value: "FAILED", label: "Failed" },
             { value: "GENERATING", label: "Generating" },
             { value: "MISSING", label: "Missing" },
           ]} />
-          <FormSelect label="Products" value={recordState} onChange={(event) => setRecordState(event.target.value)} options={[{ value: "ACTIVE", label: "Active" }, { value: "ARCHIVED", label: "Archived" }, { value: "all", label: "Active and archived" }]} />
+          <FormSelect label="Products" value={recordState} onChange={(event) => commitFilters({ ...filters, productState: event.target.value })} options={[{ value: "ACTIVE", label: "Active" }, { value: "ARCHIVED", label: "Archived" }, { value: "all", label: "Active and archived" }]} />
           <div className="flex items-center justify-between gap-3 pb-0.5 xl:justify-end">
             <p className="text-sm text-[#1a1a1a]/55">{filtered.length} of {products.length} products</p>
             {hasFilters && <Button variant="ghost" size="sm" onClick={resetFilters}>Clear</Button>}
@@ -155,7 +193,7 @@ export default function ProductTable({
             </thead>
             <tbody>
               {filtered.map((product) => {
-                const href = `/admin/catalogs/${encodeURIComponent(catalogSlug)}/products/${encodeURIComponent(product.externalId)}`;
+                const href = buildProductHref(catalogSlug, product.externalId, filters, new URLSearchParams(initialSearch));
                 const front = product.styles.flatMap((style) => style.images).find((image) => image.role === "FRONT" && image.url);
                 const displayPrice = product.salePrice ?? product.basePrice;
                 return (

@@ -13,11 +13,18 @@ export const metadata: Metadata = {
 
 export default async function CatalogDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ catalogRef: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await requireAdmin({});
-  const { catalogRef } = await params;
+  const [{ catalogRef }, query] = await Promise.all([params, searchParams]);
+  const initialSearch = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (Array.isArray(value)) for (const item of value) initialSearch.append(key, item);
+    else if (value != null) initialSearch.set(key, value);
+  }
   const [detail, exportSummary] = await Promise.all([
     getCatalogDetail(catalogRef),
     getCatalogExportSummary(catalogRef),
@@ -25,5 +32,5 @@ export default async function CatalogDetailPage({
   if (!detail) notFound();
   const accessLevel = session.user.access ?? "viewer";
   const canEdit = session.user.isSuperAdmin === true || accessLevel === "editor" || accessLevel === "admin";
-  return <CatalogDetailClient initialDetail={detail} initialExportSummary={exportSummary} canEdit={canEdit} />;
+  return <CatalogDetailClient initialDetail={detail} initialExportSummary={exportSummary} canEdit={canEdit} initialSearch={initialSearch.toString()} />;
 }
