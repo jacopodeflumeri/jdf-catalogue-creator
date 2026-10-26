@@ -27,6 +27,8 @@ export interface CatalogJobView {
   totalTasks: number;
   completedTasks: number;
   failedTasks: number;
+  queuedTasks: number;
+  runningTasks: number;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;

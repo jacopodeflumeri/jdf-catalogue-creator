@@ -1,4 +1,4 @@
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma, type Prisma as PrismaTypes } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
 import { catalogCategories, catalogSubcategories, parseCatalogProfileConfig } from "../config/profiles";
 import { configuredDepartmentLabel } from "../config/department-label";
@@ -108,20 +108,17 @@ function jobView(job: {
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
-  tasks: Array<{
-    id: number;
-    status: string;
-    taskType: string;
-    dedupeKey: string;
-    attempts: number;
-    maxAttempts: number;
-    lastError: string | null;
-    product: { externalId: string } | null;
-    style: { externalId: string } | null;
-    imageAsset: { role: string } | null;
-  }>;
-  products: Array<{ status: string; styles: Array<{ status: string }> }>;
-}): CatalogJobView {
+}, counts: { total: number; completed: number; failed: number; queued: number; running: number; readyProducts: number; readyStyles: number }, failedTasks: Array<{
+  id: number;
+  taskType: string;
+  dedupeKey: string;
+  attempts: number;
+  maxAttempts: number;
+  lastError: string | null;
+  product: { externalId: string } | null;
+  style: { externalId: string } | null;
+  imageAsset: { role: string } | null;
+}>): CatalogJobView {
   return {
     id: job.id,
     publicId: job.publicId,
@@ -138,18 +135,18 @@ function jobView(job: {
     completedImages: job.completedImages,
     failedImages: job.failedImages,
     skippedImages: job.skippedImages,
-    informationReadyProducts: job.products.filter((product) => product.status === "READY").length,
-    informationReadyStyles: job.products.reduce((total, product) => total + product.styles.filter((style) => style.status === "READY").length, 0),
-    totalTasks: job.tasks.length,
-    completedTasks: job.tasks.filter((task) => task.status === "COMPLETED").length,
-    failedTasks: job.tasks.filter((task) => task.status === "FAILED").length,
+    informationReadyProducts: counts.readyProducts,
+    informationReadyStyles: counts.readyStyles,
+    totalTasks: counts.total,
+    completedTasks: counts.completed,
+    failedTasks: counts.failed,
+    queuedTasks: counts.queued,
+    runningTasks: counts.running,
     createdAt: job.createdAt.toISOString(),
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
     errorMessage: job.errorMessage,
-    failedTaskDetails: job.tasks
-      .filter((task) => task.status === "FAILED")
-      .map((task) => ({
+    failedTaskDetails: failedTasks.map((task) => ({
         id: task.id,
         taskType: task.taskType,
         reference:
@@ -165,22 +162,81 @@ function jobView(job: {
 }
 
 const jobInclude = {
-  products: { where: { archivedAt: null }, select: { status: true, styles: { select: { status: true } } } },
-  tasks: {
+} satisfies PrismaTypes.CatalogGenerationJobInclude;
+
+type CatalogJobRecord = PrismaTypes.CatalogGenerationJobGetPayload<{ include: typeof jobInclude }>;
+type FailedTaskRecord = {
+  id: number;
+  jobId: number;
+  taskType: string;
+  dedupeKey: string;
+  attempts: number;
+  maxAttempts: number;
+  lastError: string | null;
+  product: { externalId: string } | null;
+  style: { externalId: string } | null;
+  imageAsset: { role: string } | null;
+};
+
+async function jobViews(jobs: CatalogJobRecord[]): Promise<CatalogJobView[]> {
+  if (jobs.length === 0) return [];
+  const jobIds = jobs.map((job) => job.id);
+  const [taskGroups, readyProductGroups, readyStyleGroups] = await Promise.all([
+    prisma.catalogGenerationTask.groupBy({
+      by: ["jobId", "status"],
+      where: { jobId: { in: jobIds } },
+      _count: { _all: true },
+    }),
+    prisma.syntheticProduct.groupBy({
+      by: ["generationJobId"],
+      where: { generationJobId: { in: jobIds }, archivedAt: null, status: "READY" },
+      _count: { _all: true },
+    }),
+    prisma.$queryRaw<Array<{ generationJobId: number; count: bigint }>>(Prisma.sql`
+      SELECT p.generation_job_id AS "generationJobId", COUNT(*) AS count
+      FROM synthetic_style s
+      INNER JOIN synthetic_product p ON p.id = s.product_id
+      WHERE p.generation_job_id IN (${Prisma.join(jobIds)})
+        AND p.archived_at IS NULL AND s.status = 'READY'
+      GROUP BY p.generation_job_id
+    `),
+  ]);
+  const taskCounts = new Map<number, { total: number; completed: number; failed: number; queued: number; running: number }>();
+  for (const row of taskGroups) {
+    const counts = taskCounts.get(row.jobId) ?? { total: 0, completed: 0, failed: 0, queued: 0, running: 0 };
+    const count = row._count._all;
+    counts.total += count;
+    if (row.status === "COMPLETED") counts.completed += count;
+    if (row.status === "FAILED") counts.failed += count;
+    if (row.status === "QUEUED") counts.queued += count;
+    if (row.status === "RUNNING") counts.running += count;
+    taskCounts.set(row.jobId, counts);
+  }
+  const readyProducts = new Map(readyProductGroups.flatMap((row) => row.generationJobId == null ? [] : [[row.generationJobId, row._count._all] as const]));
+  const readyStyles = new Map(readyStyleGroups.map((row) => [row.generationJobId, Number(row.count)] as const));
+  const failedJobIds = [...taskCounts].filter(([, counts]) => counts.failed > 0).map(([jobId]) => jobId);
+  const failureRows: FailedTaskRecord[] = failedJobIds.length === 0 ? [] : await prisma.catalogGenerationTask.findMany({
+    where: { jobId: { in: failedJobIds }, status: "FAILED" },
     select: {
-      id: true,
-      status: true,
-      taskType: true,
-      dedupeKey: true,
-      attempts: true,
-      maxAttempts: true,
-      lastError: true,
+      id: true, jobId: true, taskType: true, dedupeKey: true, attempts: true, maxAttempts: true, lastError: true,
       product: { select: { externalId: true } },
       style: { select: { externalId: true } },
       imageAsset: { select: { role: true } },
     },
-  },
-} satisfies Prisma.CatalogGenerationJobInclude;
+    orderBy: { id: "asc" },
+  });
+  const failuresByJob = new Map<number, FailedTaskRecord[]>();
+  for (const failure of failureRows) failuresByJob.set(failure.jobId, [...(failuresByJob.get(failure.jobId) ?? []), failure]);
+  return jobs.map((job) => jobView(job, {
+    total: taskCounts.get(job.id)?.total ?? 0,
+    completed: taskCounts.get(job.id)?.completed ?? 0,
+    failed: taskCounts.get(job.id)?.failed ?? 0,
+    queued: taskCounts.get(job.id)?.queued ?? 0,
+    running: taskCounts.get(job.id)?.running ?? 0,
+    readyProducts: readyProducts.get(job.id) ?? 0,
+    readyStyles: readyStyles.get(job.id) ?? 0,
+  }, failuresByJob.get(job.id) ?? []));
+}
 
 export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
   const generationSettings = getCatalogGenerationSettings();
@@ -203,6 +259,8 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
     },
   });
 
+  const latestJobs = await jobViews(catalogs.flatMap((catalog) => catalog.jobs));
+  const latestById = new Map(latestJobs.map((job) => [job.id, job]));
   return catalogs.map((catalog) => {
     const config = parseCatalogProfileConfig(catalog.config);
     const styles = catalog.products.flatMap((product) => product.styles);
@@ -228,7 +286,7 @@ export async function getCatalogOverview(): Promise<CatalogOverviewView[]> {
       assortmentPlan: config.assortmentPlan.map((row) => ({ ...row })),
       designMix: config.designMix,
       ...generationSettings,
-      latestJob: catalog.jobs[0] ? jobView(catalog.jobs[0]) : null,
+      latestJob: catalog.jobs[0] ? latestById.get(catalog.jobs[0].id) ?? null : null,
     };
   });
 }
@@ -249,13 +307,14 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
   if (!catalog) return null;
 
   const config = parseCatalogProfileConfig(catalog.config);
-  const [productCount, styleCount, variantCount, readyImages, failedImages, pendingCoreImages] = await Promise.all([
+  const [productCount, styleCount, variantCount, readyImages, failedImages, pendingCoreImages, jobs] = await Promise.all([
     prisma.syntheticProduct.count({ where: { catalogId: catalog.id, archivedAt: null } }),
     prisma.syntheticStyle.count({ where: { product: { catalogId: catalog.id, archivedAt: null } } }),
     prisma.syntheticVariant.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } } } }),
     prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: [...REQUIRED_CORE_IMAGE_ROLES] }, status: "READY" } }),
     prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: [...REQUIRED_CORE_IMAGE_ROLES] }, status: "FAILED" } }),
     prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: catalog.id, archivedAt: null } }, role: { in: [...REQUIRED_CORE_IMAGE_ROLES] }, status: { in: ["QUEUED", "GENERATING"] } } }),
+    jobViews(catalog.jobs),
   ]);
 
   return {
@@ -281,7 +340,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
     },
     counts: { products: productCount, styles: styleCount, variants: variantCount, readyImages, failedImages, readyCoreImages: readyImages, failedCoreImages: failedImages, pendingCoreImages },
     products: catalog.products.map((product) => productView(product, config)),
-    jobs: catalog.jobs.map(jobView),
+    jobs,
   };
 }
 

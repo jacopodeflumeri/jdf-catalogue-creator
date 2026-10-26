@@ -7,8 +7,10 @@ import {
   requireTestDatabase,
   truncateAllTables,
 } from "@test/utils/db";
-import { CATALOG_PROFILES } from "../../config/profiles";
+import { CATALOG_PROFILES, parseCatalogProfileConfig } from "../../config/profiles";
+import { allocateDesignMix, planAssortment } from "../../domain/planner";
 import { MockProductGenerator } from "../../providers/mock-product-generator";
+import { getCatalogDetail } from "../admin-catalogs";
 import type {
   ProductGenerationInput,
   ProductGenerator,
@@ -84,6 +86,49 @@ describe("catalog generation jobs", () => {
     expect(tasks.every((task) => task.status === "QUEUED")).toBe(true);
     expect((tasks[0]!.payload as { configSnapshot: unknown }).configSnapshot).toEqual(expect.any(Object));
     expect(tasks[0]!.dedupeKey).toMatch(/^product:\d+$/);
+  });
+
+  it("rolls back the job when a later task batch fails while retaining the reserved sequence gap", async () => {
+    const catalog = await createTestCatalog();
+    const seed = "batch-rollback";
+    const config = parseCatalogProfileConfig(catalog.config);
+    const plan = allocateDesignMix(planAssortment({
+      sequences: Array.from({ length: 305 }, (_, index) => index + 1),
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
+      config,
+      seed,
+    }), config.designMix, seed);
+    const secondBatchSequence = plan[300]!.sequence;
+    await prisma.$executeRawUnsafe(`ALTER TABLE catalog_generation_task ADD CONSTRAINT test_fail_second_task_batch CHECK (dedupe_key <> 'product:${secondBatchSequence}')`);
+    try {
+      await expect(createGenerationJob({
+        catalogId: catalog.id,
+        requestedProducts: 305,
+        scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
+        seed,
+      })).rejects.toThrow();
+      expect(await prisma.catalogGenerationJob.count({ where: { catalogId: catalog.id } })).toBe(0);
+      expect(await prisma.catalogGenerationTask.count()).toBe(0);
+      expect((await prisma.syntheticCatalog.findUniqueOrThrow({ where: { id: catalog.id } })).nextProductSequence).toBe(306);
+    } finally {
+      await prisma.$executeRaw`ALTER TABLE catalog_generation_task DROP CONSTRAINT test_fail_second_task_batch`;
+    }
+  });
+
+  it("loads routine job progress from counts and fetches only failed task details", async () => {
+    const catalog = await createTestCatalog();
+    const job = await createGenerationJob({
+      catalogId: catalog.id,
+      requestedProducts: 3,
+      scope: { type: "DEPARTMENT", departmentKey: "WOMEN" },
+      seed: "progress-aggregates",
+    });
+    const task = await prisma.catalogGenerationTask.findFirstOrThrow({ where: { jobId: job.id } });
+    await prisma.catalogGenerationTask.update({ where: { id: task.id }, data: { status: "FAILED", lastError: "focused failure" } });
+    const detail = await getCatalogDetail(catalog.slug);
+    expect(detail?.jobs[0]).toEqual(expect.objectContaining({ totalTasks: 3, failedTasks: 1, queuedTasks: 2, runningTasks: 0 }));
+    expect(detail?.jobs[0]?.failedTaskDetails).toHaveLength(1);
+    expect(detail?.jobs[0]?.failedTaskDetails[0]?.lastError).toBe("focused failure");
   });
 
   it("appends mocked products from concurrent reservations without ID collisions", async () => {

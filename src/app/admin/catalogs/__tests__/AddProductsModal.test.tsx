@@ -61,7 +61,10 @@ describe("AddProductsModal scope selection", () => {
     expect(screen.queryByText(/maximum .* products per job/i)).not.toBeInTheDocument();
     fireEvent.change(countInput, { target: { value: "25" } });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    expect(await screen.findByRole("checkbox", { name: /I confirm/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Generate catalogue information" })).toBeDisabled();
+    const confirmation = await screen.findByRole("checkbox", { name: /I confirm/ });
+    const generate = screen.getByRole("button", { name: "Generate catalogue information" });
+    expect(generate).toBeDisabled();
+    fireEvent.click(confirmation);
+    expect(generate).toBeEnabled();
   });
 });

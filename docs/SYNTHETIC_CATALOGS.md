@@ -143,7 +143,11 @@ key, so category and subcategory edits keep focus and removing a neighboring
 row does not move another row's state.
 
 The detail client polls persisted state every three seconds only while a job is
-queued or running. There is no application-level product-count maximum:
+queued or running. Progress reads aggregate task totals by status and count
+ready products and styles in the database; they do not hydrate successful task
+rows. Failure details are fetched only for jobs with failed tasks, preserving
+the retry and failure display without sending every task on each poll. There is
+no application-level product-count maximum:
 Catalogue Mix defines the All Catalogue total, while Department and Category
 requests accept any positive safe integer. `CATALOG_LARGE_JOB_THRESHOLD`
 (default 25) controls an explicit spend and operations warning only; confirming

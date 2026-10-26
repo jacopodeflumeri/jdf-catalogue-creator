@@ -281,7 +281,7 @@ export async function refreshGenerationJobState(jobId: number) {
     const failed = failedProducts + failedImages + failedValidation;
 
     if (job.status === "CANCELLED") {
-      return tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId }, include: { tasks: { orderBy: { id: "asc" } } } });
+      return tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
     }
 
     const nextStatus =
@@ -307,7 +307,6 @@ export async function refreshGenerationJobState(jobId: number) {
         startedAt: job.startedAt ?? (nextStatus === "RUNNING" ? new Date() : null),
         finishedAt: pending > 0 ? null : new Date(),
       },
-      include: { tasks: { orderBy: { id: "asc" } } },
     });
   });
 }
@@ -385,7 +384,7 @@ export async function runGenerationJob(
     where: { id: jobId },
   });
   if (existingJob.status === "COMPLETED" || existingJob.status === "CANCELLED") {
-    return prisma.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId }, include: { tasks: { orderBy: { id: "asc" } } } });
+    return prisma.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
   }
   assertJobTransition(existingJob.status, "RUNNING");
   if (options.maxTasks != null && (!Number.isSafeInteger(options.maxTasks) || options.maxTasks < 1)) {
@@ -401,7 +400,6 @@ export async function runGenerationJob(
       finishedAt: null,
       errorMessage: null,
     },
-    include: { tasks: { orderBy: { id: "asc" } } },
   });
   const tasks = await prisma.catalogGenerationTask.findMany({
     where: { jobId, taskType: "GENERATE_PRODUCT", status: "QUEUED" },
