@@ -44,6 +44,7 @@ import CatalogueMixEditor from "./CatalogueMixEditor";
 import DesignMixEditor from "./DesignMixEditor";
 import ManualCatalogWorkflow from "./ManualCatalogWorkflow";
 import CatalogBrandLogo from "../CatalogBrandLogo";
+import { coreImageActionInput, defaultCoreWorkflowTarget, type CoreWorkflowTarget } from "./workflow-targets";
 
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 
@@ -182,7 +183,7 @@ export default function CatalogDetailClient({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [busyJobId, setBusyJobId] = useState<number | null>(null);
   const [coreBusy, setCoreBusy] = useState(false);
-  const [coreSourceJobId, setCoreSourceJobId] = useState("latest");
+  const [coreTarget, setCoreTarget] = useState<CoreWorkflowTarget | "latest">("latest");
   const [lookBusy, setLookBusy] = useState(false);
   const [lookTarget, setLookTarget] = useState("ALL");
   const [lookGateIssues, setLookGateIssues] = useState<Array<{ styleId: number; styleExternalId: string; productExternalId: string; missingRoles: string[]; failedRoles: string[] }>>([]);
@@ -228,10 +229,12 @@ export default function CatalogDetailClient({
     setShowDelete(false); router.push("/admin/catalogs"); router.refresh();
   }
 
-  async function startCoreImages(sourceJobId?: number, allMissing = false) {
+  async function startCoreImages() {
+    const target = coreImageActionInput(detail.catalog.id, selectedCoreTarget);
+    if (!target) return;
     setCoreBusy(true);
     setError(null);
-    const preflight = await getCoreImagesPreflightAction({ catalogId: detail.catalog.id, sourceJobId, allMissing });
+    const preflight = await getCoreImagesPreflightAction(target);
     if (!preflight.ok) {
       setCoreBusy(false);
       setError(preflight.message);
@@ -251,7 +254,7 @@ export default function CatalogDetailClient({
       setCoreBusy(false);
       return;
     }
-    const result = await createCoreImagesJobAction({ catalogId: detail.catalog.id, sourceJobId, allMissing });
+    const result = await createCoreImagesJobAction(target);
     setCoreBusy(false);
     if (!result.ok) setError(result.message ?? "Could not queue core image generation");
     else setSuccess("Core image generation queued. Each colour style receives FRONT and BACK images.");
@@ -269,7 +272,7 @@ export default function CatalogDetailClient({
       const front = preflight.readinessFailures.filter((item) => item.missingRoles.includes("FRONT")).length;
       const back = preflight.readinessFailures.filter((item) => item.missingRoles.includes("BACK")).length;
       setLookBusy(false);
-      setError(`Step 3 is blocked by the full-catalogue gate: ${front} styles need FRONT and ${back} need BACK. Use Step 2 “All products missing core images”.`);
+      setError(`Step 3 is blocked by the full-catalogue gate: ${front} styles need FRONT and ${back} need BACK. Use Step 2 with “All active products missing core images”.`);
       return;
     }
     setLookGateIssues([]);
@@ -424,7 +427,8 @@ export default function CatalogDetailClient({
     },
   ];
   const completedInfoJobs = detail.jobs.filter((job) => job.jobType === "CATALOG_INFO" && (job.status === "COMPLETED" || job.status === "COMPLETED_WITH_ERRORS"));
-  const selectedCoreSource = coreSourceJobId === "latest" ? completedInfoJobs[0] : completedInfoJobs.find((job) => String(job.id) === coreSourceJobId);
+  const selectedCoreTarget = coreTarget === "latest" ? defaultCoreWorkflowTarget(completedInfoJobs) : coreTarget;
+  const completeLookGateReady = detail.counts.styles > 0 && detail.counts.readyCoreImages >= detail.counts.styles * 2;
 
   return (
     <div className="px-8 py-6 space-y-8">
@@ -438,7 +442,7 @@ export default function CatalogDetailClient({
         {deleteSummary && <div className="space-y-4"><NoticeBox variant="error" title="Permanent deletion">Catalogue products and related records will be permanently deleted. The inactive catalogue record remains to prevent seed profiles from recreating it.</NoticeBox><dl className="grid grid-cols-2 gap-2 text-sm">{[["Active products", deleteSummary.activeProducts], ["Archived products", deleteSummary.archivedProducts], ["Styles", deleteSummary.styles], ["Variants", deleteSummary.variants], ["Image assets", deleteSummary.imageAssets], ["Complete the Look", deleteSummary.completeLooks], ["Jobs", deleteSummary.jobs], ["Tasks", deleteSummary.tasks]].map(([label, count]) => <div key={label} className="rounded-lg bg-white/35 p-3"><dt className="text-[#1a1a1a]/60">{label}</dt><dd className="font-semibold">{count}</dd></div>)}</dl><FormInput id="delete-catalog-confirm" label={`Type “${deleteSummary.name}” or “${deleteSummary.slug}” to confirm`} value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} autoComplete="off" /></div>}
       </Modal>
       {error && <NoticeBox variant="error">{error}</NoticeBox>}
-      {lookGateIssues.length > 0 && <NoticeBox variant="warning" title="Full-catalogue core image gate"><p className="mb-2">Every active style needs READY FRONT and BACK images. Showing the first {lookGateIssues.length} affected styles:</p><ul className="list-disc space-y-1 pl-5">{lookGateIssues.map((item) => <li key={item.styleId}><Link className="font-medium underline" href={`/admin/catalogs/${detail.catalog.slug}/products/${item.productExternalId}`}>{item.styleExternalId}</Link>: missing {item.missingRoles.join(", ")}{item.failedRoles.length ? ` (failed: ${item.failedRoles.join(", ")})` : ""}</li>)}</ul><p className="mt-2">Run Step 2 “All products missing core images” to repair these styles.</p></NoticeBox>}
+      {lookGateIssues.length > 0 && <NoticeBox variant="warning" title="Full-catalogue core image gate"><p className="mb-2">Every active style needs READY FRONT and BACK images. Showing the first {lookGateIssues.length} affected styles:</p><ul className="list-disc space-y-1 pl-5">{lookGateIssues.map((item) => <li key={item.styleId}><Link className="font-medium underline" href={`/admin/catalogs/${detail.catalog.slug}/products/${item.productExternalId}`}>{item.styleExternalId}</Link>: missing {item.missingRoles.join(", ")}{item.failedRoles.length ? ` (failed: ${item.failedRoles.join(", ")})` : ""}</li>)}</ul><p className="mt-2">In Step 2, target all active products missing core images to repair these styles.</p></NoticeBox>}
       {success && <NoticeBox variant="success">{success}</NoticeBox>}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         {[
@@ -452,18 +456,17 @@ export default function CatalogDetailClient({
       <ManualCatalogWorkflow
         canEdit={canEdit}
         jobs={completedInfoJobs}
-        coreSourceJobId={coreSourceJobId === "latest" ? String(completedInfoJobs[0]?.id ?? "") : coreSourceJobId}
-        onCoreSourceJobChange={setCoreSourceJobId}
-        canStartCoreImages={Boolean(selectedCoreSource)}
+        coreTarget={selectedCoreTarget}
+        onCoreTargetChange={setCoreTarget}
         coreBusy={coreBusy}
         lookBusy={lookBusy}
         lookTarget={lookTarget}
         onLookTargetChange={setLookTarget}
         onGenerateInformation={() => setShowAdd(true)}
-        onStartCoreImages={() => selectedCoreSource && void startCoreImages(selectedCoreSource.id)}
-        onStartAllMissingImages={() => void startCoreImages(selectedCoreSource?.id, true)}
+        onStartCoreImages={() => void startCoreImages()}
         onStartCompleteLooks={() => void startCompleteLooks()}
         counts={detail.counts}
+        canStartCompleteLooks={completeLookGateReady}
       />
       {activeJobs.map((job) => <Card key={job.id} title="Generation in progress" description={`Job ${job.publicId}`} headerActions={<CatalogStatusBadge status={job.status} />}><JobProgress job={job} /></Card>)}
       <Tabs tabs={tabs} defaultTab="products" />

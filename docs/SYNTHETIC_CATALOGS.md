@@ -827,4 +827,26 @@ Job terminal state is derived from every durable task type, including bulk-renam
 
 Historical job cards and the four catalogue Settings cards can collapse independently. Their contents stay mounted while hidden so unfinished form edits remain in memory. Active generation progress remains expanded.
 
-The three primary actions in the manual workflow align on desktop using equal control regions. The cards stack naturally on mobile, and Step 2's missing-image action remains secondary.
+### Manual catalogue workflow
+
+The catalogue detail workflow uses three matching stage cards. Each card shows a
+step badge and status, title and description, progress or context, a control
+region, and a full-width primary action footer. The shared flex and grid layout
+aligns the action footers on desktop and lets the cards stack without reserved
+spacer heights on mobile.
+
+Step 2 has one `Target` selector and one `Generate core images` action. A
+`batch:<jobId>` target queues missing or failed FRONT/BACK images only for that
+completed catalogue information batch and keeps its source-job lineage. The
+`all-missing` target queues missing or failed required core images across all
+active catalogue products, including products from earlier batches. Archived
+products and already-ready image roles are excluded. The latest completed
+information batch is selected by default; when there is no completed batch,
+the all-missing target is selected. The all-missing request does not include a
+source job ID.
+
+Step 3 retains its existing target selector and generation preflight. Its action
+is disabled while the full-catalogue FRONT/BACK prerequisite is incomplete, with
+a nearby explanation to complete all required images first. If the authoritative
+preflight finds more specific readiness failures, the detailed warning remains
+outside the workflow cards.
