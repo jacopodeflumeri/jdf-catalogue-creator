@@ -57,12 +57,13 @@ model MappTeam {
   accessNotes  String?   @map("access_notes") // Admin notes about access decision
 
   // Relationships
-  authorizedByMember        MappTeam?              @relation("MappTeamAuthorizer", fields: [authorizedBy], references: [id], onDelete: SetNull)
-  authorizedMembers         MappTeam[]             @relation("MappTeamAuthorizer")
-  activities                AccountActivity[]      @relation("ActivityMappUser")
-  auditLogs                 AuditLog[]
-  catalogGenerationJobs     CatalogGenerationJob[]
-  archivedSyntheticProducts SyntheticProduct[]     @relation("SyntheticProductArchiver")
+  authorizedByMember            MappTeam?              @relation("MappTeamAuthorizer", fields: [authorizedBy], references: [id], onDelete: SetNull)
+  authorizedMembers             MappTeam[]             @relation("MappTeamAuthorizer")
+  activities                    AccountActivity[]      @relation("ActivityMappUser")
+  auditLogs                     AuditLog[]
+  catalogGenerationJobs         CatalogGenerationJob[]
+  createdSyntheticRenameBatches SyntheticRenameBatch[] @relation("SyntheticRenameBatchCreator")
+  archivedSyntheticProducts     SyntheticProduct[]     @relation("SyntheticProductArchiver")
 
   @@index([email])
   @@index([accessStatus])
@@ -333,6 +334,7 @@ enum CatalogJobType {
   CATALOG_INFO
   CORE_IMAGES
   COMPLETE_LOOK
+  BULK_RENAME
 }
 
 enum CatalogDepartmentMode {
@@ -372,6 +374,7 @@ enum CatalogTaskType {
   GENERATE_PRODUCT
   GENERATE_IMAGE
   VALIDATE_PRODUCT
+  PROPOSE_PRODUCT_NAMES
 }
 
 enum CatalogTaskStatus {
@@ -435,8 +438,9 @@ model SyntheticCatalog {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
-  products SyntheticProduct[]
-  jobs     CatalogGenerationJob[]
+  products      SyntheticProduct[]
+  jobs          CatalogGenerationJob[]
+  renameBatches SyntheticRenameBatch[]
 
   @@index([active])
   @@map("synthetic_catalog")
@@ -471,6 +475,7 @@ model SyntheticProduct {
   generationJob CatalogGenerationJob?   @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
   styles        SyntheticStyle[]
   tasks         CatalogGenerationTask[]
+  renameItems   SyntheticRenameItem[]
   archivedBy    MappTeam?               @relation("SyntheticProductArchiver", fields: [archivedByMappTeamId], references: [id], onDelete: SetNull)
 
   @@unique([catalogId, sequence])
@@ -627,12 +632,55 @@ model CatalogGenerationJob {
   createdBy   MappTeam?               @relation(fields: [createdByMappTeamId], references: [id], onDelete: SetNull)
   products    SyntheticProduct[]
   tasks       CatalogGenerationTask[]
+  renameBatch SyntheticRenameBatch?
 
   @@index([catalogId, createdAt])
   @@index([status, createdAt])
   @@index([createdByMappTeamId])
   @@index([sourceJobId])
   @@map("catalog_generation_job")
+}
+
+model SyntheticRenameBatch {
+  id                  Int       @id @default(autoincrement())
+  catalogId           Int       @map("catalog_id")
+  jobId               Int       @unique @map("job_id")
+  createdByMappTeamId Int?      @map("created_by_mapp_team_id")
+  instructionSnapshot Json      @map("instruction_snapshot")
+  scopeSnapshot       Json      @map("scope_snapshot")
+  model               String
+  status              String    @default("GENERATING")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  appliedAt           DateTime? @map("applied_at")
+  appliedByMappTeamId Int?      @map("applied_by_mapp_team_id")
+
+  catalog SyntheticCatalog      @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  job     CatalogGenerationJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  creator MappTeam?             @relation("SyntheticRenameBatchCreator", fields: [createdByMappTeamId], references: [id], onDelete: SetNull)
+  items   SyntheticRenameItem[]
+
+  @@index([catalogId, createdAt])
+  @@map("synthetic_rename_batch")
+}
+
+model SyntheticRenameItem {
+  id           Int       @id @default(autoincrement())
+  batchId      Int       @map("batch_id")
+  productId    Int       @map("product_id")
+  externalId   String    @map("external_id")
+  originalName String    @map("original_name")
+  proposedName String?   @map("proposed_name")
+  status       String    @default("QUEUED")
+  errorMessage String?   @map("error_message")
+  appliedAt    DateTime? @map("applied_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  batch   SyntheticRenameBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  product SyntheticProduct     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, productId])
+  @@index([batchId, status])
+  @@map("synthetic_rename_item")
 }
 
 model CatalogGenerationTask {

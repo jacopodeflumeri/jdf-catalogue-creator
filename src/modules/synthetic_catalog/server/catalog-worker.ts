@@ -14,6 +14,7 @@ import { generateStyleImage } from "./image-assets";
 import { isCatalogWorkerSchemaMissing } from "./worker-readiness";
 import { assertCatalogJobActive, CatalogJobCancelledError } from "./job-cancellation";
 import { REQUIRED_CORE_IMAGE_ROLES } from "../providers/image-generator";
+import { generateRenameProposals } from "./bulk-rename-worker";
 
 export const DEFAULT_WORKER_POLL_MS = 2_000;
 export const DEFAULT_WORKER_LEASE_MS = 30 * 60 * 1_000;
@@ -293,6 +294,10 @@ export class CatalogGenerationWorker {
             assertActive: () => assertCatalogJobActive(task.jobId),
           });
         }
+      } else if (task.taskType === "PROPOSE_PRODUCT_NAMES") {
+        const payload = task.payload && typeof task.payload === "object" && !Array.isArray(task.payload) ? task.payload as { batchId?: unknown; itemIds?: unknown } : {};
+        if (typeof payload.batchId !== "number" || !Array.isArray(payload.itemIds) || !payload.itemIds.every((id) => typeof id === "number")) throw new Error("Rename task is missing its persisted batch scope");
+        await generateRenameProposals(payload.batchId, payload.itemIds as number[]);
       } else {
         throw new Error(`Unsupported catalog task type ${task.taskType}`);
       }
@@ -318,6 +323,13 @@ export class CatalogGenerationWorker {
         error,
         this.retryDelayMs,
       );
+      const latestTask = await prisma.catalogGenerationTask.findUnique({ where: { id: task.id }, select: { status: true } });
+      if (latestTask?.status === "FAILED" && task.taskType === "PROPOSE_PRODUCT_NAMES") {
+        const payload = task.payload && typeof task.payload === "object" && !Array.isArray(task.payload) ? task.payload as { itemIds?: unknown } : {};
+        if (Array.isArray(payload.itemIds) && payload.itemIds.every((id) => typeof id === "number")) {
+          await prisma.syntheticRenameItem.updateMany({ where: { id: { in: payload.itemIds as number[] } }, data: { status: "FAILED", errorMessage: errorMessage(error) } });
+        }
+      }
     } finally {
       if (task.styleId != null) await refreshProductImageState(task.styleId);
       await refreshGenerationJobState(task.jobId);

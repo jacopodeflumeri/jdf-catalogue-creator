@@ -49,6 +49,8 @@ class MemoryStorage implements GeneratedAssetStorage {
     return data;
   }
 
+  async deleteExactKeys(_catalogSlug: string, keys: string[]) { for (const key of keys) this.objects.delete(key); return { deleted: keys.length, failed: 0 }; }
+
   getStablePublicUrl(publicId: string) {
     return `https://example.test/api/catalog-assets/${publicId}`;
   }

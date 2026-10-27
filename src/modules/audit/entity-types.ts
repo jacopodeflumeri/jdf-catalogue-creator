@@ -51,6 +51,10 @@ export const AUDIT_ENTITY_TYPES = [
     label: "Catalog Generation Job",
   },
   {
+    key: "synthetic_rename_batch",
+    label: "Synthetic Rename Batch",
+  },
+  {
     key: "synthetic_image_asset",
     label: "Synthetic Image",
   },

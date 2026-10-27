@@ -15,6 +15,7 @@ import { useConfirm } from "@/components/providers/ConfirmProvider";
 import NoticeBox from "@/components/ui/NoticeBox";
 import { archiveCatalogProductAction, restoreCatalogProductAction } from "@/modules/synthetic_catalog/server/admin-actions";
 import { buildProductHref, DEFAULT_PRODUCT_FILTERS, filtersFromSearch, getProductTaxonomyOptions, inProductStateScope, readFilterSession, reconcileProductFilters, resolveInitialProductFilters, serializeProductFilters, type ProductFilters, writeFilterSession } from "@/modules/synthetic_catalog/admin/product-filters";
+import BulkRenameModal from "./BulkRenameModal";
 
 function formatMoney(value: string, currency: string): string {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(value));
@@ -26,6 +27,7 @@ function titleCase(value: string): string {
 
 export default function ProductTable({
   catalogSlug,
+  catalogId,
   initialSearch,
   products,
   canEdit,
@@ -33,6 +35,7 @@ export default function ProductTable({
   onArchiveChanged,
 }: {
   catalogSlug: string;
+  catalogId: number;
   initialSearch: string;
   products: CatalogProductView[];
   canEdit: boolean;
@@ -49,6 +52,7 @@ export default function ProductTable({
   const recordState = filters.productState;
   const [pendingProductId, setPendingProductId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [showBulkRename, setShowBulkRename] = useState(false);
   const productsRef = useRef(products);
 
   function commitFilters(next: ProductFilters, mode: "push" | "replace" = "push") {
@@ -155,11 +159,12 @@ export default function ProductTable({
           <FormSelect label="Products" value={recordState} onChange={(event) => commitFilters(reconcileProductFilters(products, { ...filters, productState: event.target.value }))} options={[...(recordState !== "ACTIVE" && recordState !== "ARCHIVED" && recordState !== "all" ? [{ value: recordState, label: `Unavailable: ${recordState}` }] : []), { value: "ACTIVE", label: "Active" }, { value: "ARCHIVED", label: "Archived" }, { value: "all", label: "Active and archived" }]} />
           <div className="flex items-center justify-between gap-3 pb-0.5 xl:justify-end">
             <p className="text-sm text-[#1a1a1a]/55">{filtered.length} of {products.length} products</p>
-            {hasFilters && <Button variant="ghost" size="sm" onClick={resetFilters}>Clear</Button>}
+            <div className="flex gap-1">{canEdit && <Button variant="secondary" size="sm" onClick={() => setShowBulkRename(true)}>Bulk rename</Button>}{hasFilters && <Button variant="ghost" size="sm" onClick={resetFilters}>Clear</Button>}</div>
           </div>
         </div>
       </div>
       {message && <NoticeBox variant="error">{message}</NoticeBox>}
+      {canEdit && <BulkRenameModal open={showBulkRename} onClose={() => setShowBulkRename(false)} catalogId={catalogId} filteredProductIds={filtered.filter((product) => product.archivedAt == null).map((product) => product.id)} onApplied={onArchiveChanged} />}
 
       <div className="ds-table-shell overflow-hidden">
         <div className="overflow-x-auto">
