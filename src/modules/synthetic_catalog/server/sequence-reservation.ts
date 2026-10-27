@@ -19,10 +19,11 @@ export async function reserveProductSequenceRange(
 
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${catalogId} FOR UPDATE`;
-    const catalog = await tx.syntheticCatalog.findUniqueOrThrow({
-      where: { id: catalogId },
+    const catalog = await tx.syntheticCatalog.findFirst({
+      where: { id: catalogId, active: true },
       select: { nextProductSequence: true },
     });
+    if (!catalog) throw new Error("Catalogue is not active");
     if (count > POSTGRES_INT_MAX - catalog.nextProductSequence) {
       throw new Error(`Product sequence capacity exhausted: PostgreSQL Int supports values through ${POSTGRES_INT_MAX}`);
     }

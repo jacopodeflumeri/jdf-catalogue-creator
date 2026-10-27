@@ -15,7 +15,8 @@ export async function createCoreImagesJob(input: {
 }) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${input.catalogId} FOR UPDATE`;
-    const catalog = await tx.syntheticCatalog.findUniqueOrThrow({ where: { id: input.catalogId } });
+    const catalog = await tx.syntheticCatalog.findFirst({ where: { id: input.catalogId, active: true } });
+    if (!catalog) throw new Error("Catalogue is not active");
     const config = parseCatalogProfileConfig(catalog.config);
     if (!input.allMissing) {
       if (!input.sourceJobId) throw new Error("Choose a completed catalogue information job");

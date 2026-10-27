@@ -32,7 +32,7 @@ export interface CatalogValidationReport {
 async function loadCatalogExportSource(reference: string): Promise<CatalogExportSource | null> {
   const numericId = /^\d+$/.test(reference) ? Number(reference) : null;
   const catalog = await prisma.syntheticCatalog.findFirst({
-    where: numericId == null ? { slug: reference } : { id: numericId },
+    where: { ...(numericId == null ? { slug: reference } : { id: numericId }), active: true },
     include: {
       products: {
         where: { archivedAt: null },

@@ -50,9 +50,8 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   const scope = input.scope ?? (departmentMode === "AUTO" ? { type: "ALL" as const } : { type: "DEPARTMENT" as const, departmentKey: departmentMode });
   const colorVariantCount = input.colorVariantCount ?? 1;
   if (![1, 2, 3].includes(colorVariantCount)) throw new Error("Color variants must be 1, 2, or 3");
-  const catalog = await prisma.syntheticCatalog.findUniqueOrThrow({
-    where: { id: input.catalogId },
-  });
+  const catalog = await prisma.syntheticCatalog.findFirst({ where: { id: input.catalogId, active: true } });
+  if (!catalog) throw new Error("Catalogue is not active");
   const config = parseCatalogProfileConfig(catalog.config);
   const requestedProducts = scope.type === "ALL"
     ? config.assortmentPlan.reduce((sum, row) => sum + (row.departmentKey == null ? 0 : row.productCount), 0)
@@ -81,6 +80,9 @@ export async function createGenerationJob(input: CreateGenerationJobInput) {
   const plan = allocateDesignMix(assortment, config.designMix, seed);
 
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${catalog.id} FOR UPDATE`;
+    const activeCatalog = await tx.syntheticCatalog.findFirst({ where: { id: catalog.id, active: true } });
+    if (!activeCatalog) throw new Error("Catalogue is not active");
     const job = await tx.catalogGenerationJob.create({
       data: {
         catalogId: catalog.id,

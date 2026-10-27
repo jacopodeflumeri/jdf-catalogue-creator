@@ -30,7 +30,7 @@ import AdminLayoutClient from "../AdminLayoutClient";
 
 it("renders route children even while the client session is loading", () => {
   render(
-    <AdminLayoutClient userProfile={null}>
+    <AdminLayoutClient userProfile={null} catalogNavigation={[]}>
       <div>child-content</div>
     </AdminLayoutClient>,
   );

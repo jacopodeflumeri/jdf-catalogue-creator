@@ -25,8 +25,7 @@ included in the application image. Lookup uses the catalogue slug, never
 editable brand text; unavailable images fall back to the visible brand name.
 The supplied Activewear image wordmark reads `KINETIQ`, while the configured
 catalogue brand remains `Kinetic Form`; neither value is auto-renamed.
-The admin sidebar also links directly to Premium, Fast Fashion, Luxury, and
-Activewear using their stable profile slugs.
+The admin sidebar loads every active catalogue from the database in stable name/slug order, including custom catalogues; inactive deletion tombstones are omitted. Dashboard and LiteLLM Usage remain fixed links.
 `/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
 the full persisted product list in a table, job history, retry controls, and
 generation settings. The product table can be filtered by department, category,
@@ -808,3 +807,22 @@ other-catalogue logos remain prohibited.
 Complete the Look preserves fictional logo repeats and ordinary patterns
 already visible in product references. It adds no logo to an unassigned item
 and never replaces an ordinary pattern with a logo pattern.
+## Catalogue lifecycle
+
+Editors and administrators can create a catalogue from the New catalogue action on `/admin/catalogs`. The form captures catalogue name, brand name, segment, safe URL slug, three-letter external product prefix, and a configuration template. Active catalogues are the templates when any exist; otherwise the built-in profiles are offered. The parsed configuration is cloned, while products, styles, variants, jobs, generated images, and sequence state are not copied. New catalogues start active with product sequence 1. Unknown brand logo slugs continue to show the configured brand name.
+
+Catalogue creation requires editor access. Full deletion requires administrator access and exact typed confirmation using the catalogue name or slug. Deletion refuses while jobs or tasks are queued or running. It removes catalogue products and all cascading product data plus jobs/tasks, while keeping LiteLLM usage, audit history, and the inactive `SyntheticCatalog` row. That tombstone prevents a future seed from recreating a built-in catalogue with the same slug and keeps the audit entity identity stable. Seed updates preserve the existing `active` flag.
+
+Generated image cleanup captures exact non-null storage keys from the selected catalogue's image rows before deleting database rows. After the database transaction succeeds, cleanup accepts only keys under `public/catalogs/<exact-slug>/`; it never resolves or deletes a prefix. S3 delete calls are idempotent. A storage failure leaves the catalogue deleted and is reported and audited by failed-object count.
+
+The admin sidebar reads active catalogue names and slugs in the server layout, sorted by name and slug. It keeps Dashboard and LiteLLM Usage links and omits inactive tombstones.
+
+### Bulk product rename
+
+Bulk rename creates a persistent background preview using LiteLLM feature attribution `synthetic-catalog-bulk-product-name-preview`. It freezes the selected active product names and scope when queued, proposes names in conservative batches, and does not change products during preview. Editors review valid changed proposals and explicitly select which names to apply. Apply changes only `SyntheticProduct.name`, checks that each current name still matches its frozen original, and skips stale rows. Product IDs, SKUs, taxonomy, styles, variants, images, URLs, and Complete the Look relationships remain unchanged.
+
+### Admin cards
+
+Historical job cards and the four catalogue Settings cards can collapse independently. Their contents stay mounted while hidden so unfinished form edits remain in memory. Active generation progress remains expanded.
+
+The three primary actions in the manual workflow align on desktop using equal control regions. The cards stack naturally on mobile, and Step 2's missing-image action remains secondary.

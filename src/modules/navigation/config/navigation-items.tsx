@@ -17,26 +17,6 @@ export const ADMIN_NAVIGATION_ITEMS: NavigationItem[] = [
     icon: 'home'
   },
   {
-    name: 'Premium',
-    href: '/admin/catalogs/premium-apparel',
-    icon: 'fashion'
-  },
-  {
-    name: 'Fast Fashion',
-    href: '/admin/catalogs/fast-fashion',
-    icon: 'clothes'
-  },
-  {
-    name: 'Luxury',
-    href: '/admin/catalogs/luxury-fashion',
-    icon: 'dress'
-  },
-  {
-    name: 'Activewear',
-    href: '/admin/catalogs/activewear',
-    icon: 'lightning'
-  },
-  {
     name: 'LiteLLM Usage',
     href: '/admin/llm-usage',
     icon: 'chart'
@@ -148,10 +128,14 @@ export function createCustomerNavigationItems(
  */
 export function createNavigationItems(
   userType: 'customer' | 'admin',
-  customerAccount?: CustomerAccountData | null
+  customerAccount?: CustomerAccountData | null,
+  catalogNavigation: Array<{ slug: string; name: string }> = [],
 ): NavigationItem[] {
   if (userType === 'admin') {
-    return ADMIN_NAVIGATION_ITEMS;
+    const dashboard = ADMIN_NAVIGATION_ITEMS.find((item) => item.href === '/admin')!;
+    const usage = ADMIN_NAVIGATION_ITEMS.find((item) => item.href === '/admin/llm-usage')!;
+    const sortedCatalogs = [...catalogNavigation].sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
+    return [dashboard, ...sortedCatalogs.map((catalog) => ({ name: catalog.name, href: `/admin/catalogs/${encodeURIComponent(catalog.slug)}`, icon: 'fashion' })), usage];
   }
 
   return createCustomerNavigationItems(customerAccount);

@@ -7,6 +7,7 @@ jest.mock("next/image", () => ({ __esModule: true, default: (props: React.ImgHTM
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn() }) }));
 jest.mock("../AddProductsModal", () => () => null);
 jest.mock("../DownloadCsvButton", () => () => null);
+jest.mock("@/modules/synthetic_catalog/server/admin-actions", () => ({ createSyntheticCatalogAction: jest.fn() }));
 
 describe("catalogue logo placements", () => {
   it("renders the logo in the catalogue overview card while retaining the catalogue and brand names", () => {

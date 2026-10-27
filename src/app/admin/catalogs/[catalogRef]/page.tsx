@@ -32,5 +32,6 @@ export default async function CatalogDetailPage({
   if (!detail) notFound();
   const accessLevel = session.user.access ?? "viewer";
   const canEdit = session.user.isSuperAdmin === true || accessLevel === "editor" || accessLevel === "admin";
-  return <CatalogDetailClient initialDetail={detail} initialExportSummary={exportSummary} canEdit={canEdit} initialSearch={initialSearch.toString()} />;
+  const canDelete = session.user.isSuperAdmin === true || accessLevel === "admin";
+  return <CatalogDetailClient initialDetail={detail} initialExportSummary={exportSummary} canEdit={canEdit} canDelete={canDelete} initialSearch={initialSearch.toString()} />;
 }

@@ -511,6 +511,13 @@ export class S3ImageService {
     await this.s3Client.send(command);
   }
 
+  async deleteGeneratedCatalogObject(key: string): Promise<void> {
+    if (!key.startsWith("public/catalogs/") || key.includes("..") || key.includes("\\") || key.includes("*")) {
+      throw new Error("Generated catalog object key is invalid");
+    }
+    await this.deleteFromS3(key);
+  }
+
   /**
    * Extract S3 key from URL
    */

@@ -150,6 +150,7 @@ function jobView(job: {
         id: task.id,
         taskType: task.taskType,
         reference:
+          (task.taskType === "PROPOSE_PRODUCT_NAMES" ? "name proposal batch" : null) ??
           task.imageAsset?.role ??
           task.style?.externalId ??
           task.product?.externalId ??
@@ -295,7 +296,7 @@ export async function getCatalogDetail(reference: string): Promise<CatalogDetail
   const generationSettings = getCatalogGenerationSettings();
   const numericId = /^\d+$/.test(reference) ? Number(reference) : null;
   const catalog = await prisma.syntheticCatalog.findFirst({
-    where: numericId == null ? { slug: reference } : { id: numericId },
+    where: { ...(numericId == null ? { slug: reference } : { id: numericId }), active: true },
     include: {
       products: {
         orderBy: { sequence: "desc" },
@@ -350,7 +351,7 @@ export async function getCatalogProductDetail(
 ): Promise<CatalogProductDetailView | null> {
   const numericCatalogId = /^\d+$/.test(catalogReference) ? Number(catalogReference) : null;
   const catalog = await prisma.syntheticCatalog.findFirst({
-    where: numericCatalogId == null ? { slug: catalogReference } : { id: numericCatalogId },
+    where: { ...(numericCatalogId == null ? { slug: catalogReference } : { id: numericCatalogId }), active: true },
     select: { id: true, slug: true, name: true, segment: true, brandName: true },
   });
   if (!catalog) return null;
@@ -375,11 +376,13 @@ export async function enqueueImageRegeneration(imageAssetId: number, createdByMa
   return prisma.$transaction(async (tx) => {
     // Serialize requests for this asset so two near-simultaneous clicks cannot
     // both pass the active-task check and create duplicate LiteLLM spend.
+    await tx.$queryRaw`SELECT c.id FROM synthetic_catalog c JOIN synthetic_product p ON p.catalog_id = c.id JOIN synthetic_style s ON s.product_id = p.id JOIN synthetic_image_asset a ON a.style_id = s.id WHERE a.id = ${imageAssetId} FOR UPDATE OF c`;
     await tx.$queryRaw`SELECT id FROM synthetic_image_asset WHERE id = ${imageAssetId} FOR UPDATE`;
     const asset = await tx.syntheticImageAsset.findUniqueOrThrow({
       where: { id: imageAssetId },
       include: { style: { include: { product: { include: { catalog: true } } } } },
     });
+    if (!asset.style.product.catalog.active) throw new Error("Catalogue is not active");
     if (asset.style.product.archivedAt) throw new Error("Restore this product before regenerating its images");
     if (asset.role === "COMPLETE_LOOK") {
       const look = await tx.syntheticCompleteLook.findUnique({ where: { imageAssetId: asset.id } });

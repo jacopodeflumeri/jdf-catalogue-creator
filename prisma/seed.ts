@@ -354,7 +354,6 @@ async function main() {
         config: JSON.parse(JSON.stringify(config)),
         defaultTextModel: profile.defaultTextModel,
         defaultImageModel: profile.defaultImageModel,
-        active: true,
       },
       create: {
         slug: profile.slug,

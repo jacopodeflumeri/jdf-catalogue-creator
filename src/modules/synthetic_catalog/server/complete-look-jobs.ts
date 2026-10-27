@@ -13,7 +13,8 @@ function slotFor(product: { department: string; category: string; subcategory: s
 }
 
 async function calculate(catalogId: number, sourceJobId?: number) {
-  const catalog = await prisma.syntheticCatalog.findUniqueOrThrow({ where: { id: catalogId } });
+  const catalog = await prisma.syntheticCatalog.findFirst({ where: { id: catalogId, active: true } });
+  if (!catalog) throw new Error("Catalogue is not active");
   const config = parseCatalogProfileConfig(catalog.config);
   if (sourceJobId != null) {
     const source = await prisma.catalogGenerationJob.findUniqueOrThrow({ where: { id: sourceJobId } });
@@ -81,6 +82,8 @@ export async function createCompleteLookJob(input: { catalogId: number; sourceJo
   if (preflight.targetPlans.length === 0) throw new Error("No active styles are available for this Complete the Look target");
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${input.catalogId} FOR UPDATE`;
+    const activeCatalog = await tx.syntheticCatalog.findFirst({ where: { id: input.catalogId, active: true } });
+    if (!activeCatalog) throw new Error("Catalogue is not active");
     const [missingFront, missingBack] = await Promise.all([
       tx.syntheticStyle.count({ where: { product: { catalogId: input.catalogId, archivedAt: null }, NOT: { images: { some: { role: "FRONT", status: "READY" } } } } }),
       tx.syntheticStyle.count({ where: { product: { catalogId: input.catalogId, archivedAt: null }, NOT: { images: { some: { role: "BACK", status: "READY" } } } } }),

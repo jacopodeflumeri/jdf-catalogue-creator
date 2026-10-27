@@ -11,6 +11,7 @@ import AddProductsModal from "./AddProductsModal";
 import CatalogStatusBadge from "./CatalogStatusBadge";
 import DownloadCsvButton from "./DownloadCsvButton";
 import CatalogBrandLogo from "./CatalogBrandLogo";
+import NewCatalogModal from "./NewCatalogModal";
 
 export default function CatalogOverviewClient({
   initialCatalogs,
@@ -21,6 +22,7 @@ export default function CatalogOverviewClient({
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<CatalogOverviewView | null>(null);
+  const [creating, setCreating] = useState(false);
 
   function lastGeneration(catalog: CatalogOverviewView): string {
     const value = catalog.latestJob?.finishedAt ?? catalog.latestJob?.createdAt;
@@ -33,6 +35,7 @@ export default function CatalogOverviewClient({
       <PageHeader
         title="Synthetic Catalogs"
         description="Generate persistent fashion products, variants, and imagery through Mapp-attributed LiteLLM jobs."
+        actions={canEdit ? <Button onClick={() => setCreating(true)}><Icon type="plus" size="sm" /> New catalogue</Button> : undefined}
       />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {initialCatalogs.map((catalog) => (
@@ -90,6 +93,7 @@ export default function CatalogOverviewClient({
           if (slug) router.push(`/admin/catalogs/${slug}`);
         }}
       />
+      {canEdit && <NewCatalogModal open={creating} onClose={() => setCreating(false)} catalogs={initialCatalogs} />}
     </div>
   );
 }

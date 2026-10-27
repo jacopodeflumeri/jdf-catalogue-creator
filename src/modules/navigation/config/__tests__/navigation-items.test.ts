@@ -1,14 +1,10 @@
-import { ADMIN_NAVIGATION_ITEMS } from "../navigation-items";
+import { ADMIN_NAVIGATION_ITEMS, createNavigationItems } from "../navigation-items";
 
 describe("admin catalog navigation", () => {
-  it("links each catalog segment directly from the sidebar", () => {
-    expect(ADMIN_NAVIGATION_ITEMS).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "Premium", href: "/admin/catalogs/premium-apparel" }),
-        expect.objectContaining({ name: "Fast Fashion", href: "/admin/catalogs/fast-fashion" }),
-        expect.objectContaining({ name: "Luxury", href: "/admin/catalogs/luxury-fashion" }),
-        expect.objectContaining({ name: "Activewear", href: "/admin/catalogs/activewear" }),
-      ]),
-    );
+  it("preserves fixed links and inserts deterministic database catalogues", () => {
+    const items = createNavigationItems("admin", undefined, [{ slug: "z-custom", name: "Z Custom" }, { slug: "a-custom", name: "A Custom" }]);
+    expect(items.map(({ name }) => name)).toEqual(["Dashboard", "A Custom", "Z Custom", "LiteLLM Usage"]);
+    expect(items[2]).toEqual(expect.objectContaining({ name: "Z Custom", href: "/admin/catalogs/z-custom" }));
+    expect(ADMIN_NAVIGATION_ITEMS.map(({ href }) => href)).toEqual(["/admin", "/admin/llm-usage"]);
   });
 });

@@ -27,6 +27,7 @@ describe("generated asset storage", () => {
     const objects = {
       putObject: jest.fn().mockResolvedValue(undefined),
       getObjectBuffer: jest.fn(),
+      deleteObject: jest.fn().mockResolvedValue(undefined),
     };
     const storage = new S3GeneratedAssetStorage(objects, "https://catalogs.example.test");
     const stored = await storage.put({
@@ -50,5 +51,19 @@ describe("generated asset storage", () => {
       "image/webp",
       expect.objectContaining({ role: "FRONT", asset: "f71da8c8-29a4-4b3b-8859-212627f25c45" }),
     );
+  });
+
+  it("deletes only unique exact keys within the selected catalogue", async () => {
+    const objects = { putObject: jest.fn(), getObjectBuffer: jest.fn(), deleteObject: jest.fn().mockResolvedValue(undefined) };
+    const storage = new S3GeneratedAssetStorage(objects);
+    const result = await storage.deleteExactKeys("premium-apparel", [
+      "public/catalogs/premium-apparel/PRE-W-000001/front.webp",
+      "public/catalogs/premium-apparel/PRE-W-000001/front.webp",
+      "public/catalogs/other/PRE-W-000001/front.webp",
+      "public/catalogs/premium-apparel/../other.webp",
+    ]);
+    expect(result).toEqual({ deleted: 1, failed: 2 });
+    expect(objects.deleteObject).toHaveBeenCalledTimes(1);
+    expect(objects.deleteObject).toHaveBeenCalledWith("public/catalogs/premium-apparel/PRE-W-000001/front.webp");
   });
 });

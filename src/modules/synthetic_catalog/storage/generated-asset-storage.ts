@@ -21,6 +21,7 @@ export interface StoredGeneratedImage {
 export interface GeneratedAssetStorage {
   put(input: StoreGeneratedImageInput): Promise<StoredGeneratedImage>;
   get(storageKey: string): Promise<Buffer>;
+  deleteExactKeys(catalogSlug: string, storageKeys: string[]): Promise<{ deleted: number; failed: number }>;
   getStablePublicUrl(assetPublicId: string): string;
 }
 
@@ -32,6 +33,7 @@ interface GeneratedObjectStore {
     metadata?: Record<string, string>,
   ): Promise<void>;
   getObjectBuffer(key: string): Promise<Buffer>;
+  deleteObject(key: string): Promise<void>;
 }
 
 const defaultObjectStore: GeneratedObjectStore = {
@@ -47,6 +49,10 @@ const defaultObjectStore: GeneratedObjectStore = {
   async getObjectBuffer(key) {
     const { S3ImageService } = await import("@/modules/s3_images");
     return S3ImageService.getInstance().getGeneratedCatalogObjectBuffer(key);
+  },
+  async deleteObject(key) {
+    const { S3ImageService } = await import("@/modules/s3_images");
+    return S3ImageService.getInstance().deleteGeneratedCatalogObject(key);
   },
 };
 
@@ -121,6 +127,19 @@ export class S3GeneratedAssetStorage implements GeneratedAssetStorage {
 
   get(storageKey: string): Promise<Buffer> {
     return this.objects.getObjectBuffer(storageKey);
+  }
+
+  async deleteExactKeys(catalogSlug: string, storageKeys: string[]): Promise<{ deleted: number; failed: number }> {
+    if (!catalogSlug.split("-").every((part) => part.length > 0 && /^[a-z0-9]+$/.test(part))) throw new Error("Catalog slug is not safe for generated asset storage");
+    const prefix = `public/catalogs/${catalogSlug}/`;
+    const uniqueKeys = [...new Set(storageKeys)];
+    const keys = uniqueKeys.filter((key) => key.startsWith(prefix) && key.length > prefix.length && !key.includes("..") && !key.includes("\\") && !key.includes("*"));
+    let deleted = 0;
+    let failed = uniqueKeys.length - keys.length;
+    for (const key of keys) {
+      try { await this.objects.deleteObject(key); deleted += 1; } catch { failed += 1; }
+    }
+    return { deleted, failed };
   }
 
   getStablePublicUrl(assetPublicId: string): string {

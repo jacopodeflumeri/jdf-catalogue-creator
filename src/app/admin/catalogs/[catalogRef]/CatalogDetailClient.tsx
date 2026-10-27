@@ -13,6 +13,8 @@ import Icon from "@/components/ui/Icon";
 import NoticeBox from "@/components/ui/NoticeBox";
 import PageHeader from "@/components/ui/PageHeader";
 import Tabs from "@/components/ui/Tabs";
+import Modal from "@/components/ui/modal/Modal";
+import CollapsibleCard from "@/components/ui/CollapsibleCard";
 import { useConfirm } from "@/components/providers/ConfirmProvider";
 import type {
   CatalogDetailView,
@@ -30,6 +32,8 @@ import {
   createCoreImagesJobAction,
   retryCatalogGenerationJobAction,
   updateCatalogSettingsAction,
+  deleteFullCatalogAction,
+  getCatalogDeletionSummaryAction,
 } from "@/modules/synthetic_catalog/server/admin-actions";
 import type { CatalogExportSummary } from "@/modules/synthetic_catalog/export/upc-csv";
 import AddProductsModal from "../AddProductsModal";
@@ -38,6 +42,7 @@ import DownloadCsvButton, { DownloadValidationReportButton } from "../DownloadCs
 import ProductTable from "./ProductTable";
 import CatalogueMixEditor from "./CatalogueMixEditor";
 import DesignMixEditor from "./DesignMixEditor";
+import ManualCatalogWorkflow from "./ManualCatalogWorkflow";
 import CatalogBrandLogo from "../CatalogBrandLogo";
 
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
@@ -48,6 +53,11 @@ function formatDate(value: string | null): string {
 }
 
 function JobProgress({ job }: { job: CatalogJobView }) {
+  if (job.jobType === "BULK_RENAME") {
+    const settled = job.completedTasks + job.failedTasks;
+    const percent = job.totalTasks === 0 ? 0 : Math.round(settled / job.totalTasks * 100);
+    return <div className="space-y-3"><div className="flex items-center justify-between text-sm"><span className="font-medium">Name proposal progress</span><span>{settled}/{job.totalTasks} batches · {percent}%</span></div><div className="h-2 overflow-hidden rounded-full bg-white/55"><div className="h-full bg-primary" style={{ width: `${percent}%` }} /></div><p className="text-xs text-[#1a1a1a]/60">{job.requestedProducts} products requested · {job.completedTasks} proposal batches complete · {job.failedTasks} failed</p></div>;
+  }
   const expectedProducts = job.jobType === "CATALOG_INFO" || job.jobType === "INITIAL" || job.jobType === "ADD_PRODUCTS" ? job.requestedProducts : 0;
   const expectedImages = job.jobType === "REGENERATE_IMAGE" ? 1 : job.jobType === "CATALOG_INFO" ? 0 : job.jobType === "CORE_IMAGES" || job.jobType === "COMPLETE_LOOK" ? job.totalTasks : expectedProducts * job.colorVariantCount * 3;
   const settledProducts = job.completedProducts + job.failedProducts;
@@ -118,7 +128,7 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
   }
 
   return (
-    <div className="space-y-6"><Card title="Generation settings" description="Defaults apply to newly queued jobs; existing jobs retain their stored models.">
+    <div className="space-y-6"><CollapsibleCard title="Generation settings" description="Defaults apply to newly queued jobs; existing jobs retain their stored models.">
       <form className="space-y-5" onSubmit={submit}>
         <FormInput id="catalog-brand" label="Brand name" value={brandName} onChange={(event) => setBrandName(event.target.value)} disabled={!canEdit} />
         <div className="grid gap-5 md:grid-cols-2">
@@ -129,8 +139,8 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
         {message && <NoticeBox variant={message.kind}>{message.text}</NoticeBox>}
         {canEdit && <div className="flex justify-end"><Button type="submit" loading={busy}><Icon type="save" size="sm" /> Save settings</Button></div>}
       </form>
-    </Card>
-    <Card title="Departments" description="Departments keep stable keys, labels, and product ID codes.">
+    </CollapsibleCard>
+    <CollapsibleCard title="Departments" description="Departments keep stable keys, labels, and product ID codes.">
       {canEdit ? <div className="grid gap-6 xl:grid-cols-3">
         <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void addTaxonomy({ type: "DEPARTMENT", catalogId: detail.catalog.id, label: departmentLabel, code: departmentCode }); }}>
           <h4 className="font-semibold">Add department</h4>
@@ -141,7 +151,7 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
       </div> : <p className="text-sm text-[#1a1a1a]/55">You have read-only access to catalog taxonomy.</p>}
       {message && <div className="mt-4"><NoticeBox variant={message.kind}>{message.text}</NoticeBox></div>}
       <ul className="mt-6 grid gap-3 text-sm md:grid-cols-2">{detail.catalog.departments.map((item) => <li key={item.key} className="rounded-xl border border-white/60 bg-white/35 px-4 py-3">{item.label} · {item.key} · code {item.code}</li>)}</ul>
-    </Card>
+    </CollapsibleCard>
     <CatalogueMixEditor detail={detail} canEdit={canEdit} onSaved={onSaved} />
     <DesignMixEditor detail={detail} canEdit={canEdit} onSaved={onSaved} />
     </div>
@@ -152,11 +162,13 @@ export default function CatalogDetailClient({
   initialDetail,
   initialExportSummary,
   canEdit,
+  canDelete,
   initialSearch,
 }: {
   initialDetail: CatalogDetailView;
   initialExportSummary: CatalogExportSummary | null;
   canEdit: boolean;
+  canDelete: boolean;
   initialSearch: string;
 }) {
   const router = useRouter();
@@ -164,6 +176,10 @@ export default function CatalogDetailClient({
   const [detail, setDetail] = useState(initialDetail);
   const [exportSummary, setExportSummary] = useState(initialExportSummary);
   const [showAdd, setShowAdd] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteSummary, setDeleteSummary] = useState<Awaited<ReturnType<typeof getCatalogDeletionSummaryAction>>>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [busyJobId, setBusyJobId] = useState<number | null>(null);
   const [coreBusy, setCoreBusy] = useState(false);
   const [coreSourceJobId, setCoreSourceJobId] = useState("latest");
@@ -196,6 +212,20 @@ export default function CatalogDetailClient({
     setBusyJobId(null);
     if (!result.ok) setError(result.message ?? "Could not retry generation job");
     await refresh();
+  }
+
+  async function openDeleteDialog() {
+    const summary = await getCatalogDeletionSummaryAction(detail.catalog.id);
+    if (!summary) { setError("Catalogue is no longer available"); return; }
+    setDeleteSummary(summary); setDeleteConfirmation(""); setShowDelete(true);
+  }
+
+  async function deleteCatalog() {
+    setDeleteBusy(true);
+    const result = await deleteFullCatalogAction({ catalogId: detail.catalog.id, confirmation: deleteConfirmation });
+    setDeleteBusy(false);
+    if (!result.ok) { setError(result.message ?? "Could not delete catalogue"); return; }
+    setShowDelete(false); router.push("/admin/catalogs"); router.refresh();
   }
 
   async function startCoreImages(sourceJobId?: number, allMissing = false) {
@@ -281,6 +311,7 @@ export default function CatalogDetailClient({
       content: (
         <ProductTable
           catalogSlug={detail.catalog.slug}
+          catalogId={detail.catalog.id}
           initialSearch={initialSearch}
           products={detail.products}
           canEdit={canEdit}
@@ -294,7 +325,7 @@ export default function CatalogDetailClient({
       label: `Jobs (${detail.jobs.length})`,
       icon: <Icon type="clock" size="sm" />,
       content: <div className="mt-6 space-y-4">{detail.jobs.map((job) => (
-        <Card key={job.id} title={`${job.jobType.toLowerCase().replaceAll("_", " ")} · ${formatDate(job.createdAt)}`} headerActions={<CatalogStatusBadge status={job.status} />}>
+        <CollapsibleCard key={job.id} title={`${job.jobType === "BULK_RENAME" ? "Bulk rename preview" : job.jobType.toLowerCase().replaceAll("_", " ")} · ${formatDate(job.createdAt)}`} headerActions={<CatalogStatusBadge status={job.status} />}>
           <JobProgress job={job} />
           {(job.errorMessage || job.failedTaskDetails.length > 0) && (
             <NoticeBox variant="error" title="Generation failures">
@@ -322,13 +353,13 @@ export default function CatalogDetailClient({
             </NoticeBox>
           )}
           <div className="mt-4 flex items-center justify-between gap-4">
-            <p className="text-xs text-[#1a1a1a]/55">Scope: {job.scopeType === "LEGACY" ? job.departmentMode.toLowerCase() : job.scopeType === "ALL" ? "all catalogue" : `${job.scopeType.toLowerCase()}: ${job.scopeValue ?? ""}`} · {job.colorVariantCount} color(s) per product · Job {job.publicId}</p>
+            <p className="text-xs text-[#1a1a1a]/55">{job.jobType === "BULK_RENAME" ? `Scope: ${job.scopeType === "ALL_ACTIVE" ? "all active products" : "current filtered products"} · Job ${job.publicId}` : `Scope: ${job.scopeType === "LEGACY" ? job.departmentMode.toLowerCase() : job.scopeType === "ALL" ? "all catalogue" : `${job.scopeType.toLowerCase()}: ${job.scopeValue ?? ""}`} · ${job.colorVariantCount} color(s) per product · Job ${job.publicId}`}</p>
             <div className="flex gap-2">
               {canEdit && (job.status === "QUEUED" || job.status === "RUNNING") && <Button variant="danger" size="sm" loading={busyJobId === job.id} onClick={() => void stop(job)}><Icon type="warning" size="sm" /> Stop</Button>}
               {canEdit && (job.status === "FAILED" || job.status === "COMPLETED_WITH_ERRORS") && <Button variant="secondary" size="sm" loading={busyJobId === job.id} onClick={() => void retry(job.id)}><Icon type="refresh" size="sm" /> Retry failures</Button>}
             </div>
           </div>
-        </Card>
+        </CollapsibleCard>
       ))}</div>,
     },
     {
@@ -401,8 +432,11 @@ export default function CatalogDetailClient({
         title={detail.catalog.name}
         description={`${detail.catalog.brandName} · ${detail.catalog.externalPrefix} · ${detail.catalog.segment}`}
         leadingVisual={<CatalogBrandLogo slug={detail.catalog.slug} brandName={detail.catalog.brandName} size="header" />}
-        actions={<><Button variant="secondary" onClick={() => router.push("/admin/catalogs")}><Icon type="arrow-left" size="sm" /> All catalogs</Button>{canEdit && <Button onClick={() => setShowAdd(true)}><Icon type="plus" size="sm" /> Generate catalogue information</Button>}</>}
+        actions={<><Button variant="secondary" onClick={() => router.push("/admin/catalogs")}><Icon type="arrow-left" size="sm" /> All catalogs</Button>{canDelete && <Button variant="danger" onClick={() => void openDeleteDialog()}>Delete full catalogue</Button>}{canEdit && <Button onClick={() => setShowAdd(true)}><Icon type="plus" size="sm" /> Generate catalogue information</Button>}</>}
       />
+      <Modal isOpen={showDelete} onClose={() => !deleteBusy && setShowDelete(false)} title="Delete full catalogue" size="md" footer={<div className="flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowDelete(false)} disabled={deleteBusy}>Cancel</Button><Button variant="danger" disabled={!deleteSummary || (deleteConfirmation !== deleteSummary.name && deleteConfirmation !== deleteSummary.slug)} loading={deleteBusy} onClick={() => void deleteCatalog()}>Delete catalogue data</Button></div>}>
+        {deleteSummary && <div className="space-y-4"><NoticeBox variant="error" title="Permanent deletion">Catalogue products and related records will be permanently deleted. The inactive catalogue record remains to prevent seed profiles from recreating it.</NoticeBox><dl className="grid grid-cols-2 gap-2 text-sm">{[["Active products", deleteSummary.activeProducts], ["Archived products", deleteSummary.archivedProducts], ["Styles", deleteSummary.styles], ["Variants", deleteSummary.variants], ["Image assets", deleteSummary.imageAssets], ["Complete the Look", deleteSummary.completeLooks], ["Jobs", deleteSummary.jobs], ["Tasks", deleteSummary.tasks]].map(([label, count]) => <div key={label} className="rounded-lg bg-white/35 p-3"><dt className="text-[#1a1a1a]/60">{label}</dt><dd className="font-semibold">{count}</dd></div>)}</dl><FormInput id="delete-catalog-confirm" label={`Type “${deleteSummary.name}” or “${deleteSummary.slug}” to confirm`} value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} autoComplete="off" /></div>}
+      </Modal>
       {error && <NoticeBox variant="error">{error}</NoticeBox>}
       {lookGateIssues.length > 0 && <NoticeBox variant="warning" title="Full-catalogue core image gate"><p className="mb-2">Every active style needs READY FRONT and BACK images. Showing the first {lookGateIssues.length} affected styles:</p><ul className="list-disc space-y-1 pl-5">{lookGateIssues.map((item) => <li key={item.styleId}><Link className="font-medium underline" href={`/admin/catalogs/${detail.catalog.slug}/products/${item.productExternalId}`}>{item.styleExternalId}</Link>: missing {item.missingRoles.join(", ")}{item.failedRoles.length ? ` (failed: ${item.failedRoles.join(", ")})` : ""}</li>)}</ul><p className="mt-2">Run Step 2 “All products missing core images” to repair these styles.</p></NoticeBox>}
       {success && <NoticeBox variant="success">{success}</NoticeBox>}
@@ -415,13 +449,22 @@ export default function CatalogDetailClient({
           ["Failed images", detail.counts.failedImages],
         ].map(([label, value]) => <Card key={label} className="text-center"><p className="text-3xl font-bold text-[#1a1a1a]">{value}</p><p className="text-xs font-medium text-[#1a1a1a]/55">{label}</p></Card>)}
       </div>
-      <Card title="Manual catalogue workflow" description="Run each stage when you are ready. Catalogue information creates no images.">
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-white/70 bg-white/30 p-4"><p className="text-xs font-semibold uppercase text-[#1a1a1a]/55">Step 1</p><p className="mt-1 font-semibold">Catalogue information</p><p className="mt-2 text-sm text-[#1a1a1a]/65">Generate products, colour styles, and size/inventory rows.</p>{canEdit && <Button className="mt-3" size="sm" onClick={() => setShowAdd(true)}><Icon type="plus" size="sm" /> Generate information</Button>}</div>
-          <div className="rounded-xl border border-white/70 bg-white/30 p-4"><p className="text-xs font-semibold uppercase text-[#1a1a1a]/55">Step 2</p><p className="mt-1 font-semibold">Core images</p><p className="mt-2 text-sm text-[#1a1a1a]/65">Two product images per colour style: FRONT and BACK.</p><p className="mt-2 text-xs text-[#1a1a1a]/60">Ready {detail.counts.readyCoreImages} · Pending {detail.counts.pendingCoreImages} · Failed {detail.counts.failedCoreImages}</p>{canEdit && <div className="mt-3 space-y-2">{completedInfoJobs.length > 0 && <FormSelect label="Step 1 batch" value={coreSourceJobId === "latest" ? String(completedInfoJobs[0]!.id) : coreSourceJobId} onChange={(event) => setCoreSourceJobId(event.target.value)} options={completedInfoJobs.map((job) => ({ value: String(job.id), label: `Batch ${formatDate(job.createdAt)} · ${job.informationReadyProducts} products / ${job.informationReadyStyles} styles` }))} />}<div className="flex flex-wrap gap-2"><Button size="sm" loading={coreBusy} disabled={!selectedCoreSource} onClick={() => selectedCoreSource && void startCoreImages(selectedCoreSource.id)}>{selectedCoreSource ? "Generate batch core images" : "Waiting for Step 1"}</Button><Button variant="secondary" size="sm" loading={coreBusy} onClick={() => void startCoreImages(selectedCoreSource?.id, true)}>All products missing core images</Button></div></div>}</div>
-          <div className="rounded-xl border border-white/70 bg-white/30 p-4"><p className="text-xs font-semibold uppercase text-[#1a1a1a]/55">Step 3</p><p className="mt-1 font-semibold">Complete the Look</p><p className="mt-2 text-sm text-[#1a1a1a]/65">One model-worn outfit image and persisted companion recommendation per colour style.</p>{canEdit && <div className="mt-3 space-y-2"><FormSelect label="Target" value={lookTarget} onChange={(event) => setLookTarget(event.target.value)} options={[{ value: "ALL", label: "All eligible active catalogue products" }, ...completedInfoJobs.map((job) => ({ value: String(job.id), label: `Information batch ${formatDate(job.createdAt)}` }))]} /><Button size="sm" loading={lookBusy} onClick={() => void startCompleteLooks()}>Generate Complete the Look</Button></div>}{!canEdit && <p className="mt-3 text-xs text-[#1a1a1a]/55">Editors can start this step after the full catalogue has ready FRONT and BACK images.</p>}</div>
-        </div>
-      </Card>
+      <ManualCatalogWorkflow
+        canEdit={canEdit}
+        jobs={completedInfoJobs}
+        coreSourceJobId={coreSourceJobId === "latest" ? String(completedInfoJobs[0]?.id ?? "") : coreSourceJobId}
+        onCoreSourceJobChange={setCoreSourceJobId}
+        canStartCoreImages={Boolean(selectedCoreSource)}
+        coreBusy={coreBusy}
+        lookBusy={lookBusy}
+        lookTarget={lookTarget}
+        onLookTargetChange={setLookTarget}
+        onGenerateInformation={() => setShowAdd(true)}
+        onStartCoreImages={() => selectedCoreSource && void startCoreImages(selectedCoreSource.id)}
+        onStartAllMissingImages={() => void startCoreImages(selectedCoreSource?.id, true)}
+        onStartCompleteLooks={() => void startCompleteLooks()}
+        counts={detail.counts}
+      />
       {activeJobs.map((job) => <Card key={job.id} title="Generation in progress" description={`Job ${job.publicId}`} headerActions={<CatalogStatusBadge status={job.status} />}><JobProgress job={job} /></Card>)}
       <Tabs tabs={tabs} defaultTab="products" />
       <AddProductsModal key={showAdd ? detail.catalog.id : "closed"} catalog={showAdd ? detail.catalog : null} onClose={() => setShowAdd(false)} onCreated={async () => { setShowAdd(false); await refresh(); }} />

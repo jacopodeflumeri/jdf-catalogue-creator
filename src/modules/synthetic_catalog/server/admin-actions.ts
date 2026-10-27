@@ -1,6 +1,7 @@
 "use server";
 
 import type { Prisma } from "@/generated/prisma/client";
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma/client";
 import { requireAdmin } from "@/modules/auth/server";
@@ -18,6 +19,9 @@ import type {
   CatalogProductDetailView,
 } from "../admin/types";
 import { parseCatalogProfileConfig } from "../config/profiles";
+import { CATALOG_PROFILES } from "../config/profiles";
+import { S3GeneratedAssetStorage } from "../storage/generated-asset-storage";
+import { BULK_RENAME_CHUNK_SIZE } from "./bulk-rename-worker";
 import { addCatalogDepartment } from "../config/taxonomy";
 import { cancelGenerationJob, createGenerationJob, resumeGenerationJob } from "./generation-jobs";
 import {
@@ -46,6 +50,167 @@ function revalidateCatalog(slug: string): void {
   revalidatePath("/admin");
   revalidatePath("/admin/catalogs");
   revalidatePath(`/admin/catalogs/${slug}`);
+}
+
+function isSafeCatalogSlug(value: string): boolean {
+  return value.length > 0 && value.length <= 80 && value.split("-").every((part) => part.length > 0 && /^[a-z0-9]+$/.test(part));
+}
+
+const createCatalogInputSchema = z.object({
+  name: z.string().trim().min(2).max(100), brandName: z.string().trim().min(2).max(80),
+  segment: z.string().trim().min(2).max(80), slug: z.string().trim().toLowerCase().refine(isSafeCatalogSlug, "Use lowercase letters and numbers separated by single hyphens").max(80),
+  externalPrefix: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/), template: z.string().trim().min(1),
+});
+
+export async function getCatalogTemplatesAction() {
+  await requireAdmin({});
+  const active = await prisma.syntheticCatalog.findMany({ where: { active: true }, select: { slug: true, name: true, config: true, defaultTextModel: true, defaultImageModel: true }, orderBy: [{ name: "asc" }, { slug: "asc" }] });
+  if (active.length) return active.map((item) => ({ id: `catalog:${item.slug}`, label: item.name }));
+  return CATALOG_PROFILES.map((item) => ({ id: `profile:${item.slug}`, label: item.name }));
+}
+
+export async function createSyntheticCatalogAction(input: unknown): Promise<CatalogActionResult & { slug?: string }> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const values = createCatalogInputSchema.parse(input);
+    const duplicate = await prisma.syntheticCatalog.findFirst({ where: { OR: [{ slug: values.slug }, { externalPrefix: values.externalPrefix }] }, select: { id: true, slug: true, externalPrefix: true } });
+    if (duplicate?.slug === values.slug) throw new Error("A catalogue with this slug already exists");
+    if (duplicate?.externalPrefix === values.externalPrefix) throw new Error("This external product prefix is already in use");
+    const active = await prisma.syntheticCatalog.findMany({ where: { active: true }, select: { slug: true, config: true, defaultTextModel: true, defaultImageModel: true } });
+    let config: unknown; let textModel: string; let imageModel: string;
+    if (active.length) {
+      if (!values.template.startsWith("catalog:")) throw new Error("Choose an active catalogue as the configuration template");
+      const template = active.find((item) => item.slug === values.template.slice("catalog:".length));
+      if (!template) throw new Error("The selected catalogue template is no longer active");
+      config = parseCatalogProfileConfig(template.config); textModel = template.defaultTextModel; imageModel = template.defaultImageModel;
+    } else {
+      if (!values.template.startsWith("profile:")) throw new Error("Choose a built-in profile as the configuration template");
+      const template = CATALOG_PROFILES.find((item) => item.slug === values.template.slice("profile:".length));
+      if (!template) throw new Error("The selected built-in profile does not exist");
+      config = parseCatalogProfileConfig(template.config); textModel = template.defaultTextModel; imageModel = template.defaultImageModel;
+    }
+    const catalog = await prisma.syntheticCatalog.create({ data: { slug: values.slug, name: values.name, brandName: values.brandName, segment: values.segment, externalPrefix: values.externalPrefix, config: JSON.parse(JSON.stringify(config)) as Prisma.InputJsonValue, defaultTextModel: textModel, defaultImageModel: imageModel, nextProductSequence: 1, active: true } });
+    await writeAuditLog({ ...sessionAuditActor(session), action: "catalogue_created", entityType: "synthetic_catalog", entityId: catalog.id, message: `Created catalogue ${catalog.name}`, data: { slug: catalog.slug, externalPrefix: catalog.externalPrefix } });
+    revalidateCatalog(catalog.slug); revalidatePath("/admin", "layout");
+    return { ok: true, slug: catalog.slug };
+  } catch (error) { return errorResult(error); }
+}
+
+export async function getCatalogDeletionSummaryAction(catalogId: number) {
+  await requireAdmin({ requireAdminAccess: true });
+  const id = positiveIdSchema.parse(catalogId);
+  const catalog = await prisma.syntheticCatalog.findFirst({ where: { id, active: true }, select: { id: true, slug: true, name: true } });
+  if (!catalog) return null;
+  const [activeProducts, archivedProducts, styles, variants, imageAssets, completeLooks, jobs, tasks] = await Promise.all([
+    prisma.syntheticProduct.count({ where: { catalogId: id, archivedAt: null } }), prisma.syntheticProduct.count({ where: { catalogId: id, archivedAt: { not: null } } }),
+    prisma.syntheticStyle.count({ where: { product: { catalogId: id } } }), prisma.syntheticVariant.count({ where: { style: { product: { catalogId: id } } } }),
+    prisma.syntheticImageAsset.count({ where: { style: { product: { catalogId: id } } } }), prisma.syntheticCompleteLook.count({ where: { anchorStyle: { product: { catalogId: id } } } }),
+    prisma.catalogGenerationJob.count({ where: { catalogId: id } }), prisma.catalogGenerationTask.count({ where: { job: { catalogId: id } } }),
+  ]);
+  return { ...catalog, activeProducts, archivedProducts, styles, variants, imageAssets, completeLooks, jobs, tasks };
+}
+
+export async function deleteFullCatalogAction(input: { catalogId: number; confirmation: string }): Promise<CatalogActionResult> {
+  const session = await requireAdmin({ requireAdminAccess: true });
+  try {
+    const catalogId = positiveIdSchema.parse(input.catalogId);
+    const locked = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${catalogId} FOR UPDATE`;
+      const catalog = await tx.syntheticCatalog.findFirst({ where: { id: catalogId, active: true } });
+      if (!catalog) throw new Error("This catalogue is already deleted or unavailable");
+      if (input.confirmation !== catalog.name && input.confirmation !== catalog.slug) throw new Error("Type the exact catalogue name or slug to confirm deletion");
+      const activeWork = await tx.catalogGenerationJob.findFirst({ where: { catalogId, OR: [{ status: { in: ["QUEUED", "RUNNING"] } }, { tasks: { some: { status: { in: ["QUEUED", "RUNNING"] } } } }] }, select: { id: true } });
+      if (activeWork) throw new Error("Stop active catalogue work before deleting this catalogue");
+      const [imageRows, activeProducts, archivedProducts, styles, variants, imageAssets, completeLooks, jobs, tasks] = await Promise.all([
+        tx.syntheticImageAsset.findMany({ where: { style: { product: { catalogId } } }, select: { storageKey: true } }),
+        tx.syntheticProduct.count({ where: { catalogId, archivedAt: null } }), tx.syntheticProduct.count({ where: { catalogId, archivedAt: { not: null } } }),
+        tx.syntheticStyle.count({ where: { product: { catalogId } } }), tx.syntheticVariant.count({ where: { style: { product: { catalogId } } } }),
+        tx.syntheticImageAsset.count({ where: { style: { product: { catalogId } } } }), tx.syntheticCompleteLook.count({ where: { anchorStyle: { product: { catalogId } } } }),
+        tx.catalogGenerationJob.count({ where: { catalogId } }), tx.catalogGenerationTask.count({ where: { job: { catalogId } } }),
+      ]);
+      const keys = imageRows.flatMap((row) => row.storageKey ? [row.storageKey] : []);
+      await tx.syntheticCatalog.update({ where: { id: catalogId }, data: { active: false } });
+      await tx.syntheticRenameBatch.deleteMany({ where: { catalogId } });
+      await tx.catalogGenerationJob.deleteMany({ where: { catalogId } });
+      await tx.syntheticProduct.deleteMany({ where: { catalogId } });
+      return { catalog, keys, counts: { activeProducts, archivedProducts, styles, variants, imageAssets, completeLooks, jobs, tasks } };
+    });
+    const cleanup = await new S3GeneratedAssetStorage().deleteExactKeys(locked.catalog.slug, locked.keys);
+    await writeAuditLog({ ...sessionAuditActor(session), action: "catalogue_deleted", entityType: "synthetic_catalog", entityId: catalogId, message: `Permanently deleted catalogue data for ${locked.catalog.name}${cleanup.failed ? `; ${cleanup.failed} image object deletions failed` : ""}`, data: { catalogId, ...locked.counts, deletedImageObjects: cleanup.deleted, failedImageObjects: cleanup.failed } });
+    revalidateCatalog(locked.catalog.slug); revalidatePath("/admin", "layout");
+    return { ok: true, message: cleanup.failed ? `Catalogue deleted. ${cleanup.failed} image object(s) could not be removed from storage.` : "Catalogue deleted." };
+  } catch (error) { return errorResult(error); }
+}
+
+const bulkRenameInputSchema = z.object({ catalogId: z.number().int().positive(), scope: z.enum(["FILTERED", "ALL_ACTIVE"]), productIds: z.array(z.number().int().positive()).max(10000), preset: z.enum(["REMOVE_BRAND", "REMOVE_COLOUR", "REMOVE_BRAND_AND_COLOUR", "CUSTOM"]), customInstruction: z.string().trim().max(1000).optional() }).superRefine((input, ctx) => {
+  if (input.scope === "FILTERED" && input.productIds.length === 0) ctx.addIssue({ code: "custom", path: ["productIds"], message: "The filtered scope has no active products" });
+  if (input.preset === "CUSTOM" && !input.customInstruction?.trim()) ctx.addIssue({ code: "custom", path: ["customInstruction"], message: "Enter a custom naming instruction" });
+  if (new Set(input.productIds).size !== input.productIds.length) ctx.addIssue({ code: "custom", path: ["productIds"], message: "Product IDs must be unique" });
+});
+
+const RENAME_INSTRUCTIONS = { REMOVE_BRAND: "Remove the brand name from each product name.", REMOVE_COLOUR: "Remove colour references from each product name.", REMOVE_BRAND_AND_COLOUR: "Remove the brand name and colour references from each product name.", CUSTOM: "" } as const;
+
+export async function createBulkRenamePreviewAction(input: unknown): Promise<CatalogActionResult & { batchId?: number }> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const values = bulkRenameInputSchema.parse(input);
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM synthetic_catalog WHERE id = ${values.catalogId} FOR UPDATE`;
+      const catalog = await tx.syntheticCatalog.findFirst({ where: { id: values.catalogId, active: true } });
+      if (!catalog) throw new Error("Catalogue is not active");
+      const products = await tx.syntheticProduct.findMany({ where: { catalogId: catalog.id, archivedAt: null, ...(values.scope === "FILTERED" ? { id: { in: values.productIds } } : {}) }, select: { id: true, externalId: true, name: true }, orderBy: { id: "asc" } });
+      if (values.scope === "FILTERED" && products.length !== values.productIds.length) throw new Error("One or more selected products do not belong to this active catalogue");
+      if (!products.length) throw new Error("There are no active products in this scope");
+      const instruction = values.preset === "CUSTOM" ? values.customInstruction!.trim() : RENAME_INSTRUCTIONS[values.preset];
+      const job = await tx.catalogGenerationJob.create({ data: { catalogId: catalog.id, createdByMappTeamId: adminId(session), jobType: "BULK_RENAME", requestedProducts: products.length, departmentMode: "AUTO", scopeType: values.scope, scopeValue: null, colorVariantCount: 0, textModel: catalog.defaultTextModel, imageModel: catalog.defaultImageModel, stage: "PRODUCTS" } });
+      const batch = await tx.syntheticRenameBatch.create({ data: { catalogId: catalog.id, jobId: job.id, createdByMappTeamId: adminId(session), instructionSnapshot: { preset: values.preset, instruction }, scopeSnapshot: { type: values.scope, productIds: products.map((product) => product.id) }, model: catalog.defaultTextModel, items: { create: products.map((product) => ({ productId: product.id, externalId: product.externalId, originalName: product.name })) } }, include: { items: { select: { id: true } } } });
+      const tasks = [];
+      for (let i = 0; i < batch.items.length; i += BULK_RENAME_CHUNK_SIZE) {
+        const itemIds = batch.items.slice(i, i + BULK_RENAME_CHUNK_SIZE).map((item) => item.id);
+        tasks.push({ taskType: "PROPOSE_PRODUCT_NAMES" as const, dedupeKey: `rename:${batch.id}:${i / BULK_RENAME_CHUNK_SIZE}`, payload: { batchId: batch.id, itemIds } });
+      }
+      await tx.catalogGenerationTask.createMany({ data: tasks.map((task) => ({ ...task, jobId: job.id })) });
+      return { catalog, batch, job };
+    });
+    await writeAuditLog({ ...sessionAuditActor(session), action: "bulk_rename_preview_requested", entityType: "catalog_generation_job", entityId: result.job.id, message: `Requested name preview for ${result.batch.items.length} products in ${result.catalog.name}`, data: { catalogId: result.catalog.id, batchId: result.batch.id, requestedCount: result.batch.items.length, scope: values.scope, preset: values.preset } });
+    revalidateCatalog(result.catalog.slug);
+    return { ok: true, jobId: result.job.id, batchId: result.batch.id };
+  } catch (error) { return errorResult(error); }
+}
+
+export async function getBulkRenameBatchAction(batchId: number) {
+  await requireAdmin({});
+  const id = positiveIdSchema.parse(batchId);
+  const batch = await prisma.syntheticRenameBatch.findUnique({ where: { id }, include: { catalog: { select: { active: true, slug: true } }, job: { select: { status: true, textModel: true } }, items: { orderBy: { id: "asc" }, include: { product: { select: { department: true, category: true, subcategory: true } } } } } });
+  if (!batch?.catalog.active) return null;
+  return { id: batch.id, catalogSlug: batch.catalog.slug, status: batch.status, jobStatus: batch.job.status, model: batch.model, items: batch.items.map((item) => ({ id: item.id, productId: item.productId, externalId: item.externalId, originalName: item.originalName, proposedName: item.proposedName, status: item.status, errorMessage: item.errorMessage, department: item.product.department, category: item.product.category, subcategory: item.product.subcategory })) };
+}
+
+export async function applyBulkRenameAction(input: { batchId: number; itemIds: number[] }): Promise<CatalogActionResult> {
+  const session = await requireAdmin({ requireEditorAccess: true });
+  try {
+    const batchId = positiveIdSchema.parse(input.batchId);
+    const itemIds = z.array(positiveIdSchema).min(1).max(10000).parse(input.itemIds);
+    if (new Set(itemIds).size !== itemIds.length) throw new Error("Selected proposal IDs must be unique");
+    const result = await prisma.$transaction(async (tx) => {
+      const batch = await tx.syntheticRenameBatch.findUnique({ where: { id: batchId }, include: { catalog: true } });
+      if (!batch?.catalog.active) throw new Error("Rename preview is no longer available");
+      if (batch.appliedAt) throw new Error("This rename preview has already been applied");
+      const items = await tx.syntheticRenameItem.findMany({ where: { batchId, id: { in: itemIds }, status: "READY" } });
+      if (items.length !== itemIds.length) throw new Error("One or more selected proposals are unavailable");
+      let applied = 0; let stale = 0;
+      for (const item of items) {
+        const updated = await tx.syntheticProduct.updateMany({ where: { id: item.productId, catalogId: batch.catalogId, archivedAt: null, name: item.originalName }, data: { name: item.proposedName! } });
+        if (updated.count) { applied += 1; await tx.syntheticRenameItem.update({ where: { id: item.id }, data: { status: "APPLIED", appliedAt: new Date() } }); }
+        else { stale += 1; await tx.syntheticRenameItem.update({ where: { id: item.id }, data: { status: "STALE" } }); }
+      }
+      await tx.syntheticRenameBatch.update({ where: { id: batch.id }, data: { status: "APPLIED", appliedAt: new Date(), appliedByMappTeamId: adminId(session) } });
+      return { catalog: batch.catalog, requested: itemIds.length, applied, stale, unchanged: await tx.syntheticRenameItem.count({ where: { batchId, status: "UNCHANGED" } }), failed: await tx.syntheticRenameItem.count({ where: { batchId, status: "FAILED" } }) };
+    });
+    await writeAuditLog({ ...sessionAuditActor(session), action: "bulk_rename_applied", entityType: "synthetic_rename_batch", entityId: batchId, message: `Applied ${result.applied} product name changes in ${result.catalog.name}`, data: { batchId, catalogId: result.catalog.id, requestedCount: result.requested, appliedCount: result.applied, unchangedCount: result.unchanged, staleCount: result.stale, failedCount: result.failed } });
+    revalidateCatalog(result.catalog.slug);
+    return { ok: true, message: `Applied ${result.applied}; stale ${result.stale}.` };
+  } catch (error) { return errorResult(error); }
 }
 
 export async function getCatalogDetailAction(reference: string): Promise<CatalogDetailView | null> {
