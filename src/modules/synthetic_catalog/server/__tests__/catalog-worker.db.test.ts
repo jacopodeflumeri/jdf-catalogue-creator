@@ -229,6 +229,49 @@ describe("catalog generation worker", () => {
     );
   });
 
+  it("does not strand queued bulk rename chunks after the first chunk completes", async () => {
+    const catalog = await createTestCatalog();
+    const job = await prisma.catalogGenerationJob.create({
+      data: {
+        catalogId: catalog.id,
+        jobType: "BULK_RENAME",
+        requestedProducts: 40,
+        departmentMode: "AUTO",
+        scopeType: "ALL_ACTIVE",
+        colorVariantCount: 0,
+        textModel: catalog.defaultTextModel,
+        imageModel: catalog.defaultImageModel,
+        stage: "PRODUCTS",
+        status: "RUNNING",
+        tasks: {
+          create: [
+            {
+              taskType: "PROPOSE_PRODUCT_NAMES",
+              dedupeKey: "rename:test:0",
+              status: "COMPLETED",
+            },
+            {
+              taskType: "PROPOSE_PRODUCT_NAMES",
+              dedupeKey: "rename:test:1",
+              status: "QUEUED",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(await refreshGenerationJobState(job.id)).toEqual(expect.objectContaining({
+      status: "RUNNING",
+      stage: "PRODUCTS",
+      finishedAt: null,
+    }));
+    expect(await claimNextCatalogTask("rename-next-chunk")).toEqual(expect.objectContaining({
+      jobId: job.id,
+      taskType: "PROPOSE_PRODUCT_NAMES",
+      status: "RUNNING",
+    }));
+  });
+
   it("retries transient failures within the task limit", async () => {
     const catalog = await createTestCatalog();
     const job = await createGenerationJob({

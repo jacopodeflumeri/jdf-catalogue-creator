@@ -1,8 +1,8 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
 import { parseCatalogProfileConfig } from "../config/profiles";
+import { assertJobTransition, deriveCatalogJobProgress } from "../domain/job-state";
 import { formatProductId, formatStyleId, formatVariantId } from "../domain/ids";
-import { assertJobTransition } from "../domain/job-state";
 import {
   planAssortment,
   allocateDesignMix,
@@ -256,58 +256,34 @@ export async function refreshGenerationJobState(jobId: number) {
     // a later COMPLETED update.
     await tx.$queryRaw`SELECT id FROM catalog_generation_job WHERE id = ${jobId} FOR UPDATE`;
     const job = await tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
-    const taskCount = (
-      taskType: "GENERATE_PRODUCT" | "GENERATE_IMAGE" | "VALIDATE_PRODUCT",
-      status: "COMPLETED" | "FAILED" | { in: ("QUEUED" | "RUNNING")[] },
-    ) => tx.catalogGenerationTask.count({ where: { jobId, taskType, status } });
-    const [
-      completedProducts,
-      failedProducts,
-      pendingProducts,
-      completedImages,
-      failedImages,
-      pendingImages,
-      failedValidation,
-      pendingValidation,
-    ] = await Promise.all([
-      taskCount("GENERATE_PRODUCT", "COMPLETED"),
-      taskCount("GENERATE_PRODUCT", "FAILED"),
-      taskCount("GENERATE_PRODUCT", { in: ["QUEUED", "RUNNING"] }),
-      taskCount("GENERATE_IMAGE", "COMPLETED"),
-      taskCount("GENERATE_IMAGE", "FAILED"),
-      taskCount("GENERATE_IMAGE", { in: ["QUEUED", "RUNNING"] }),
-      taskCount("VALIDATE_PRODUCT", "FAILED"),
-      taskCount("VALIDATE_PRODUCT", { in: ["QUEUED", "RUNNING"] }),
-    ]);
-    const pending = pendingProducts + pendingImages + pendingValidation;
-    const failed = failedProducts + failedImages + failedValidation;
+    const taskGroups = await tx.catalogGenerationTask.groupBy({
+      by: ["taskType", "status"],
+      where: { jobId },
+      _count: { _all: true },
+    });
+    const progress = deriveCatalogJobProgress(
+      taskGroups.map((row) => ({
+        taskType: row.taskType,
+        status: row.status,
+        count: row._count._all,
+      })),
+    );
 
     if (job.status === "CANCELLED") {
       return tx.catalogGenerationJob.findUniqueOrThrow({ where: { id: jobId } });
     }
 
-    const nextStatus =
-      pending > 0 ? "RUNNING" : failed > 0 ? "COMPLETED_WITH_ERRORS" : "COMPLETED";
-    const nextStage =
-      pendingProducts > 0
-        ? "PRODUCTS"
-        : pendingImages > 0
-          ? "IMAGES"
-          : pendingValidation > 0
-            ? "VALIDATING"
-            : "COMPLETE";
-
     return tx.catalogGenerationJob.update({
       where: { id: jobId },
       data: {
-        status: nextStatus,
-        stage: nextStage,
-        completedProducts,
-        failedProducts,
-        completedImages,
-        failedImages,
-        startedAt: job.startedAt ?? (nextStatus === "RUNNING" ? new Date() : null),
-        finishedAt: pending > 0 ? null : new Date(),
+        status: progress.nextStatus,
+        stage: progress.nextStage,
+        completedProducts: progress.completedProducts,
+        failedProducts: progress.failedProducts,
+        completedImages: progress.completedImages,
+        failedImages: progress.failedImages,
+        startedAt: job.startedAt ?? (progress.nextStatus === "RUNNING" ? new Date() : null),
+        finishedAt: progress.pendingTasks > 0 ? null : new Date(),
       },
     });
   });

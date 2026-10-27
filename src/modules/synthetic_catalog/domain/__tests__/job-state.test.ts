@@ -1,4 +1,4 @@
-import { assertJobTransition } from "../job-state";
+import { assertJobTransition, deriveCatalogJobProgress } from "../job-state";
 
 describe("catalog generation job state transitions", () => {
   it("allows execution, partial progress, and retry transitions", () => {
@@ -12,5 +12,37 @@ describe("catalog generation job state transitions", () => {
     expect(() => assertJobTransition("COMPLETED", "RUNNING")).toThrow(
       "COMPLETED -> RUNNING",
     );
+  });
+
+  it("keeps a bulk rename job running while proposal chunks remain queued", () => {
+    expect(deriveCatalogJobProgress([
+      { taskType: "PROPOSE_PRODUCT_NAMES", status: "COMPLETED", count: 1 },
+      { taskType: "PROPOSE_PRODUCT_NAMES", status: "QUEUED", count: 5 },
+    ])).toEqual(expect.objectContaining({
+      pendingTasks: 5,
+      failedTasks: 0,
+      nextStatus: "RUNNING",
+      nextStage: "PRODUCTS",
+    }));
+  });
+
+  it("finishes bulk rename only after every proposal chunk settles", () => {
+    expect(deriveCatalogJobProgress([
+      { taskType: "PROPOSE_PRODUCT_NAMES", status: "COMPLETED", count: 6 },
+    ])).toEqual(expect.objectContaining({
+      pendingTasks: 0,
+      failedTasks: 0,
+      nextStatus: "COMPLETED",
+      nextStage: "COMPLETE",
+    }));
+    expect(deriveCatalogJobProgress([
+      { taskType: "PROPOSE_PRODUCT_NAMES", status: "COMPLETED", count: 5 },
+      { taskType: "PROPOSE_PRODUCT_NAMES", status: "FAILED", count: 1 },
+    ])).toEqual(expect.objectContaining({
+      pendingTasks: 0,
+      failedTasks: 1,
+      nextStatus: "COMPLETED_WITH_ERRORS",
+      nextStage: "COMPLETE",
+    }));
   });
 });

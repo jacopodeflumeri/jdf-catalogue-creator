@@ -821,6 +821,8 @@ The admin sidebar reads active catalogue names and slugs in the server layout, s
 
 Bulk rename creates a persistent background preview using LiteLLM feature attribution `synthetic-catalog-bulk-product-name-preview`. It freezes the selected active product names and scope when queued, proposes names in conservative batches, and does not change products during preview. Editors review valid changed proposals and explicitly select which names to apply. Apply changes only `SyntheticProduct.name`, checks that each current name still matches its frozen original, and skips stale rows. Product IDs, SKUs, taxonomy, styles, variants, images, URLs, and Complete the Look relationships remain unchanged.
 
+Job terminal state is derived from every durable task type, including bulk-rename proposal chunks. Product and image counters retain their existing meanings, but a job cannot become terminal while any task type remains queued or running. The `20261027170000_repair_stranded_bulk_rename_jobs` migration reopens only non-cancelled bulk-rename jobs that were incorrectly marked terminal while proposal tasks remained pending; completed chunks are preserved and the worker resumes with the queued chunks.
+
 ### Admin cards
 
 Historical job cards and the four catalogue Settings cards can collapse independently. Their contents stay mounted while hidden so unfinished form edits remain in memory. Active generation progress remains expanded.
