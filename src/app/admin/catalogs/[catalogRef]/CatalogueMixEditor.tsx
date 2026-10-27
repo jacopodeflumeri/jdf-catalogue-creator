@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
+import CollapsibleCard from "@/components/ui/CollapsibleCard";
 import FormInput from "@/components/ui/form/FormInput";
 import FormSelect from "@/components/ui/form/FormSelect";
 import Icon from "@/components/ui/Icon";
@@ -58,7 +58,7 @@ export default function CatalogueMixEditor({ detail, canEdit, onSaved }: { detai
   }
 
   return (
-    <Card title="Catalogue mix" description="Each row defines an allowed department, category, and subcategory combination and its exact All Catalogue quota. Edits only affect future jobs.">
+    <CollapsibleCard title="Catalogue mix" description="Each row defines an allowed department, category, and subcategory combination and its exact All Catalogue quota. Edits only affect future jobs.">
       <div className="space-y-3">
         <div className="ds-table-shell overflow-hidden"><div className="overflow-x-auto"><table className="w-full">
           <thead className="ds-table-head"><tr>{["Department", "Category", "Subcategory", "Products", "Outfit slot", ...(canEdit ? ["Actions"] : [])].map((heading) => <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#1a1a1a]/55">{heading}</th>)}</tr></thead>
@@ -82,6 +82,6 @@ export default function CatalogueMixEditor({ detail, canEdit, onSaved }: { detai
         </div>
         {message && <NoticeBox variant={message.kind}>{message.text}</NoticeBox>}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }

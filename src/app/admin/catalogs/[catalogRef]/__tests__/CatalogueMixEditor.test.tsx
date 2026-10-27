@@ -31,6 +31,7 @@ describe("CatalogueMixEditor row identity", () => {
 
   it("keeps focus and the complete value while typing in category and subcategory fields", () => {
     render(<CatalogueMixEditor detail={detail} canEdit onSaved={jest.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand Catalogue mix" }));
     const categories = screen.getAllByRole("textbox");
     const firstCategory = categories[0]!;
     firstCategory.focus();
@@ -54,6 +55,7 @@ describe("CatalogueMixEditor row identity", () => {
 
   it("keeps neighboring row state when a row is added or removed", async () => {
     render(<CatalogueMixEditor detail={detail} canEdit onSaved={jest.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand Catalogue mix" }));
     const inputs = screen.getAllByRole("textbox");
     fireEvent.change(inputs[0]!, { target: { value: "edited coats" } });
     fireEvent.change(inputs[2]!, { target: { value: "edited shirts" } });
@@ -72,6 +74,7 @@ describe("CatalogueMixEditor row identity", () => {
 
   it("supports unassigned zero-quota rows, department and outfit-slot selection, and saving", async () => {
     render(<CatalogueMixEditor detail={detail} canEdit onSaved={jest.fn().mockResolvedValue(undefined)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand Catalogue mix" }));
     fireEvent.click(screen.getByRole("button", { name: /add row/i }));
     const textboxes = screen.getAllByRole("textbox");
     const selects = screen.getAllByRole("combobox");
@@ -96,6 +99,7 @@ describe("CatalogueMixEditor row identity", () => {
 
   it("keeps viewer controls read-only", () => {
     render(<CatalogueMixEditor detail={detail} canEdit={false} onSaved={jest.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand Catalogue mix" }));
     expect(screen.queryByRole("button", { name: /add row/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /save catalogue mix/i })).not.toBeInTheDocument();
     expect(screen.getAllByRole("textbox").every((input) => (input as HTMLInputElement).disabled)).toBe(true);
@@ -109,6 +113,7 @@ describe("CatalogueMixEditor row identity", () => {
       embellishments: [], rules: [],
     } } } as unknown as CatalogDetailView;
     render(<DesignMixEditor detail={detailWithDesignMix} canEdit onSaved={jest.fn().mockResolvedValue(undefined)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand Design mix" }));
     const firstRule = screen.getAllByLabelText("Allowed pattern codes", { selector: "input" })[0]!;
     fireEvent.change(firstRule, { target: { value: "STRIPED, BRAND_LOGO_REPEAT" } });
     fireEvent.click(screen.getByRole("button", { name: /save design mix/i }));
