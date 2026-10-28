@@ -8,7 +8,7 @@ import {
   truncateAllTables,
 } from "@test/utils/db";
 import { CATALOG_PROFILES } from "../../config/profiles";
-import { createCatalogCsvExport, createCatalogValidationReport } from "../catalog-export";
+import { createCatalogCsvExport, createCatalogValidationReport, createCompleteLookCsvExport } from "../catalog-export";
 import { getCatalogDetail, getCatalogOverview } from "../admin-catalogs";
 
 function json(value: unknown): Prisma.InputJsonValue {
@@ -108,5 +108,51 @@ describe("catalog export persistence", () => {
     expect(archivedExport?.summary).toEqual(expect.objectContaining({ productsExported: 0, stylesExported: 0, variantsExported: 0, imagesReferenced: 0 }));
     expect(await prisma.syntheticStyle.count({ where: { productId: product.id } })).toBe(1);
     expect(await prisma.syntheticVariant.count({ where: { style: { productId: product.id } } })).toBe(2);
+  });
+
+  it("exports persisted Complete the Look product/style IDs in saved order and excludes archived companions", async () => {
+    const profile = CATALOG_PROFILES[0];
+    const catalog = await prisma.syntheticCatalog.create({
+      data: {
+        slug: profile.slug, name: profile.name, segment: profile.segment, brandName: profile.brandName,
+        externalPrefix: profile.externalPrefix, config: json(profile.config),
+        defaultTextModel: profile.defaultTextModel, defaultImageModel: profile.defaultImageModel,
+      },
+    });
+    async function product(sequence: number, externalId: string) {
+      return prisma.syntheticProduct.create({ data: {
+        catalogId: catalog.id, sequence, externalId, name: externalId, description: "Description",
+        department: "WOMEN", category: "tops", subcategory: "shirts", material: "cotton",
+        season: "Autumn/Winter", basePrice: "20.00", currency: "EUR", status: "READY",
+        styles: { create: { externalId: `${externalId}-NAVY`, colorName: "Navy", colorCode: "NAVY", status: "READY" } },
+      }, include: { styles: true } });
+    }
+    const main = await product(1, "PRE-W-000001");
+    const companion1 = await product(2, "PRE-W-000002");
+    const companion2 = await product(3, "PRE-W-000003");
+    const image = await prisma.syntheticImageAsset.create({ data: {
+      styleId: main.styles[0]!.id, role: "COMPLETE_LOOK", status: "READY",
+      publicId: "00000000-0000-4000-8000-000000000009", storageKey: "public/catalogs/look.webp",
+    } });
+    await prisma.syntheticCompleteLook.create({ data: {
+      anchorStyleId: main.styles[0]!.id, imageAssetId: image.id, status: "READY",
+      items: { create: [
+        { companionStyleId: companion2.styles[0]!.id, outfitSlot: "BOTTOM", sortOrder: 0 },
+        { companionStyleId: companion1.styles[0]!.id, outfitSlot: "BAG", sortOrder: 1 },
+      ] },
+    } });
+
+    const result = await createCompleteLookCsvExport(profile.slug);
+    expect(result?.rowCount).toBe(1);
+    expect(result?.csv).toBe([
+      "main_style_id,related_style_id_1,related_style_id_2,related_style_id_3",
+      "PRE-W-000001__PRE-W-000001-NAVY,PRE-W-000003__PRE-W-000003-NAVY,PRE-W-000002__PRE-W-000002-NAVY,,",
+      "",
+    ].join("\r\n"));
+
+    await prisma.syntheticProduct.update({ where: { id: companion2.id }, data: { archivedAt: new Date() } });
+    const archivedCompanion = await createCompleteLookCsvExport(profile.slug);
+    expect(archivedCompanion?.rowCount).toBe(0);
+    expect(archivedCompanion?.csv).toBe("main_style_id,related_style_id_1,related_style_id_2,related_style_id_3\r\n");
   });
 });

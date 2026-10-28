@@ -24,6 +24,7 @@ import { CATALOG_IMAGE_MODEL_OPTIONS } from "@/modules/synthetic_catalog/config/
 import {
   getCatalogDetailAction,
   getCatalogExportSummaryAction,
+  getCompleteLookExportSummaryAction,
   getCoreImagesPreflightAction,
   getCompleteLookPreflightAction,
   addCatalogTaxonomyAction,
@@ -38,7 +39,7 @@ import {
 import type { CatalogExportSummary } from "@/modules/synthetic_catalog/export/upc-csv";
 import AddProductsModal from "../AddProductsModal";
 import CatalogStatusBadge from "../CatalogStatusBadge";
-import DownloadCsvButton, { DownloadValidationReportButton } from "../DownloadCsvButton";
+import DownloadCsvButton, { DownloadCompleteLookCsvButton, DownloadValidationReportButton } from "../DownloadCsvButton";
 import ProductTable from "./ProductTable";
 import CatalogueMixEditor from "./CatalogueMixEditor";
 import DesignMixEditor from "./DesignMixEditor";
@@ -162,12 +163,14 @@ function SettingsPanel({ detail, canEdit, onSaved }: { detail: CatalogDetailView
 export default function CatalogDetailClient({
   initialDetail,
   initialExportSummary,
+  initialCompleteLookExportSummary,
   canEdit,
   canDelete,
   initialSearch,
 }: {
   initialDetail: CatalogDetailView;
   initialExportSummary: CatalogExportSummary | null;
+  initialCompleteLookExportSummary: { rowCount: number } | null;
   canEdit: boolean;
   canDelete: boolean;
   initialSearch: string;
@@ -176,6 +179,7 @@ export default function CatalogDetailClient({
   const { confirm } = useConfirm();
   const [detail, setDetail] = useState(initialDetail);
   const [exportSummary, setExportSummary] = useState(initialExportSummary);
+  const [completeLookExportSummary, setCompleteLookExportSummary] = useState(initialCompleteLookExportSummary);
   const [showAdd, setShowAdd] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
@@ -192,12 +196,14 @@ export default function CatalogDetailClient({
   const hasActiveJob = detail.jobs.some((job) => ACTIVE_STATUSES.has(job.status));
 
   const refresh = useCallback(async () => {
-    const [next, nextSummary] = await Promise.all([
+    const [next, nextSummary, nextCompleteLookSummary] = await Promise.all([
       getCatalogDetailAction(detail.catalog.slug),
       getCatalogExportSummaryAction(detail.catalog.slug),
+      getCompleteLookExportSummaryAction(detail.catalog.slug),
     ]);
     if (next) setDetail(next);
     if (nextSummary) setExportSummary(nextSummary);
+    if (nextCompleteLookSummary) setCompleteLookExportSummary(nextCompleteLookSummary);
   }, [detail.catalog.slug]);
 
   useEffect(() => {
@@ -395,6 +401,13 @@ export default function CatalogDetailClient({
                 </div>
               ))}
             </div>
+          </Card>
+          <Card
+            title="Complete the Look relationships"
+            description="One row per ready colour style, with related styles in persisted outfit order."
+            headerActions={<DownloadCompleteLookCsvButton catalogSlug={detail.catalog.slug} />}
+          >
+            <p className="text-sm text-[#1a1a1a]/65">{completeLookExportSummary?.rowCount ?? 0} ready relationship row(s)</p>
           </Card>
           {!exportSummary.readyForImport ? (
             <NoticeBox variant="warning" title="Excluded product validation">

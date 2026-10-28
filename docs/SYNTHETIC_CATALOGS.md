@@ -217,6 +217,29 @@ issue list, readiness checks, schema version, generation timestamp, the
 product and variant row, every product is exportable, and there are no
 validation issues. A catalog with no exportable variants returns HTTP 422
 instead of a header-only file.
+
+## Complete the Look relationship CSV export
+
+The Export tab also offers a separate Complete the Look relationships CSV at
+`/api/admin/catalogs/{slug}/complete-look.csv`. It does not replace or alter the
+UPC CSV. The relationship file uses the fixed column order
+`main_style_id`, `related_style_id_1`, `related_style_id_2`,
+`related_style_id_3`, with one row per qualifying main colour style. Each cell
+uses the persisted product and style IDs joined as `productId__styleId`.
+
+Rows require an active, non-archived READY main product and style, a persisted
+READY Complete the Look result, and its valid READY image (including persisted
+public ID and storage key). Companion product and style records must also be
+READY and non-archived. If any saved companion is invalid, the whole look is
+omitted. FAILED, SKIPPED, STALE, missing-image, and archived-companion looks
+are never exported. Saved companions retain their persisted `sortOrder`; fewer
+than three companions leave trailing cells blank, and only three related-style
+columns are emitted. Rows sort by product ID then style ID, and duplicate main
+style IDs collapse to one row. The endpoint returns a valid header-only CSV
+when no relationship qualifies. It uses the same authenticated viewer download
+access, UTF-8 CSV headers, CRLF/RFC 4180 escaping, no-store response, and
+successful-download audit convention as the UPC export.
+
 ## Catalog profiles
 
 The four profiles are defined in

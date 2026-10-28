@@ -7,6 +7,7 @@ import {
   type CatalogExportSource,
   type CatalogExportSummary,
 } from "../export/upc-csv";
+import { buildCompleteLookCsv, type CompleteLookRelationshipSource } from "../export/complete-look-csv";
 
 export interface CatalogValidationReport {
   schemaVersion: 2;
@@ -119,6 +120,85 @@ export async function getCatalogExportSummary(reference: string): Promise<Catalo
   const source = await loadCatalogExportSource(reference);
   if (!source) return null;
   return buildUpcCsv(source, "http://localhost").summary;
+}
+
+async function loadCompleteLookRelationshipSources(reference: string): Promise<{
+  catalog: { id: number; slug: string; name: string };
+  sources: CompleteLookRelationshipSource[];
+} | null> {
+  const numericId = /^\d+$/.test(reference) ? Number(reference) : null;
+  const catalog = await prisma.syntheticCatalog.findFirst({
+    where: { ...(numericId == null ? { slug: reference } : { id: numericId }), active: true },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      products: {
+        where: { archivedAt: null },
+        select: {
+          externalId: true,
+          status: true,
+          archivedAt: true,
+          styles: {
+            select: {
+              externalId: true,
+              status: true,
+              completeLook: {
+                select: {
+                  status: true,
+                  imageAsset: { select: { status: true, publicId: true, storageKey: true } },
+                  items: {
+                    orderBy: { sortOrder: "asc" },
+                    select: {
+                      companionStyle: {
+                        select: {
+                          externalId: true,
+                          status: true,
+                          product: { select: { externalId: true, status: true, archivedAt: true } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!catalog) return null;
+  const sources = catalog.products.flatMap((product) => product.styles.map((style) => ({
+    productId: product.externalId,
+    styleId: style.externalId,
+    productStatus: product.status,
+    archived: product.archivedAt != null,
+    styleStatus: style.status,
+    completeLook: style.completeLook ? {
+      status: style.completeLook.status,
+      imageAsset: style.completeLook.imageAsset,
+      companions: style.completeLook.items.map(({ companionStyle }) => ({
+        productId: companionStyle.product.externalId,
+        productStatus: companionStyle.product.status,
+        archived: companionStyle.product.archivedAt != null,
+        styleId: companionStyle.externalId,
+        styleStatus: companionStyle.status,
+      })),
+    } : null,
+  })));
+  return { catalog: { id: catalog.id, slug: catalog.slug, name: catalog.name }, sources };
+}
+
+export async function createCompleteLookCsvExport(reference: string) {
+  const loaded = await loadCompleteLookRelationshipSources(reference);
+  if (!loaded) return null;
+  return { catalog: loaded.catalog, ...buildCompleteLookCsv(loaded.sources) };
+}
+
+export async function getCompleteLookExportSummary(reference: string): Promise<{ rowCount: number } | null> {
+  const loaded = await loadCompleteLookRelationshipSources(reference);
+  if (!loaded) return null;
+  return { rowCount: buildCompleteLookCsv(loaded.sources).rowCount };
 }
 
 export async function createCatalogValidationReport(

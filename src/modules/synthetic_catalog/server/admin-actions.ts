@@ -29,7 +29,7 @@ import {
   getCatalogDetail,
   getCatalogProductDetail,
 } from "./admin-catalogs";
-import { getCatalogExportSummary } from "./catalog-export";
+import { getCatalogExportSummary, getCompleteLookExportSummary } from "./catalog-export";
 import { createCoreImagesJob, getCoreImagesPreflight } from "./core-image-jobs";
 import { createCompleteLookJob, getCompleteLookPreflight } from "./complete-look-jobs";
 import type { CatalogExportSummary } from "../export/upc-csv";
@@ -229,6 +229,11 @@ export async function getCatalogProductDetailAction(
 export async function getCatalogExportSummaryAction(reference: string): Promise<CatalogExportSummary | null> {
   await requireAdmin({});
   return getCatalogExportSummary(reference);
+}
+
+export async function getCompleteLookExportSummaryAction(reference: string): Promise<{ rowCount: number } | null> {
+  await requireAdmin({});
+  return getCompleteLookExportSummary(reference);
 }
 
 export async function createCatalogGenerationJobAction(input: unknown): Promise<CatalogActionResult> {

@@ -12,7 +12,7 @@ function DownloadCatalogFileButton({
   size = "sm",
 }: {
   catalogSlug: string;
-  kind: "csv" | "validation-report";
+  kind: "csv" | "validation-report" | "complete-look-csv";
   disabled?: boolean;
   size?: "sm" | "md";
 }) {
@@ -25,7 +25,9 @@ function DownloadCatalogFileButton({
       const response = await fetch(
         kind === "csv"
           ? `/api/admin/catalogs/${encodeURIComponent(catalogSlug)}/export.csv`
-          : `/api/admin/catalogs/${encodeURIComponent(catalogSlug)}/validation-report.json`,
+          : kind === "complete-look-csv"
+            ? `/api/admin/catalogs/${encodeURIComponent(catalogSlug)}/complete-look.csv`
+            : `/api/admin/catalogs/${encodeURIComponent(catalogSlug)}/validation-report.json`,
         { cache: "no-store" },
       );
       if (!response.ok) {
@@ -40,7 +42,7 @@ function DownloadCatalogFileButton({
       const link = document.createElement("a");
       link.href = url;
       link.download =
-        kind === "csv" ? `${catalogSlug}.csv` : `${catalogSlug}-validation-report.json`;
+        kind === "csv" ? `${catalogSlug}.csv` : kind === "complete-look-csv" ? `${catalogSlug}-complete-the-look.csv` : `${catalogSlug}-validation-report.json`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -58,7 +60,7 @@ function DownloadCatalogFileButton({
   return (
     <Button variant="secondary" size={size} onClick={() => void download()} disabled={disabled} loading={loading}>
       <Icon type="download" size="sm" />
-      {kind === "csv" ? "Download UPC CSV" : "Validation report"}
+      {kind === "csv" ? "Download UPC CSV" : kind === "complete-look-csv" ? "Download relationships CSV" : "Validation report"}
     </Button>
   );
 }
@@ -73,4 +75,10 @@ export function DownloadValidationReportButton(
   props: Omit<ComponentProps<typeof DownloadCatalogFileButton>, "kind">,
 ) {
   return <DownloadCatalogFileButton {...props} kind="validation-report" />;
+}
+
+export function DownloadCompleteLookCsvButton(
+  props: Omit<ComponentProps<typeof DownloadCatalogFileButton>, "kind">,
+) {
+  return <DownloadCatalogFileButton {...props} kind="complete-look-csv" />;
 }
