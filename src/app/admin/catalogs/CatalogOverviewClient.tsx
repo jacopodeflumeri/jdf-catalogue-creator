@@ -1,15 +1,15 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Icon from "@/components/ui/Icon";
 import PageHeader from "@/components/ui/PageHeader";
 import type { CatalogOverviewView } from "@/modules/synthetic_catalog/admin/types";
-import AddProductsModal from "./AddProductsModal";
+import { getCatalogBrandHeroPath } from "@/modules/synthetic_catalog/config/brand-assets";
 import CatalogStatusBadge from "./CatalogStatusBadge";
-import DownloadCsvButton from "./DownloadCsvButton";
 import CatalogBrandLogo from "./CatalogBrandLogo";
 import NewCatalogModal from "./NewCatalogModal";
 
@@ -20,15 +20,7 @@ export default function CatalogOverviewClient({
   initialCatalogs: CatalogOverviewView[];
   canEdit: boolean;
 }) {
-  const router = useRouter();
-  const [selected, setSelected] = useState<CatalogOverviewView | null>(null);
   const [creating, setCreating] = useState(false);
-
-  function lastGeneration(catalog: CatalogOverviewView): string {
-    const value = catalog.latestJob?.finishedAt ?? catalog.latestJob?.createdAt;
-    if (!value) return "No generation jobs yet";
-    return `Last generation: ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))}`;
-  }
 
   return (
     <div className="px-8 py-6 space-y-8">
@@ -38,31 +30,52 @@ export default function CatalogOverviewClient({
         actions={canEdit ? <Button onClick={() => setCreating(true)}><Icon type="plus" size="sm" /> New catalogue</Button> : undefined}
       />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {initialCatalogs.map((catalog) => (
-          <Card
+        {initialCatalogs.map((catalog, index) => {
+          const heroPath = getCatalogBrandHeroPath(catalog.slug);
+
+          return (
+          <Link
             key={catalog.id}
-            title={catalog.name}
-            description={`${catalog.brandName} · ${catalog.segment}`}
-            hoverable
-            headerActions={catalog.latestJob ? <CatalogStatusBadge status={catalog.latestJob.status} /> : null}
-            footer={
-              <div className="flex justify-end gap-2">
-                <DownloadCsvButton catalogSlug={catalog.slug} disabled={catalog.productCount === 0} />
-                {canEdit && (
-                  <Button variant="secondary" size="sm" onClick={() => setSelected(catalog)}>
-                    <Icon type="plus" size="sm" /> Add products
-                  </Button>
-                )}
-                <Button size="sm" onClick={() => router.push(`/admin/catalogs/${catalog.slug}`)}>
-                  Open catalog <Icon type="arrow-right" size="sm" />
-                </Button>
-              </div>
-            }
+            href={`/admin/catalogs/${catalog.slug}`}
+            className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+            aria-label={`Open ${catalog.name} catalogue`}
           >
-            <div className="mb-5 flex min-w-0 items-center gap-4">
-              <CatalogBrandLogo slug={catalog.slug} brandName={catalog.brandName} />
-              <div className="min-w-0"><p className="font-medium text-[#1a1a1a]">{catalog.brandName}</p><p className="text-sm text-[#1a1a1a]/60">{catalog.segment}</p></div>
-            </div>
+          <Card
+            title={heroPath ? (
+              <span className="flex min-w-0 items-center gap-4">
+                <CatalogBrandLogo slug={catalog.slug} brandName={catalog.brandName} size="title" />
+                <span className="flex min-w-0 flex-col items-start gap-1">
+                  <span className="truncate">{catalog.name}</span>
+                  <span className="text-sm font-normal leading-relaxed text-[#1a1a1a]/60">{catalog.brandName} · {catalog.segment}</span>
+                </span>
+              </span>
+            ) : catalog.name}
+            description={heroPath ? undefined : `${catalog.brandName} · ${catalog.segment}`}
+            hoverable
+            headerPaddingClassName={heroPath ? "px-8 pt-6 pb-1" : undefined}
+            contentPaddingClassName={heroPath ? "px-8 pt-1 pb-6" : undefined}
+            showHeaderDivider={!heroPath}
+            headerActions={catalog.latestJob ? <CatalogStatusBadge status={catalog.latestJob.status} /> : null}
+          >
+            {heroPath ? (
+              <div className="mb-5 overflow-hidden rounded-xl border border-white/70 bg-white/30 shadow-[0_4px_18px_rgba(26,26,26,0.06)]">
+                <Image
+                  src={heroPath}
+                  alt={`${catalog.brandName} catalogue campaign`}
+                  width={1918}
+                  height={821}
+                  sizes="(min-width: 1280px) 50vw, 100vw"
+                  loading={index === 0 ? "eager" : "lazy"}
+                  fetchPriority={index === 0 ? "high" : "auto"}
+                  className="h-auto w-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="mb-5 flex min-w-0 items-center gap-4">
+                <CatalogBrandLogo slug={catalog.slug} brandName={catalog.brandName} />
+                <div className="min-w-0"><p className="font-medium text-[#1a1a1a]">{catalog.brandName}</p><p className="text-sm text-[#1a1a1a]/60">{catalog.segment}</p></div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {[
                 ["Products", catalog.productCount],
@@ -76,23 +89,11 @@ export default function CatalogOverviewClient({
                 </div>
               ))}
             </div>
-            {catalog.failedImageCount > 0 && (
-              <p className="mt-4 text-sm text-[#932231]">{catalog.failedImageCount} image(s) need attention</p>
-            )}
-            <p className="mt-4 text-xs text-[#1a1a1a]/50">{lastGeneration(catalog)}</p>
           </Card>
-        ))}
+          </Link>
+          );
+        })}
       </div>
-      <AddProductsModal
-        key={selected?.id ?? "closed"}
-        catalog={selected}
-        onClose={() => setSelected(null)}
-        onCreated={() => {
-          const slug = selected?.slug;
-          setSelected(null);
-          if (slug) router.push(`/admin/catalogs/${slug}`);
-        }}
-      />
       {canEdit && <NewCatalogModal open={creating} onClose={() => setCreating(false)} catalogs={initialCatalogs} />}
     </div>
   );

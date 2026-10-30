@@ -830,6 +830,14 @@ other-catalogue logos remain prohibited.
 Complete the Look preserves fictional logo repeats and ordinary patterns
 already visible in product references. It adds no logo to an unassigned item
 and never replaces an ordinary pattern with a logo pattern.
+
+The catalogue overview also maps those four built-in slugs to their campaign
+heroes: `/img/aureline-hero.png`, `/img/loopline-hero.png`,
+`/img/maison-veyra-hero.png`, and `/img/kineticForm-hero.png`. A mapped card
+shows its logo beside the title and the full, uncropped campaign image below
+the title block. The entire card is the accessible link to its catalogue; bulk
+generation and export actions remain inside the catalogue page. Custom slugs
+without a configured hero retain the ordinary logo-row treatment.
 ## Catalogue lifecycle
 
 Editors and administrators can create a catalogue from the New catalogue action on `/admin/catalogs`. The form captures catalogue name, brand name, segment, safe URL slug, three-letter external product prefix, and a configuration template. Active catalogues are the templates when any exist; otherwise the built-in profiles are offered. The parsed configuration is cloned, while products, styles, variants, jobs, generated images, and sequence state are not copied. New catalogues start active with product sequence 1. Unknown brand logo slugs continue to show the configured brand name.

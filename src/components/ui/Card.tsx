@@ -11,6 +11,9 @@ const Card: React.FC<CardProps> = ({
   noPaddingContent = false,
   canOverflow = false,
   noBg = false,
+  headerPaddingClassName,
+  contentPaddingClassName,
+  showHeaderDivider = true,
   className = '',
   onClick,
   isClickable = true,
@@ -25,18 +28,18 @@ const Card: React.FC<CardProps> = ({
   const classes = `${baseClasses} ${hoverClasses} ${clickableClasses} ${className}`.trim();
 
   // Padding classes based on noPadding prop
-  const headerPadding = noPadding ? '' : 'px-8 py-6';
-  const contentPadding = (noPadding || noPaddingContent) ? '' : 'px-8 py-6';
+  const headerPadding = headerPaddingClassName ?? (noPadding ? '' : 'px-8 py-6');
+  const contentPadding = contentPaddingClassName ?? ((noPadding || noPaddingContent) ? '' : 'px-8 py-6');
   const footerPadding = noPadding ? '' : 'px-8 py-4';
 
   return (
     <div className={classes} onClick={onClick} {...props}>
       {(title || description || headerActions) && (
-        <div className={`${headerPadding} border-b border-white/60`}>
+        <div className={`${headerPadding} ${showHeaderDivider ? 'border-b border-white/60' : ''}`}>
           <div className="flex items-middle justify-between">
             <div className="flex-1 min-w-0">
               {title && (
-                <h3 className="text-xl font-semibold text-[#1a1a1a] mb-2">{title}</h3>
+                <h3 className={`text-xl font-semibold text-[#1a1a1a] ${description ? 'mb-2' : ''}`}>{title}</h3>
               )}
               {description && (
                 <p className="text-sm text-[#1a1a1a]/60 leading-relaxed">{description}</p>

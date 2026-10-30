@@ -49,7 +49,7 @@ export interface ToastProps {
 
 // Card component
 export interface CardProps extends BaseComponentProps {
-  title?: string;
+  title?: React.ReactNode;
   description?: string;
   footer?: React.ReactNode;
   hoverable?: boolean;
@@ -57,6 +57,9 @@ export interface CardProps extends BaseComponentProps {
   noPaddingContent?: boolean;
   canOverflow?: boolean;
   noBg?: boolean;
+  headerPaddingClassName?: string;
+  contentPaddingClassName?: string;
+  showHeaderDivider?: boolean;
   onClick?: () => void;
   isClickable?: boolean;
   headerActions?: React.ReactNode;
