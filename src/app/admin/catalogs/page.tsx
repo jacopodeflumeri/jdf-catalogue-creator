@@ -5,7 +5,7 @@ import { getCatalogOverview } from "@/modules/synthetic_catalog/server/admin-cat
 import CatalogOverviewClient from "./CatalogOverviewClient";
 
 export const metadata: Metadata = {
-  title: pageTitle("Synthetic Catalogs"),
+  title: pageTitle("Catalogues"),
   description: "Create and manage internal synthetic fashion catalogs",
 };
 

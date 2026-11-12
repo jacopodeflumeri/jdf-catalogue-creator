@@ -93,7 +93,7 @@ describe("catalogue Dashboard database aggregation", () => {
     const result = await getCatalogueDashboard("30d", now);
     expect(result.inventory).toMatchObject({ catalogues: 1, products: 2, styles: 2, variants: 2, readyImages: 5, readyLooks: 1, archivedProducts: 1 });
     expect(result.catalogues[0]).toMatchObject({ productCount: 2, styleCount: 2, readyCoreStyles: 2, readyLooks: 1, eligibleLookStyles: 2 });
-    expect(result.activity).toMatchObject({ productsCreated: 2, imagesCompleted: 5, jobsCompleted: 3, jobsFailedOrCancelled: 1, successRate: 0.75, cumulativeProcessingMs: 210_000 });
+    expect(result.activity).toMatchObject({ productsCreated: 2, imagesCompleted: 5, jobsCompleted: 3, jobsFailedOrCancelled: 1, jobsSuccessful: 2, successRate: 0.5, cumulativeProcessingMs: 210_000 });
     expect(result.stages.map(({ stage }) => stage)).toEqual(["CATALOG_INFO", "CORE_IMAGES", "COMPLETE_LOOK"]);
     expect(result.stages.find(({ stage }) => stage === "CATALOG_INFO")).toMatchObject({ producedUnits: 2, averageDurationMs: 60_000 });
     expect(result.stages.find(({ stage }) => stage === "CORE_IMAGES")).toMatchObject({ producedUnits: 1, completedJobs: 1 });

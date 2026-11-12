@@ -23,6 +23,7 @@ export interface DashboardActivity {
   imagesCompleted: number;
   jobsCompleted: number;
   jobsFailedOrCancelled: number;
+  jobsSuccessful: number;
   successRate: number | null;
   cumulativeProcessingMs: number;
   completedJobs: number;

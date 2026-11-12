@@ -277,6 +277,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                               key={child.href}
                               href={child.href}
                               title={child.name}
+                              aria-label={child.name}
                               className={`p-3 rounded-xl transition-all duration-300 ${getActiveClasses(isActive)}`}
                             >
                               <Icon type={child.icon as IconType} size="lg" />
@@ -296,6 +297,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     key={item.href}
                     href={item.href}
                     title={item.name}
+                    aria-label={item.name}
                     className={`p-3 rounded-xl transition-all duration-300 ${getActiveClasses(isActive)}`}
                   >
                     <Icon type={item.icon as IconType} size="lg" />
@@ -395,6 +397,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     key={item.href}
                     href={item.href}
                     title={item.name}
+                    aria-label={item.name}
                     className={`p-3 rounded-xl transition-all duration-300 ${getActiveClasses(isActive)}`}
                   >
                     <Icon type={item.icon as IconType} size="lg" />
@@ -445,6 +448,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     key={item.href}
                     href={item.href}
                     title={item.name}
+                    aria-label={item.name}
                     className={`p-3 rounded-xl transition-all duration-300 ${getActiveClasses(isActive)}`}
                   >
                     <Icon type={item.icon as IconType} size="lg" />

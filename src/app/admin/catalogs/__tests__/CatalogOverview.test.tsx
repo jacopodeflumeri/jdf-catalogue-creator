@@ -20,6 +20,7 @@ describe("catalogue logo placements", () => {
     }]} />);
     expect(screen.getByRole("img", { name: "Aureline catalogue campaign" })).toHaveAttribute("src", expect.stringContaining("aureline-hero.png"));
     expect(screen.getByRole("img", { name: "Aureline logo" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Catalogues" })).toBeInTheDocument();
     expect(screen.getByText("Premium Apparel")).toBeInTheDocument();
     expect(screen.getByText(/Aureline · premium/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Premium Apparel catalogue" })).toHaveAttribute("href", "/admin/catalogs/premium-apparel");

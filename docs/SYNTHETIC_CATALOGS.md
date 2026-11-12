@@ -97,9 +97,10 @@ Activity counts non-archived products by `createdAt`, READY image assets by
 persisted `generatedAt`, and terminal jobs by `finishedAt` and final status.
 Recent jobs are selected by `createdAt`. `COMPLETED`
 and `COMPLETED_WITH_ERRORS` count as completed; only `FAILED` and `CANCELLED`
-count in the failed-or-cancelled KPI. The success rate is completed jobs divided
-by all terminal jobs (`COMPLETED`, `COMPLETED_WITH_ERRORS`, `FAILED`, and
-`CANCELLED`); it is unavailable when there are none. Cumulative processing time
+count in the failed-or-cancelled KPI. The success rate is fully `COMPLETED` jobs
+divided by all terminal jobs (`COMPLETED`, `COMPLETED_WITH_ERRORS`, `FAILED`,
+and `CANCELLED`), so partial completion remains terminal but does not count as
+fully successful; it is unavailable when there are none. Cumulative processing time
 is the sum of valid `finishedAt - startedAt` durations for completed jobs. It
 is job-level processing wall time, not queue wait or sum of parallel task time,
 and can exceed calendar time when jobs overlap. Jobs without both ordered
@@ -136,7 +137,13 @@ are daily for 7/30 days, weekly for 90 days, and monthly for all time.
 Key implementation files are `src/modules/synthetic_catalog/server/dashboard.ts`
 for aggregation, `src/modules/synthetic_catalog/admin/dashboard-types.ts` for
 view types, `src/modules/synthetic_catalog/admin/dashboard.ts` for timeframe
-and duration definitions, and `src/app/admin/page.tsx` for the route.
+and duration definitions, `src/app/admin/page.tsx` for the route,
+`src/app/admin/CatalogDashboard.tsx` for the interface,
+`src/app/admin/DashboardRangeSelector.tsx` for bookmarkable range controls,
+`src/app/admin/ActivityTrendChart.tsx` for the existing chart wrapper, and
+`src/app/admin/loading.tsx` for the route skeleton. The catalogue overview
+heading is `Catalogues`; its approved campaign cards remain the entry point to
+individual workspaces.
 
 The first manual workflow step is catalogue information. Its wizard selects
 all-catalogue, department, or category scope, then two or three color variants.
@@ -659,6 +666,21 @@ images and Complete the Look images alike.
 - `scripts/deploy/setup-ssm-params.sh`
 
 ## Decisions
+
+### 2026-11-12 — Operational Dashboard and Catalogue overview stay separate
+
+Dashboard summarizes the estate, readiness, processing, and recent jobs for
+every viewer. Catalogue cards remain on `/admin/catalogs` because they are the
+approved visual entry points to each workspace; duplicating them on Dashboard
+would repeat inventory information and bury operational trends.
+
+### 2026-11-12 — Only manual generation stages get stage attribution
+
+The persisted `CATALOG_INFO`, `CORE_IMAGES`, and `COMPLETE_LOOK` job types map
+to the three manual workflow stages. Retry, regeneration, initial/legacy,
+add-products, and bulk-rename types do not necessarily represent one stage's
+output, so they remain in recent jobs but are excluded from stage rates and
+throughput.
 
 ### 2026-10-21 — Internal admin surface only
 

@@ -1,6 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma/client";
-import { parseDashboardRange, resolveDashboardRange } from "../admin/dashboard";
+import { parseDashboardRange, resolveDashboardRange, safeSuccessRate } from "../admin/dashboard";
 import type {
   CatalogueDashboardView,
   DashboardActivityBucket,
@@ -17,12 +17,12 @@ type InventoryRow = {
   lastCompletedAt: Date | null;
 };
 type StageRow = {
-  jobType: string; completedJobs: bigint; failedJobs: bigint; terminalJobs: bigint;
+  jobType: string; completedJobs: bigint; successfulJobs: bigint; failedJobs: bigint; terminalJobs: bigint;
   producedUnits: bigint; averageDurationMs: number | null; medianDurationMs: number | null;
   durationTotalMs: number | null;
 };
 type ActivityRow = {
-  productsCreated: bigint; imagesCompleted: bigint; jobsCompleted: bigint;
+  productsCreated: bigint; imagesCompleted: bigint; jobsCompleted: bigint; jobsSuccessful: bigint;
   jobsFailedOrCancelled: bigint; terminalJobs: bigint; cumulativeProcessingMs: number | null;
   validDurationJobs: bigint;
 };
@@ -113,6 +113,7 @@ export async function getCatalogueDashboard(inputRange?: string | null, now = ne
         WHERE c.active = true AND p.archived_at IS NULL AND i.status = 'READY' AND i.generated_at IS NOT NULL
           AND i.generated_at >= ${range.from ?? new Date(0)} AND i.generated_at < ${range.to}) AS "imagesCompleted",
       COUNT(*) FILTER (WHERE j.status IN ${SUCCESS_STATUSES}) AS "jobsCompleted",
+      COUNT(*) FILTER (WHERE j.status = 'COMPLETED'::"CatalogJobStatus") AS "jobsSuccessful",
       COUNT(*) FILTER (WHERE j.status IN ('FAILED'::"CatalogJobStatus", 'CANCELLED'::"CatalogJobStatus")) AS "jobsFailedOrCancelled",
       COUNT(*) FILTER (WHERE j.status IN ${SUCCESS_STATUSES} OR j.status IN ('FAILED'::"CatalogJobStatus", 'CANCELLED'::"CatalogJobStatus")) AS "terminalJobs",
       COALESCE(SUM(EXTRACT(EPOCH FROM (j.finished_at - j.started_at)) * 1000) FILTER (
@@ -125,16 +126,18 @@ export async function getCatalogueDashboard(inputRange?: string | null, now = ne
   const stagesQuery = prisma.$queryRaw<StageRow[]>(Prisma.sql`
     SELECT j.job_type::text AS "jobType",
       COUNT(*) FILTER (WHERE j.status IN ${SUCCESS_STATUSES}) AS "completedJobs",
+      COUNT(*) FILTER (WHERE j.status = 'COMPLETED'::"CatalogJobStatus") AS "successfulJobs",
       COUNT(*) FILTER (WHERE j.status IN ('FAILED'::"CatalogJobStatus", 'CANCELLED'::"CatalogJobStatus")) AS "failedJobs",
       COUNT(*) FILTER (WHERE j.status IN ${SUCCESS_STATUSES} OR j.status IN ('FAILED'::"CatalogJobStatus", 'CANCELLED'::"CatalogJobStatus")) AS "terminalJobs",
       CASE j.job_type::text
-        WHEN 'CATALOG_INFO' THEN (SELECT COUNT(*) FROM synthetic_product p WHERE p.generation_job_id = j.id AND p.archived_at IS NULL)
-        WHEN 'CORE_IMAGES' THEN (SELECT COUNT(DISTINCT t.image_asset_id) FROM catalog_generation_task t
+        WHEN 'CATALOG_INFO' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES}
+          THEN (SELECT COUNT(*) FROM synthetic_product p WHERE p.generation_job_id = j.id AND p.archived_at IS NULL) ELSE 0 END
+        WHEN 'CORE_IMAGES' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES} THEN (SELECT COUNT(DISTINCT t.image_asset_id) FROM catalog_generation_task t
           JOIN synthetic_image_asset i ON i.id = t.image_asset_id JOIN synthetic_style s ON s.id = i.style_id
           JOIN synthetic_product p ON p.id = s.product_id
           WHERE t.job_id = j.id AND t.task_type = 'GENERATE_IMAGE' AND t.status = 'COMPLETED'
-            AND i.role IN ('FRONT', 'BACK') AND i.status = 'READY' AND p.archived_at IS NULL)
-        WHEN 'COMPLETE_LOOK' THEN (SELECT COUNT(DISTINCT l.id) FROM catalog_generation_task t
+            AND i.role IN ('FRONT', 'BACK') AND i.status = 'READY' AND p.archived_at IS NULL) ELSE 0 END
+        WHEN 'COMPLETE_LOOK' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES} THEN (SELECT COUNT(DISTINCT l.id) FROM catalog_generation_task t
           JOIN synthetic_image_asset i ON i.id = t.image_asset_id JOIN synthetic_complete_look l ON l.image_asset_id = i.id
           JOIN synthetic_style s ON s.id = l.anchor_style_id JOIN synthetic_product p ON p.id = s.product_id
           WHERE t.job_id = j.id AND t.task_type = 'GENERATE_IMAGE' AND t.status = 'COMPLETED'
@@ -153,7 +156,7 @@ export async function getCatalogueDashboard(inputRange?: string | null, now = ne
               JOIN synthetic_style companion_style ON companion_style.id = item.companion_style_id
               GROUP BY item.complete_look_id
               HAVING item.complete_look_id = l.id AND COUNT(*) <> COUNT(DISTINCT companion_style.product_id)
-            ))
+            )) ELSE 0 END
         ELSE 0 END AS "producedUnits",
       AVG(EXTRACT(EPOCH FROM (j.finished_at - j.started_at)) * 1000) FILTER (
         WHERE j.status IN ${SUCCESS_STATUSES} AND j.started_at IS NOT NULL AND j.finished_at >= j.started_at
@@ -216,13 +219,14 @@ export async function getCatalogueDashboard(inputRange?: string | null, now = ne
   ]);
   const activity = activityRows[0];
   const completed = asNumber(activity?.jobsCompleted);
+  const successful = asNumber(activity?.jobsSuccessful);
   const failed = asNumber(activity?.jobsFailedOrCancelled);
   const terminal = asNumber(activity?.terminalJobs);
   const stages: DashboardStage[] = ["CATALOG_INFO", "CORE_IMAGES", "COMPLETE_LOOK"];
   const stageByType = new Map(stageRows.map((row) => [row.jobType, row]));
   const performance = stages.map((stage) => {
     const row = stageByType.get(stage);
-    const successCount = asNumber(row?.completedJobs);
+    const successCount = asNumber(row?.successfulJobs);
     const failedCount = asNumber(row?.failedJobs);
     const terminalCount = asNumber(row?.terminalJobs);
     return {
@@ -232,7 +236,7 @@ export async function getCatalogueDashboard(inputRange?: string | null, now = ne
       averageThroughputPerMinute: row?.durationTotalMs != null && Number(row.durationTotalMs) > 0
         ? asNumber(row?.producedUnits) / (Number(row.durationTotalMs) / 60_000) : null,
       failedJobs: failedCount,
-      successRate: terminalCount === 0 ? null : successCount / terminalCount,
+      successRate: safeSuccessRate(successCount, terminalCount),
     };
   });
 
@@ -246,7 +250,7 @@ export async function getCatalogueDashboard(inputRange?: string | null, now = ne
     }), { catalogues: 0, products: 0, styles: 0, variants: 0, readyImages: 0, readyLooks: 0, archivedProducts: 0 }),
     activity: {
       productsCreated: asNumber(activity?.productsCreated), imagesCompleted: asNumber(activity?.imagesCompleted),
-      jobsCompleted: completed, jobsFailedOrCancelled: failed, successRate: terminal === 0 ? null : completed / terminal,
+      jobsCompleted: completed, jobsFailedOrCancelled: failed, jobsSuccessful: successful, successRate: safeSuccessRate(successful, terminal),
       cumulativeProcessingMs: Number(activity?.cumulativeProcessingMs ?? 0), completedJobs: completed,
       validDurationJobs: asNumber(activity?.validDurationJobs),
     },

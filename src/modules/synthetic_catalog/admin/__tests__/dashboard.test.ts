@@ -34,6 +34,10 @@ describe("catalogue Dashboard definitions", () => {
 
   it("does not divide by zero for periods with no terminal jobs", () => {
     expect(safeSuccessRate(0, 0)).toBeNull();
-    expect(safeSuccessRate(3, 1)).toBe(0.75);
+    expect(safeSuccessRate(3, 4)).toBe(0.75);
+  });
+
+  it("defines success as fully completed, with partial completion remaining terminal", () => {
+    expect(safeSuccessRate(1, 4)).toBe(0.25);
   });
 });

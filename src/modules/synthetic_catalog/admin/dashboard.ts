@@ -31,7 +31,6 @@ export function median(values: number[]): number | null {
     : sorted[middle];
 }
 
-export function safeSuccessRate(successful: number, failedOrCancelled: number): number | null {
-  const terminal = successful + failedOrCancelled;
+export function safeSuccessRate(successful: number, terminal: number): number | null {
   return terminal === 0 ? null : successful / terminal;
 }

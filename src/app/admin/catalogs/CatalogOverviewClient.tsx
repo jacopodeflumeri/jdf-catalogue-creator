@@ -25,7 +25,7 @@ export default function CatalogOverviewClient({
   return (
     <div className="px-8 py-6 space-y-8">
       <PageHeader
-        title="Synthetic Catalogs"
+        title="Catalogues"
         description="Generate persistent fashion products, variants, and imagery through Mapp-attributed LiteLLM jobs."
         actions={canEdit ? <Button onClick={() => setCreating(true)}><Icon type="plus" size="sm" /> New catalogue</Button> : undefined}
       />
