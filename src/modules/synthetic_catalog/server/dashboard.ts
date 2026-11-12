@@ -124,53 +124,59 @@ export async function getCatalogueDashboard(inputRange?: string | null, now = ne
     WHERE c.active = true AND j.finished_at >= ${range.from ?? new Date(0)} AND j.finished_at < ${range.to}
   `);
   const stagesQuery = prisma.$queryRaw<StageRow[]>(Prisma.sql`
-    SELECT j.job_type::text AS "jobType",
-      COUNT(*) FILTER (WHERE j.status IN ${SUCCESS_STATUSES}) AS "completedJobs",
-      COUNT(*) FILTER (WHERE j.status = 'COMPLETED'::"CatalogJobStatus") AS "successfulJobs",
-      COUNT(*) FILTER (WHERE j.status IN ('FAILED'::"CatalogJobStatus", 'CANCELLED'::"CatalogJobStatus")) AS "failedJobs",
-      COUNT(*) FILTER (WHERE j.status IN ${SUCCESS_STATUSES} OR j.status IN ('FAILED'::"CatalogJobStatus", 'CANCELLED'::"CatalogJobStatus")) AS "terminalJobs",
-      CASE j.job_type::text
-        WHEN 'CATALOG_INFO' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES}
-          THEN (SELECT COUNT(*) FROM synthetic_product p WHERE p.generation_job_id = j.id AND p.archived_at IS NULL) ELSE 0 END
-        WHEN 'CORE_IMAGES' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES} THEN (SELECT COUNT(DISTINCT t.image_asset_id) FROM catalog_generation_task t
-          JOIN synthetic_image_asset i ON i.id = t.image_asset_id JOIN synthetic_style s ON s.id = i.style_id
-          JOIN synthetic_product p ON p.id = s.product_id
-          WHERE t.job_id = j.id AND t.task_type = 'GENERATE_IMAGE' AND t.status = 'COMPLETED'
-            AND i.role IN ('FRONT', 'BACK') AND i.status = 'READY' AND p.archived_at IS NULL) ELSE 0 END
-        WHEN 'COMPLETE_LOOK' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES} THEN (SELECT COUNT(DISTINCT l.id) FROM catalog_generation_task t
-          JOIN synthetic_image_asset i ON i.id = t.image_asset_id JOIN synthetic_complete_look l ON l.image_asset_id = i.id
-          JOIN synthetic_style s ON s.id = l.anchor_style_id JOIN synthetic_product p ON p.id = s.product_id
-          WHERE t.job_id = j.id AND t.task_type = 'GENERATE_IMAGE' AND t.status = 'COMPLETED'
-            AND l.status = 'READY' AND i.status = 'READY' AND i.public_id IS NOT NULL AND i.storage_key IS NOT NULL
-            AND p.archived_at IS NULL AND p.status = 'READY' AND s.status = 'READY'
-            AND EXISTS (SELECT 1 FROM synthetic_complete_look_item item WHERE item.complete_look_id = l.id)
-            AND NOT EXISTS (
-              SELECT 1 FROM synthetic_complete_look_item item
-              JOIN synthetic_style companion_style ON companion_style.id = item.companion_style_id
-              JOIN synthetic_product companion_product ON companion_product.id = companion_style.product_id
-              WHERE item.complete_look_id = l.id AND (companion_product.archived_at IS NOT NULL
-                OR companion_product.status <> 'READY' OR companion_style.status <> 'READY' OR companion_product.id = p.id)
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM synthetic_complete_look_item item
-              JOIN synthetic_style companion_style ON companion_style.id = item.companion_style_id
-              GROUP BY item.complete_look_id
-              HAVING item.complete_look_id = l.id AND COUNT(*) <> COUNT(DISTINCT companion_style.product_id)
-            )) ELSE 0 END
-        ELSE 0 END AS "producedUnits",
-      AVG(EXTRACT(EPOCH FROM (j.finished_at - j.started_at)) * 1000) FILTER (
-        WHERE j.status IN ${SUCCESS_STATUSES} AND j.started_at IS NOT NULL AND j.finished_at >= j.started_at
+    WITH stage_jobs AS (
+      SELECT j.job_type, j.status, j.started_at, j.finished_at,
+        CASE j.job_type::text
+          WHEN 'CATALOG_INFO' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES}
+            THEN (SELECT COUNT(*) FROM synthetic_product p WHERE p.generation_job_id = j.id AND p.archived_at IS NULL) ELSE 0 END
+          WHEN 'CORE_IMAGES' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES} THEN (SELECT COUNT(DISTINCT t.image_asset_id) FROM catalog_generation_task t
+            JOIN synthetic_image_asset i ON i.id = t.image_asset_id JOIN synthetic_style s ON s.id = i.style_id
+            JOIN synthetic_product p ON p.id = s.product_id
+            WHERE t.job_id = j.id AND t.task_type = 'GENERATE_IMAGE' AND t.status = 'COMPLETED'
+              AND i.role IN ('FRONT', 'BACK') AND i.status = 'READY' AND p.archived_at IS NULL) ELSE 0 END
+          WHEN 'COMPLETE_LOOK' THEN CASE WHEN j.status IN ${SUCCESS_STATUSES} THEN (SELECT COUNT(DISTINCT l.id) FROM catalog_generation_task t
+            JOIN synthetic_image_asset i ON i.id = t.image_asset_id JOIN synthetic_complete_look l ON l.image_asset_id = i.id
+            JOIN synthetic_style s ON s.id = l.anchor_style_id JOIN synthetic_product p ON p.id = s.product_id
+            WHERE t.job_id = j.id AND t.task_type = 'GENERATE_IMAGE' AND t.status = 'COMPLETED'
+              AND l.status = 'READY' AND i.status = 'READY' AND i.public_id IS NOT NULL AND i.storage_key IS NOT NULL
+              AND p.archived_at IS NULL AND p.status = 'READY' AND s.status = 'READY'
+              AND EXISTS (SELECT 1 FROM synthetic_complete_look_item item WHERE item.complete_look_id = l.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM synthetic_complete_look_item item
+                JOIN synthetic_style companion_style ON companion_style.id = item.companion_style_id
+                JOIN synthetic_product companion_product ON companion_product.id = companion_style.product_id
+                WHERE item.complete_look_id = l.id AND (companion_product.archived_at IS NOT NULL
+                  OR companion_product.status <> 'READY' OR companion_style.status <> 'READY' OR companion_product.id = p.id)
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM synthetic_complete_look_item item
+                JOIN synthetic_style companion_style ON companion_style.id = item.companion_style_id
+                GROUP BY item.complete_look_id
+                HAVING item.complete_look_id = l.id AND COUNT(*) <> COUNT(DISTINCT companion_style.product_id)
+              )) ELSE 0 END
+          ELSE 0
+        END::bigint AS produced_units
+      FROM catalog_generation_job j JOIN synthetic_catalog c ON c.id = j.catalog_id
+      WHERE c.active = true AND j.finished_at >= ${range.from ?? new Date(0)} AND j.finished_at < ${range.to}
+        AND j.job_type IN ('CATALOG_INFO'::"CatalogJobType", 'CORE_IMAGES'::"CatalogJobType", 'COMPLETE_LOOK'::"CatalogJobType")
+    )
+    SELECT job_type::text AS "jobType",
+      COUNT(*) FILTER (WHERE status IN ${SUCCESS_STATUSES}) AS "completedJobs",
+      COUNT(*) FILTER (WHERE status = 'COMPLETED'::"CatalogJobStatus") AS "successfulJobs",
+      COUNT(*) FILTER (WHERE status IN ('FAILED'::"CatalogJobStatus", 'CANCELLED'::"CatalogJobStatus")) AS "failedJobs",
+      COUNT(*) FILTER (WHERE status IN ${SUCCESS_STATUSES} OR status IN ('FAILED'::"CatalogJobStatus", 'CANCELLED'::"CatalogJobStatus")) AS "terminalJobs",
+      COALESCE(SUM(produced_units), 0)::bigint AS "producedUnits",
+      AVG(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000) FILTER (
+        WHERE status IN ${SUCCESS_STATUSES} AND started_at IS NOT NULL AND finished_at >= started_at
       ) AS "averageDurationMs",
-      percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (j.finished_at - j.started_at)) * 1000) FILTER (
-        WHERE j.status IN ${SUCCESS_STATUSES} AND j.started_at IS NOT NULL AND j.finished_at >= j.started_at
+      percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000) FILTER (
+        WHERE status IN ${SUCCESS_STATUSES} AND started_at IS NOT NULL AND finished_at >= started_at
       ) AS "medianDurationMs",
-      SUM(EXTRACT(EPOCH FROM (j.finished_at - j.started_at)) * 1000) FILTER (
-        WHERE j.status IN ${SUCCESS_STATUSES} AND j.started_at IS NOT NULL AND j.finished_at >= j.started_at
+      SUM(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000) FILTER (
+        WHERE status IN ${SUCCESS_STATUSES} AND started_at IS NOT NULL AND finished_at >= started_at
       ) AS "durationTotalMs"
-    FROM catalog_generation_job j JOIN synthetic_catalog c ON c.id = j.catalog_id
-    WHERE c.active = true AND j.finished_at >= ${range.from ?? new Date(0)} AND j.finished_at < ${range.to}
-      AND j.job_type IN ('CATALOG_INFO'::"CatalogJobType", 'CORE_IMAGES'::"CatalogJobType", 'COMPLETE_LOOK'::"CatalogJobType")
-    GROUP BY j.job_type
+    FROM stage_jobs
+    GROUP BY job_type
   `);
   const recentQuery = prisma.$queryRaw<RecentJobRow[]>(Prisma.sql`
     SELECT j.id, j.public_id AS "publicId", c.slug AS "catalogSlug", c.name AS "catalogName",
