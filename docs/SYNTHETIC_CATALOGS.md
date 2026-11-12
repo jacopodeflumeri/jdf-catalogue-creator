@@ -15,8 +15,16 @@ reporting, and operational recovery guidance.
 
 ## Admin workflow
 
-`/admin` redirects to `/admin/catalogs`, where every active profile appears as
-one overview card with product, style, variant, image, and latest-job state.
+The primary admin navigation contains Dashboard (`/admin`) and Catalogues
+(`/admin/catalogs`). LiteLLM Usage and Settings appear once in the lower sidebar
+utility group. Catalogue shortcuts are not duplicated in navigation: the
+catalogue overview cards link to each workspace. The layout does not query
+catalogues to render navigation. Dashboard is the operational estate and
+generation summary; Catalogues remains the card-based list and entry point to
+each workspace.
+
+`/admin/catalogs` shows every active profile as one overview card with product,
+style, variant, image, and latest-job state.
 Cards and catalogue workspace headers show app-owned fictional logos using the
 stable slug mapping: `premium-apparel` → `/img/aureline.png`, `fast-fashion` →
 `/img/loopline.png`, `luxury-fashion` → `/img/maison-veyra.png`, and `activewear`
@@ -25,7 +33,6 @@ included in the application image. Lookup uses the catalogue slug, never
 editable brand text; unavailable images fall back to the visible brand name.
 The supplied Activewear image wordmark reads `KINETIQ`, while the configured
 catalogue brand remains `Kinetic Form`; neither value is auto-renamed.
-The admin sidebar loads every active catalogue from the database in stable name/slug order, including custom catalogues; inactive deletion tombstones are omitted. Dashboard and LiteLLM Usage remain fixed links.
 `/admin/catalogs/{slug}` is the catalog workspace: it shows background progress,
 the full persisted product list in a table, job history, retry controls, and
 generation settings. The product table can be filtered by department, category,
@@ -846,7 +853,8 @@ Catalogue creation requires editor access. Full deletion requires administrator 
 
 Generated image cleanup captures exact non-null storage keys from the selected catalogue's image rows before deleting database rows. After the database transaction succeeds, cleanup accepts only keys under `public/catalogs/<exact-slug>/`; it never resolves or deletes a prefix. S3 delete calls are idempotent. A storage failure leaves the catalogue deleted and is reported and audited by failed-object count.
 
-The admin sidebar reads active catalogue names and slugs in the server layout, sorted by name and slug. It keeps Dashboard and LiteLLM Usage links and omits inactive tombstones.
+The sidebar contains only the fixed Dashboard and Catalogues primary links;
+catalogue workspaces remain reachable from overview cards and contextual links.
 
 ### Bulk product rename
 

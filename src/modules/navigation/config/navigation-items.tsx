@@ -17,9 +17,9 @@ export const ADMIN_NAVIGATION_ITEMS: NavigationItem[] = [
     icon: 'home'
   },
   {
-    name: 'LiteLLM Usage',
-    href: '/admin/llm-usage',
-    icon: 'chart'
+    name: 'Catalogues',
+    href: '/admin/catalogs',
+    icon: 'fashion'
   },
   // The "Companies" entry (and the /admin/companies routes) ship with the
   // client_catalog capability — see src/modules/client_catalog/scaffold/.
@@ -36,6 +36,11 @@ export const ADMIN_NAVIGATION_ITEMS: NavigationItem[] = [
 // cards in src/app/admin/settings/client.tsx rather than as more sidebar
 // entries. Keep this group short; it is for app-wide utilities, not features.
 export const ADMIN_UTILITY_NAVIGATION_ITEMS: NavigationItem[] = [
+  {
+    name: 'LiteLLM Usage',
+    href: '/admin/llm-usage',
+    icon: 'chart'
+  },
   {
     name: 'Settings',
     href: '/admin/settings',
@@ -129,13 +134,9 @@ export function createCustomerNavigationItems(
 export function createNavigationItems(
   userType: 'customer' | 'admin',
   customerAccount?: CustomerAccountData | null,
-  catalogNavigation: Array<{ slug: string; name: string }> = [],
 ): NavigationItem[] {
   if (userType === 'admin') {
-    const dashboard = ADMIN_NAVIGATION_ITEMS.find((item) => item.href === '/admin')!;
-    const usage = ADMIN_NAVIGATION_ITEMS.find((item) => item.href === '/admin/llm-usage')!;
-    const sortedCatalogs = [...catalogNavigation].sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
-    return [dashboard, ...sortedCatalogs.map((catalog) => ({ name: catalog.name, href: `/admin/catalogs/${encodeURIComponent(catalog.slug)}`, icon: 'fashion' })), usage];
+    return [...ADMIN_NAVIGATION_ITEMS];
   }
 
   return createCustomerNavigationItems(customerAccount);

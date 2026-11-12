@@ -18,13 +18,11 @@ import type { MappTeamResponse } from "@/types";
 interface AdminLayoutProps {
   children: React.ReactNode;
   userProfile: MappTeamResponse | null;
-  catalogNavigation: Array<{ slug: string; name: string }>;
 }
 
 const AdminLayoutClientNew: React.FC<AdminLayoutProps> = ({
   children,
   userProfile,
-  catalogNavigation,
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -37,7 +35,7 @@ const AdminLayoutClientNew: React.FC<AdminLayoutProps> = ({
   const isAdminAccess = session ? isAdminAccessSession(session) : false;
 
   // Create navigation items using unified function
-  const navigationItems = createNavigationItems("admin", undefined, catalogNavigation);
+  const navigationItems = createNavigationItems("admin");
 
   return (
     <AdminErrorProvider>

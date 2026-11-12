@@ -43,6 +43,19 @@ describe("isNavItemActive", () => {
     expect(isNavItemActive("/", "/admin")).toBe(false);
   });
 
+  it("activates Catalogues throughout catalogue and product routes", () => {
+    expect(isNavItemActive("/admin/catalogs", "/admin/catalogs")).toBe(true);
+    expect(isNavItemActive("/admin/catalogs", "/admin/catalogs/aureline")).toBe(true);
+    expect(isNavItemActive("/admin/catalogs", "/admin/catalogs/aureline/products/p-1")).toBe(true);
+    expect(isNavItemActive("/admin/catalogs", "/admin/settings")).toBe(false);
+  });
+
+  it("keeps Usage and Settings active only within their own route trees", () => {
+    expect(isNavItemActive("/admin/llm-usage", "/admin/llm-usage/models")).toBe(true);
+    expect(isNavItemActive("/admin/settings", "/admin/settings/audit-log")).toBe(true);
+    expect(isNavItemActive("/admin/settings", "/admin/llm-usage")).toBe(false);
+  });
+
   it("is false without an href or pathname", () => {
     expect(isNavItemActive(undefined, "/admin")).toBe(false);
     expect(isNavItemActive("", "/admin")).toBe(false);

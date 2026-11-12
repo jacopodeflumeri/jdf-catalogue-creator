@@ -1,7 +1,7 @@
 import { Metadata } from 'next'
 import { requireAdmin } from '@/modules/auth/server'
 import { pageTitle } from '@/lib/utils/metadata'
-import { redirect } from 'next/navigation'
+import PageHeader from '@/components/ui/PageHeader'
 
 export const metadata: Metadata = {
   title: pageTitle('Dashboard'),
@@ -11,5 +11,9 @@ export const metadata: Metadata = {
 export default async function DashboardPage() {
   await requireAdmin({});
 
-  redirect('/admin/catalogs')
+  return (
+    <div className="px-8 py-6 space-y-8">
+      <PageHeader title="Dashboard" description="Operational summary of the generated catalogue estate." />
+    </div>
+  );
 }
