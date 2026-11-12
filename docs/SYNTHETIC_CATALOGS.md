@@ -71,6 +71,73 @@ and write audit records. A batch at or above the configured large-job threshold
 confirmation showing the expected LiteLLM call count. The request enqueues work
 only; browser navigation and polling never perform model or S3 work.
 
+## Operations Dashboard
+
+`/admin` is a read-only operational summary for every active admin-panel user
+with catalogue read access. It summarizes the current catalogue estate and
+generation activity; `/admin/catalogs` remains the catalogue card overview and
+workspace entry point. Its `range` query accepts `7d`, `30d`, `90d`, or `all`;
+an absent or unknown value resolves to 30 days. Timed ranges use a rolling UTC
+window from the resolved start (inclusive) up to the server's current time
+(exclusive). All time has no lower bound. Inventory totals are independent of
+the selected range.
+
+Inventory counts active catalogue records, non-archived products and their
+styles/variants, READY generated image assets across roles, and export-valid
+READY Complete the Look records. Archived products are excluded from active
+inventory, readiness, and activity; an archived-products metadata count is
+shown separately. Inactive catalogue tombstones are excluded everywhere.
+Complete the Look validity follows export rules: the anchor product/style and
+look must be READY and active, the image must be READY with a public ID and
+storage key, there must be at least one companion, and every companion must be
+active and READY, must differ from the anchor product, and companion products
+must be unique.
+
+Activity counts non-archived products by `createdAt`, READY image assets by
+persisted `generatedAt`, and terminal jobs by `finishedAt` and final status.
+Recent jobs are selected by `createdAt`. `COMPLETED`
+and `COMPLETED_WITH_ERRORS` count as completed; only `FAILED` and `CANCELLED`
+count in the failed-or-cancelled KPI. The success rate is completed jobs divided
+by all terminal jobs (`COMPLETED`, `COMPLETED_WITH_ERRORS`, `FAILED`, and
+`CANCELLED`); it is unavailable when there are none. Cumulative processing time
+is the sum of valid `finishedAt - startedAt` durations for completed jobs. It
+is job-level processing wall time, not queue wait or sum of parallel task time,
+and can exceed calendar time when jobs overlap. Jobs without both ordered
+persisted timestamps do not contribute; cancelled jobs do not contribute.
+
+Stage rows map only `CATALOG_INFO` to Catalogue information, `CORE_IMAGES` to
+Core images, and `COMPLETE_LOOK` to Complete the Look. `INITIAL`, `ADD_PRODUCTS`,
+`RETRY`, `REGENERATE_IMAGE`, and `BULK_RENAME` are excluded from stage metrics so
+retry or utility work is not attributed to a manual stage. Stage products are
+active products created by the information job; core-image units are distinct
+READY FRONT/BACK assets completed by that job; Complete the Look units are
+READY persisted looks with an image and at least one persisted companion.
+Average and median durations use successful terminal jobs with valid ordered
+job timestamps. Throughput is total produced units divided by total valid
+processing time for completed jobs. Failed/cancelled counts and success rate
+remain separate from successful-duration summaries.
+
+Catalogue readiness core coverage is active styles with READY FRONT and BACK
+assets divided by all active styles. Complete the Look coverage is export-valid
+READY looks divided by active READY product/style pairs (eligible styles).
+Failed images count failed required FRONT/BACK assets. A READY Complete the
+Look or full core coverage does not erase a required failed image.
+
+The query service uses database-side counts, filtered aggregates, correlated
+validity checks, percentile aggregation, date filtering, and grouped trend
+buckets. It does not hydrate product/style/image/task collections to calculate
+totals. Recent jobs are limited to ten and task counts are aggregated in SQL.
+Migration `20261112120000_catalogue_dashboard_job_finished_index` adds a
+`(finished_at, status)` index because the activity and stage summaries filter
+the growing job table by terminal completion time; the existing indexes cover
+creation-time job lists but not this range query. Trend buckets
+are daily for 7/30 days, weekly for 90 days, and monthly for all time.
+
+Key implementation files are `src/modules/synthetic_catalog/server/dashboard.ts`
+for aggregation, `src/modules/synthetic_catalog/admin/dashboard-types.ts` for
+view types, `src/modules/synthetic_catalog/admin/dashboard.ts` for timeframe
+and duration definitions, and `src/app/admin/page.tsx` for the route.
+
 The first manual workflow step is catalogue information. Its wizard selects
 all-catalogue, department, or category scope, then two or three color variants.
 Choosing a department or category initializes its selector to the first eligible

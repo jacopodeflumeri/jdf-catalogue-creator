@@ -635,6 +635,7 @@ model CatalogGenerationJob {
   renameBatch SyntheticRenameBatch?
 
   @@index([catalogId, createdAt])
+  @@index([finishedAt, status])
   @@index([status, createdAt])
   @@index([createdByMappTeamId])
   @@index([sourceJobId])
